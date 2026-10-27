@@ -1,0 +1,324 @@
+# FeriaOS — OpenSpec técnico y funcional v1.0
+Fecha: 2026-10-27 · Mercado inicial: Argentina · Estado: propuesta para implementación
+
+## 0. Convenciones y decisiones
+- RFC 2119: MUST obligatorio, SHOULD recomendado, MAY opcional.
+- Moneda: ARS; importes almacenados en centavos enteros (`BIGINT`). Fechas UTC en backend, `America/Argentina/Buenos_Aires` configurable por evento para visualización.
+- UUID para identificadores; `tenant_id` obligatorio en datos privados; idempotencia para comandos de pago y reservas.
+- Estado de este documento: especificación de ingeniería, no certificación de cumplimiento legal/fiscal ni integración probada.
+- Modalidad: predios permanentes e itinerantes; plantillas reutilizables, versiones inmutables asociadas al evento.
+
+## 1. PRD
+### 1.1 Problema
+Los organizadores comercializan stands con planillas, imágenes estáticas y transferencias difíciles de conciliar. Los feriantes no conocen disponibilidad/precios confiables y los visitantes carecen de un directorio espacial.
+### 1.2 Objetivos
+1. Publicar un evento con plano y tarifas en menos de 30 minutos una vez cargada la plantilla.
+2. Permitir elegir stand, reservar y pagar online sin intervención manual.
+3. Garantizar no doble adjudicación incluso bajo concurrencia y reintentos.
+4. Publicar directorio de expositores sobre el mismo plano.
+5. Segregar organizaciones estrictamente.
+### 1.3 Personas
+- SaaS superadministrador: opera tenants, planes y soporte auditado.
+- Owner/administrador de organizador: configura predios, eventos, equipo y cobros.
+- Operador: administra plano, revisa feriantes y reservas.
+- Expositor/feriante: gestiona ficha, selecciona y paga un espacio.
+- Visitante anónimo: descubre expositores en el plano público.
+### 1.4 KPIs
+Tasa de ocupación = stands asignados / stands comercializables; GMV bruto aprobado, tasa checkout completado, tiempo mediano hasta reservar, cancelaciones, conciliación pendiente y errores de webhook; distinguir GMV de ingreso SaaS.
+### 1.5 MVP incluido
+Tenants y roles; predios fijos/itinerantes; editor de layout a escala; versionado/publicación; tarifas por stand; un stand por checkout inicialmente; reserva/hold; Mercado Pago Checkout Pro; perfil expositor; plano público responsive; dashboard e informes CSV; auditoría.
+### 1.6 No objetivos MVP
+Marketplace de productos, mensajería/chat, venta de entradas, entrega de dinero en split marketplace, facturación ARCA automática, apps nativas, reservas offline, navegación indoor por GPS, facturación múltiple por empresa.
+### 1.7 Reglas de aceptación producto
+AC-PRD-01: se crean dos eventos desde un mismo plano sin compartir reservas ni tarifas.
+AC-PRD-02: una plantilla modificada no altera eventos publicados.
+AC-PRD-03: un visitante ve solo fichas públicas consentidas.
+AC-PRD-04: antes de pagar se muestra precio final, condiciones, política de cancelación y proveedor cobrador.
+
+## 2. Arquitectura y tecnología
+- Angular PWA: shell de app, admin lazy loaded, portal feriante y portal público; SSR/prerender para páginas públicas si se requiere SEO.
+- Konva.js o Fabric.js: vista y edición del layout. Coordenadas persistidas en metros, nunca píxeles.
+- NestJS: monolito modular, controladores REST `/api/v1`, DTOs validados, Swagger/OpenAPI; SSE para actualizaciones de disponibilidad.
+- PostgreSQL + PostGIS: persistencia relacional, geometría planar local (`geometry(Polygon,0)`), RLS como defensa adicional, constraints e índices espaciales.
+- Redis + BullMQ: jobs de reconciliación, notificaciones y vencimientos; el lock/constraint DB sigue siendo fuente de verdad.
+- MinIO/S3: imágenes de eventos, marcas, planos importados, documentos; URLs firmadas, escaneo/validación de uploads.
+- Mercado Pago: backend preferences Checkout Pro, webhook con validación y consulta de estado remota.
+- Observabilidad: health endpoints, métricas, logs JSON con correlation IDs, tracing; Sentry u OpenTelemetry opcionales.
+- Despliegue: reverse proxy HTTPS, CI/CD con migraciones, backups y restauración probada.
+
+### 2.1 Límites de módulos NestJS
+AuthModule; TenantsModule; OrganizationsModule; VenuesModule; LayoutsModule; EventsModule; EventStandsModule; PricingModule; ExhibitorsModule; ReservationsModule; PaymentsModule; NotificationsModule; FilesModule; AnalyticsModule; AuditModule; PublicCatalogModule.
+
+### 2.2 Multi-tenancy
+Pool PostgreSQL compartido y tablas compartidas con `tenant_id`; RLS habilitado en tablas privadas, `SET LOCAL app.tenant_id = ...` únicamente dentro de transacciones de tenant; prohibir acceso de la aplicación con rol BYPASSRLS; el rol de migración queda separado. Índices únicos incluyen tenant cuando aplique. El request host/subdominio solo sirve para resolver tenant permitido, nunca como evidencia de autorización. Las rutas públicas consultan vistas/campos expresamente publicados.
+
+## 3. Modelo de dominio
+### 3.1 Entidades
+- tenants(id, slug, name, status, plan_id)
+- users(id, email, password_hash, status)
+- memberships(id, tenant_id, user_id, role, status)
+- venues(id, tenant_id, type FIXED|TEMPORARY, name, address, timezone, width_m, height_m)
+- layout_templates(id, tenant_id, venue_id nullable, name)
+- layout_versions(id, tenant_id, template_id, version, width_m, height_m, status DRAFT|PUBLISHED|ARCHIVED, published_at)
+- layout_objects(id, tenant_id, layout_version_id, kind STAND|AISLE|ENTRY|EXIT|UTILITY|OBSTACLE|EMERGENCY, code, geometry, metadata)
+- events(id, tenant_id, venue_id, layout_version_id, name, slug, starts_at, ends_at, sales_open_at, sales_close_at, status DRAFT|PUBLISHED|ACTIVE|CLOSED|CANCELLED)
+- event_stands(id, tenant_id, event_id, layout_object_id, code, status AVAILABLE|BLOCKED|ASSIGNED|DISABLED, price_cents, currency, services)
+- exhibitors(id, tenant_id, legal_name, trade_name, tax_id nullable, category_id, description, logo_key, public_contact_opt_in)
+- reservations(id, tenant_id, event_stand_id, exhibitor_id, user_id, status, hold_expires_at, price_cents, currency, terms_version, idempotency_key, created_at)
+- payment_attempts(id, tenant_id, reservation_id, provider, provider_preference_id, provider_payment_id, status, amount_cents, currency, external_reference, checkout_url, created_at)
+- payment_webhook_inbox(id, provider, provider_event_id, signature_verified, payload_hash, processed_at, status)
+- event_pricing_rules(id, tenant_id, event_id, rule_type, category, priority, config)
+- documents(id, tenant_id, exhibitor_id, type, object_key, review_status)
+- audit_logs(id, tenant_id, actor_id, action, entity_type, entity_id, before_json, after_json, created_at)
+
+### 3.2 Invariantes
+INV-01: Reserva activa única por event_stand. `HELD`, `PAYMENT_PENDING`, `CONFIRMED`, `REFUND_PENDING` requieren exclusividad; adaptar cancelación/expiración transaccional.
+INV-02: Reserva tiene mismo tenant que stand, expositor y usuario autorizado; validar con FK compuestas o triggers, además de guards/RLS.
+INV-03: Event referencia un layout publicado e inmutable. EventStand referencia un objeto STAND de ese layout.
+INV-04: Layout objeto geométrico es válido, superficie >0; dentro de límites del predio; dos stands no se superponen con área > epsilon m²; compartir borde es válido.
+INV-05: El backend fija amount/currency desde event_stand/pricing snapshot. Nunca aceptar importes desde cliente.
+INV-06: Cambios postpublicación requieren nueva versión y proceso de migración consciente de reservas existentes.
+INV-07: pagos aprobados nunca se pierden: ante una aprobación tardía se crea incidencia de conciliación/reembolso sin adjudicar por error.
+INV-08: la información fiscal y privada de expositores no aparece en el directorio público sin autorización.
+
+### 3.3 DDL núcleo ilustrativo
+```sql
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE event_stands (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL,
+ event_id uuid NOT NULL,
+ layout_object_id uuid NOT NULL,
+ code text NOT NULL,
+ status text NOT NULL CHECK (status IN ('AVAILABLE','BLOCKED','ASSIGNED','DISABLED')),
+ price_cents bigint NOT NULL CHECK (price_cents >= 0),
+ currency char(3) NOT NULL DEFAULT 'ARS',
+ UNIQUE (tenant_id, event_id, code),
+ UNIQUE (tenant_id, id)
+);
+CREATE TABLE reservations (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL,
+ event_stand_id uuid NOT NULL,
+ exhibitor_id uuid NOT NULL,
+ user_id uuid NOT NULL,
+ status text NOT NULL CHECK (status IN ('HELD','PAYMENT_PENDING','CONFIRMED','EXPIRED','CANCELLED','REFUND_PENDING','REFUNDED')),
+ hold_expires_at timestamptz,
+ price_cents bigint NOT NULL CHECK (price_cents >= 0),
+ currency char(3) NOT NULL,
+ idempotency_key text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY (tenant_id,event_stand_id) REFERENCES event_stands(tenant_id,id),
+ UNIQUE (tenant_id, idempotency_key)
+);
+CREATE UNIQUE INDEX uq_one_active_reservation_per_event_stand
+ ON reservations(event_stand_id)
+ WHERE status IN ('HELD','PAYMENT_PENDING','CONFIRMED','REFUND_PENDING');
+CREATE TABLE layout_objects (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL,
+ layout_version_id uuid NOT NULL,
+ kind text NOT NULL,
+ code text,
+ geometry geometry(Polygon,0) NOT NULL,
+ metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+ CHECK (ST_IsValid(geometry) AND ST_Area(geometry) > 0)
+);
+CREATE INDEX ix_layout_geom ON layout_objects USING gist (geometry);
+```
+Este DDL es un fragmento ilustrativo: las migraciones completas añadirán FKs compuestas faltantes, RLS, restricciones de no-solapamiento, índices de consultas, timestamps y auditoría. `geometry(...,0)` usa plano local adimensional interpretado contractualmente en metros; no usar SRID 4326 con ST_Area para este caso.
+
+### 3.4 Solapamiento de stands
+```sql
+SELECT a.id, b.id
+FROM layout_objects a
+JOIN layout_objects b
+  ON a.layout_version_id=b.layout_version_id AND a.id<b.id
+WHERE a.kind='STAND' AND b.kind='STAND'
+  AND ST_Intersects(a.geometry,b.geometry)
+  AND ST_Area(ST_Intersection(a.geometry,b.geometry)) > 0.0001;
+```
+Validar también límites (`ST_CoveredBy`) y espacios reservados para circulación. El editor debe ofrecer snap/grid (0.25m/0.5m), zoom, pan, undo/redo, alineación, códigos, rotación, polígonos, accesos, pasillos, áreas no vendibles y exportación PNG/PDF (exportación como evolución si excede MVP).
+
+## 4. Historias y reglas funcionales
+### 4.1 Organizador
+Como organizador puedo crear una organización, registrar predio, diseñar plantilla, publicar una versión del plano, generar un evento, cargar precios y activar venta. No puedo publicar geometrías inválidas o espacios sin tarifa/estado.
+### 4.2 Expositor
+Como feriante puedo filtrar stands por metros, superficie, precio, servicios, sector y disponibilidad; abrir ficha y reservar; gestionar perfil comercial; pagar con Mercado Pago y recibir constancia.
+### 4.3 Visitante
+Como visitante puedo abrir la página del evento, ver el mapa navegable y conocer marcas, categorías y catálogo básico sin acceder a información privada.
+### 4.4 Tarifas
+Precio fijo por stand para MVP; snapshot del precio al reservar. Preparar esquema para tarifas por m², ubicación/cercanía a accesos, servicios extras, descuentos promocionales, señas y tramos de preventa en iteraciones posteriores.
+### 4.5 Estados y transición
+Evento DRAFT→PUBLISHED→ACTIVE→CLOSED, CANCELLED desde estados permitidos. Layout DRAFT→PUBLISHED→ARCHIVED; no editar publicado. Reserva HELD→PAYMENT_PENDING→CONFIRMED, o EXPIRED/CANCELLED; confirmado→REFUND_PENDING→REFUNDED según política. Pago siempre se reconcilia separadamente.
+
+## 5. Contratos API REST v1
+Autenticación de panel `Authorization: Bearer <token>` (o sesión HttpOnly con CSRF según decisión de implementación), rol y tenant verificados. Recursos públicos explícitos sin credenciales. Errores `application/problem+json` con `type,title,status,detail,code,traceId`.
+
+| Método | Ruta | Rol | Propósito |
+|---|---|---|---|
+| POST | /api/v1/auth/login | público | Login |
+| GET | /api/v1/me | usuario | Perfil y memberships |
+| POST | /api/v1/tenants | superadmin | Crear organización |
+| GET/POST | /api/v1/venues | owner/operator | Listar/crear predios |
+| POST | /api/v1/layout-templates | operator | Plantilla nueva |
+| POST | /api/v1/layout-templates/:id/versions | operator | Clonar nueva versión editable |
+| PUT | /api/v1/layout-versions/:id/objects/:objectId | operator | Actualizar geometría y metadatos |
+| POST | /api/v1/layout-versions/:id/publish | owner | Validar y publicar versión |
+| POST/GET | /api/v1/events | operator | Crear/listar eventos |
+| POST | /api/v1/events/:id/publish | owner | Publicar evento |
+| GET/PATCH | /api/v1/events/:id/stands | operator | Inventario y tarifas |
+| GET | /api/v1/public/events/:slug | público | Evento público |
+| GET | /api/v1/public/events/:slug/map | público | GeoJSON y disponibilidad |
+| GET | /api/v1/public/events/:slug/exhibitors | público | Directorio público |
+| POST | /api/v1/reservations | expositor | Crear hold idempotente |
+| POST | /api/v1/reservations/:id/checkout | propietario de reserva | Crear checkout |
+| GET | /api/v1/reservations/:id | propietario/admin | Estado de reserva |
+| POST | /api/v1/reservations/:id/cancel | propietario/admin | Cancelar según política |
+| POST | /api/v1/webhooks/mercadopago | proveedor | Recibir eventos firmados |
+| GET | /api/v1/events/:id/metrics | operator | KPIs |
+| GET | /api/v1/events/:id/reservations/export | operator | Exportación CSV |
+| GET | /api/v1/events/:id/stand-events | público | SSE disponibilidad saneada |
+
+### 5.1 Ejemplo POST /reservations
+```json
+{
+  "eventStandId": "8a530d14-5c9a-45ab-91af-7d8ab2c3e940",
+  "exhibitorId": "ba983768-74f0-4f48-9d60-51696a9d22a7",
+  "termsVersion": "2026-10-01"
+}
+```
+Header requerido `Idempotency-Key: <uuid>`. Respuesta 201:
+```json
+{
+  "id": "5a4a51b9-f0a6-49f4-9c59-7219abf1b6f0",
+  "status": "HELD",
+  "holdExpiresAt": "2026-10-27T16:15:00Z",
+  "amount": {"currency":"ARS","valueCents":4500000},
+  "stand": {"code":"A01","areaM2":9}
+}
+```
+409 `STAND_UNAVAILABLE`; 422 `EVENT_SALES_CLOSED`; 403 `EXHIBITOR_NOT_AUTHORIZED`; 401 autenticación requerida; 429 rate limit.
+
+### 5.2 Ejemplo checkout
+`POST /api/v1/reservations/{id}/checkout` con `Idempotency-Key` devuelve `{ "paymentAttemptId":"...", "checkoutUrl":"https://...", "status":"PENDING" }`. No guardar URL del ejemplo ni hardcodear links. Backend envía preference con `external_reference=reservationId/paymentAttemptId` y monto snapshoteado. Retorno del navegador jamás confirma reserva.
+
+### 5.3 Ejemplo GeoJSON mapa
+`GET /api/v1/public/events/{slug}/map`:
+```json
+{
+ "layoutVersion":3,
+ "units":"m",
+ "bounds":{"width":100,"height":60},
+ "features":[{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[10,10],[13,10],[13,13],[10,13],[10,10]]]},"properties":{"code":"A01","standId":"...","areaM2":9,"status":"AVAILABLE","price":{"currency":"ARS","valueCents":4500000}}}]
+}
+```
+Usar `Cache-Control: no-store` o TTL muy corto para disponibilidad; refetch antes de checkout. No publicar geometría de seguridad sensible ni contactos no autorizados.
+
+## 6. Algoritmo de reservas y concurrencia
+1. Validar tenant, derechos sobre expositor, ventas abiertas y consistencia de versión.
+2. Dentro de transacción: obtener `event_stands` por tenant/id con `SELECT ... FOR UPDATE`.
+3. Expirar atómicamente el hold vencido cuando no haya cobro en estado incierto; detectar reserva activa según índice parcial.
+4. Guardar snapshot de precio/reglas, términos y expiración usando reloj servidor; insertar reserva; commit.
+5. En otra operación idempotente, crear payment attempt, preference Mercado Pago y registrar external reference. Si provider falla, mantener hold y permitir reintento dentro del plazo.
+6. Job de expiración: verificar intento de pago pendiente con ventana de reconciliación; no liberar a ciegas cuando el proveedor no responde.
+7. Webhook: autenticar firma, deduplicar inbox, consultar pago por API de Mercado Pago; cotejar referencia, merchant, monto y moneda. Confirmar en transacción bloqueando stand/reserva; registrar cambios y emitir evento.
+8. Si pago llega tarde y stand fue adjudicado, registrar incidencia `LATE_PAYMENT_CONFLICT`, alertar y gestionar devolución sin doble adjudicación.
+9. Auditoría de todas las transiciones; idempotencia con clave de request + identificadores provider + estados monotónicos.
+
+## 7. Mercado Pago Argentina
+- MVP: cuenta vendedora del organizador (configurada e identificada) y Checkout Pro; definir integración por organizador mediante mecanismo autorizado, sin almacenar secretos en claro.
+- Nunca usar credenciales del usuario en el navegador ni aceptar precio enviado por frontend.
+- Webhooks HTTPS: verificar `x-signature` según especificación oficial vigente (incluyendo request id/timestamp según producto), validar integridad/frescura, persistir inbox y responder rápidamente; procesamiento idempotente asíncrono.
+- Verificar payload con consulta server-to-server antes de aprobar reserva.
+- Incluir casos de pending, reject, chargeback, partial/full refunds, pago posterior a vencimiento.
+- Facturación ARCA no incluida en MVP: exportar información y dejar interfaz `InvoicingProvider` para futuro con asesoramiento contable/fiscal.
+- No asumir que checkout marketplace/split o comisiones están disponibles; validar programa y condiciones comerciales antes de comercializarlo.
+- Fuentes: https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-preferences/overview ; https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-orders/notifications
+
+## 8. UX y pantallas
+P01 Login/recuperación; P02 Selección de organización; P03 Dashboard; P04 Predios; P05 Crear/editar plantilla; P06 Editor canvas con propiedades, regla, grid, snapping, zoom, versión, validaciones; P07 Eventos wizard; P08 Configuración tarifas; P09 Inventario de stands en mapa/lista; P10 Reservas/conciliación; P11 Feriantes/verificación; P12 Configuración Mercado Pago; P13 Reportes; P14 Catálogo público; P15 Mapa público responsive; P16 Detalle stand y expositor; P17 Datos feriante; P18 Resumen reserva/condiciones; P19 Retorno de checkout pendiente/confirmado/rechazado; P20 Mis reservas y comprobantes; P21 Administración de miembros; P22 Auditoría.
+
+### UX criterios
+- Colores no son único medio de indicar disponibilidad: iconos, etiquetas y leyenda textual.
+- Mapa navegable con teclado; lista alternativa accesible y sincronizada con selección; tooltips no esenciales para operar.
+- En móvil: bottom sheet para ficha de stand, gestos pan/pinch, mínimo tamaño de toque apropiado, selector de lista.
+- Precios en ARS con IVA/impuestos/servicios explicitados según política comercial; costo total antes de redirección.
+- El portal puede mostrar ocupante y rubro sin compartir email/teléfono privado salvo consentimiento.
+
+## 9. Seguridad, privacidad y operación
+- OWASP ASVS nivel 2 como objetivo; rate limits, validación inputs, protección de cabeceras y SSRF, CORS limitado, CSRF si cookies.
+- Argon2id para contraseñas locales o proveedor OIDC; MFA para admins recomendado.
+- Política de rotación, almacenamiento cifrado KMS/vault para tokens Mercado Pago; nunca secretos en logs, imágenes, Compose ni Git.
+- Aislamiento tenant: RBAC en servicios y políticas RLS; 403/404 uniforme para otros tenants.
+- Uploads: allowlist MIME/tamaño, comprobación de contenido y almacenamiento privado.
+- Ley argentina 25.326 y obligaciones aplicables: evaluar con asesoría jurídica; política de privacidad, consentimiento, retención, eliminación y derechos del titular.
+- Backups cifrados diarios, PITR según infraestructura, ejercicio restauración mensual; RPO meta <=24h (objetivo inicial), RTO meta <=4h (a validar).
+- Disponibilidad objetivo piloto >=99.5%; métricas de error, latencia p95 GET mapa <=500ms con dataset objetivo de 500 stands, 10 req/s, bajo entorno de prueba definido.
+- Pruebas de seguridad y carga antes de salida.
+
+## 10. Backlog por épicas (estimación SP)
+| Épica | Historias esenciales | SP aproximados |
+|---|---|---:|
+| EP01 Core SaaS | Tenant, membresías, roles, auth, auditoría | 21 |
+| EP02 Predios | CRUD, ubicación, sectores, medidas | 13 |
+| EP03 Editor planos | Canvas, geometría, grid, validación, versionado | 40 |
+| EP04 Eventos y tarifas | Wizard, calendario, vincular plano, precios | 21 |
+| EP05 Feriantes | Registro, perfil, rubro, documentos | 13 |
+| EP06 Inventario/reservas | Estados, hold, locking, expiración, idempotencia | 34 |
+| EP07 Mercado Pago | Preferencias, Webhooks, conciliación, refund | 34 |
+| EP08 Portal público | Directorio, mapa, ficha, responsive, accesibilidad | 21 |
+| EP09 Reportes | Ocupación, GMV, exportaciones | 13 |
+| EP10 Plataforma | Docker, CI/CD, migraciones, observabilidad, backups, QA | 34 |
+| **Total** | **Estimación inicial sujeta a refinamiento** | **244** |
+
+## 11. Roadmap
+Sprint 0 (1 semana): ADRs, UX, repo, CI, entorno, diseño RLS.
+S1-S2 (4 semanas): core tenants, auth, venues, editor base.
+S3-S4 (4 semanas): geometría robusta, versionado, evento, tarifas, expositor.
+S5-S6 (4 semanas): reservas concurrentes, Mercado Pago Sandbox/Webhooks, conciliación.
+S7 (2 semanas): portal público, reportes, pruebas accesibilidad.
+S8 (2 semanas): hardening, carga, pilotaje, despliegue.
+Total orientativo: 17 semanas incluyendo Sprint 0, con equipo de 3-5 personas; ajustar según velocidad real, integración MP y complejidad geométrica. No equivale a compromiso contractual.
+
+## 12. Criterios de aceptación E2E y NFR
+AC-01 Un editor crea stand 3x4 m y persiste 12 m² al cambiar zoom y dispositivo.
+AC-02 Dos stands con lados compartidos se publican; superposición interior de 0.5 m² bloquea publicación.
+AC-03 Una plantilla se usa en dos eventos; reserva en el evento A no ocupa stand del B.
+AC-04 Cambiar plantilla crea versión nueva; A sigue leyendo geometría previa.
+AC-05 100 requests simultáneos para último stand generan exactamente un hold activo y 99 resultados sin doble asignación.
+AC-06 Un intento reintentado con misma Idempotency-Key no genera reserva adicional.
+AC-07 Dos Webhooks idénticos generan un único efecto de confirmación.
+AC-08 Retorno visual `success` sin pago validado NO confirma reserva.
+AC-09 Pago tardío tras reasignación no confirma segundo expositor; registra incidencia.
+AC-10 Expositor tenant B nunca accede a reserva ni documentos del tenant A ni modificando UUID/host.
+AC-11 Perfil expositor privado no aparece en mapa público sin autorización.
+AC-12 Mapa público usable móvil, alternativa tabla/lista y navegación teclado.
+AC-13 Reporte distingue GMV aprobado, intentos pendientes, cancelaciones y potencial ingreso SaaS.
+AC-14 Token MP ausente produce error configurable y no bloquea exploración de mapa.
+AC-15 La caducidad de hold se determina por servidor y tareas reintentables.
+AC-16 Backups restaurados se verifican en entorno separado.
+
+## 13. Contratos de infraestructura y Docker
+Estructura `apps/api` (NestJS), `apps/web` (Angular), `infra/docker-compose.yml`, `.env.example`, `package.json` monorepo. Compose de desarrollo debe iniciar PostgreSQL/PostGIS, Redis, MinIO, API y Web con servicios y volúmenes persistentes. Prohibir contraseñas de ejemplo para producción.
+
+## 14. Checklist de Definition of Done
+- Tests unitarios de dominio + integración DB + E2E del flujo completo.
+- Índices, migraciones `up/down` probadas, RLS y pruebas de aislamiento.
+- Swagger publicado en entorno de desarrollo y versionado.
+- Cobertura de estados de pago y corrida de Webhooks duplicados/desordenados.
+- Lighthouse/accesibilidad revisados; mapa y lista equivalentes.
+- Logs, tracing, métricas, alertas y rollback del release.
+- Manual operador, manual feriante y política de soporte.
+
+## 15. Riesgos y decisiones pendientes
+R1 integración de cobro por cuenta de cada organizador: validar mecanismo legal/técnico y contratos. R2 operación de pago tardío y reservas inconsistentes: conciliación y estados intermedios. R3 plano complejo: determinar importación SVG/DXF y polígonos en futuro. R4 datos personales y fiscales: privacidad argentina/ARCA. R5 eventos en distintas sedes y fechas: reservar por `EventStand`, nunca por plantilla. R6 UI interactiva bajo conexiones lentas: fallback lista; SSE con reconexión.
+
+## 16. Fuentes oficiales consultadas
+- Mercado Pago Preferences: https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-preferences/overview
+- Mercado Pago Checkout Pro API: https://www.mercadopago.com.ar/developers/es/reference/online-payments/checkout-pro-preferences/overview
+- Mercado Pago Webhooks: https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-orders/notifications
+- PostGIS ST_IsValid: https://postgis.net/docs/ST_IsValid.html
+- PostGIS ST_Intersects: https://postgis.net/docs/en/ST_Intersects.html
