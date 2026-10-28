@@ -41,7 +41,7 @@ AC-PRD-04: antes de pagar se muestra precio final, condiciones, política de can
 - NestJS: monolito modular, controladores REST `/api/v1`, DTOs validados, Swagger/OpenAPI; SSE para actualizaciones de disponibilidad.
 - PostgreSQL + PostGIS: persistencia relacional, geometría planar local (`geometry(Polygon,0)`), RLS como defensa adicional, constraints e índices espaciales.
 - Redis + BullMQ: jobs de reconciliación, notificaciones y vencimientos; el lock/constraint DB sigue siendo fuente de verdad.
-- MinIO/S3: imágenes de eventos, marcas, planos importados, documentos; URLs firmadas, escaneo/validación de uploads.
+- S3 compatible: imágenes de eventos, marcas, planos importados y documentos; LocalStack emula S3 en desarrollo; URLs firmadas y validación de uploads.
 - Mercado Pago: backend preferences Checkout Pro, webhook con validación y consulta de estado remota.
 - Observabilidad: health endpoints, métricas, logs JSON con correlation IDs, tracing; Sentry u OpenTelemetry opcionales.
 - Despliegue: reverse proxy HTTPS, CI/CD con migraciones, backups y restauración probada.
@@ -274,6 +274,110 @@ P01 Login/recuperación; P02 Selección de organización; P03 Dashboard; P04 Pre
 | EP10 Plataforma | Docker, CI/CD, migraciones, observabilidad, backups, QA | 34 |
 | **Total** | **Estimación inicial sujeta a refinamiento** | **244** |
 
+### 10.1 Plan de ejecución y subtareas
+
+El desarrollo se ejecuta por incrementos verticales. Cada tarea conserva un identificador estable, estado, dependencias, criterios de aceptación y evidencia. Estados permitidos: `PENDING`, `IN_PROGRESS`, `BLOCKED` y `VERIFIED`. Una tarea solo puede pasar a `VERIFIED` cuando sus criterios estén comprobados y la evidencia quede registrada sin secretos.
+
+#### Sprint 0A — tareas independientes
+
+Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio terminada. Los contratos exactos entre ellas están definidos en el plan de implementación de Sprint 0A.
+
+##### FND-01 — Decisiones arquitectónicas y trazabilidad
+
+- **Estado:** `PENDING`
+- **Dependencias:** ninguna
+- **Entrega:** ADRs para monorepo/ejecución, configuración/autenticación y persistencia/PostGIS; este tablero permanece alineado con el diseño aprobado.
+- **Aceptación:** las decisiones no contradicen el stack existente ni presentan como implementadas capacidades aún pendientes.
+- **Evidencia requerida:** revisión documental, enlaces internos válidos y `git diff --check`.
+- [ ] Crear ADR del monolito modular con npm workspaces.
+- [ ] Crear ADR del contrato de configuración y JWT con refresh token HttpOnly.
+- [ ] Crear ADR de Drizzle ORM con SQL explícito para PostGIS, RLS y constraints críticos.
+- [ ] Corregir referencias de infraestructura que no coincidan con las rutas reales.
+
+##### FND-02 — Contrato de entorno y validación
+
+- **Estado:** `PENDING`
+- **Dependencias:** ninguna
+- **Entrega:** `.env.example` completo y seguro, `.env` local coherente y validación tipada al iniciar la API.
+- **Aceptación:** variables requeridas inválidas detienen el arranque con mensajes saneados; variables futuras opcionales no bloquean flujos ajenos; ningún secreto se versiona ni aparece en salidas.
+- **Evidencia requerida:** pruebas unitarias de configuración, comprobación de claves sin valores y revisión de archivos rastreados.
+- [ ] Clasificar variables requeridas, opcionales, predeterminadas y reservadas.
+- [ ] Actualizar `.env.example` con documentación y marcadores inequívocos.
+- [ ] Completar `.env` local preservando valores existentes y generando únicamente secretos faltantes.
+- [ ] Implementar parser, tipado y validación de configuración.
+- [ ] Probar valores válidos, ausentes, malformados e incompatibles con producción.
+
+##### FND-03 — Contenedores y Compose reproducibles
+
+- **Estado:** `PENDING`
+- **Dependencias:** ninguna
+- **Entrega:** Dockerfiles de desarrollo, contexto raíz compatible con el lockfile único, servicios persistentes e inicialización idempotente del bucket MinIO.
+- **Aceptación:** Compose renderiza y levanta PostgreSQL/PostGIS, Redis, MinIO, inicializador S3, API y Web; puertos host ligados a `127.0.0.1`; servicios sin reinicios inesperados.
+- **Evidencia requerida:** `docker compose config --quiet`, build, estado/health de contenedores e inspección de bindings sin imprimir secretos.
+- [ ] Crear `.dockerignore` y Dockerfiles de desarrollo para API y Web.
+- [ ] Ajustar los contextos de build al lockfile raíz del workspace.
+- [ ] Agregar inicialización idempotente del bucket local.
+- [ ] Configurar healthchecks, dependencias y volúmenes persistentes.
+- [ ] Verificar bindings loopback y reinicios.
+
+#### Sprint 0A — tareas dependientes
+
+##### FND-04 — Base operativa de la API
+
+- **Estado:** `PENDING`
+- **Dependencias:** `FND-02`, `FND-03`
+- **Entrega:** prefijo `/api/v1`, CORS validado, correlation ID, errores `application/problem+json`, OpenAPI de desarrollo y health/readiness reales.
+- **Aceptación:** liveness no depende de servicios externos; readiness comprueba PostgreSQL, Redis y acceso al bucket S3; los errores no filtran secretos.
+- **Evidencia requerida:** pruebas unitarias/E2E y requests HTTP contra el stack local.
+- [ ] Configurar bootstrap, prefijo versionado y allowlist CORS.
+- [ ] Implementar propagación/generación de correlation ID.
+- [ ] Implementar filtro global de problemas HTTP.
+- [ ] Implementar liveness y readiness con chequeos diferenciados.
+- [ ] Habilitar OpenAPI únicamente mediante configuración explícita de desarrollo.
+
+##### FND-05 — Conectividad Web–API
+
+- **Estado:** `PENDING`
+- **Dependencias:** `FND-03`, `FND-04`
+- **Entrega:** el frontend consume la API por una ruta relativa estable y usa proxy configurable en desarrollo, sin URLs dependientes del entorno hardcodeadas en componentes.
+- **Aceptación:** Web alcanza liveness a través de su origen local tanto con npm como con Compose.
+- **Evidencia requerida:** prueba del cliente, build Angular y request HTTP atravesando el proxy.
+- [ ] Definir cliente HTTP y base relativa `/api/v1`.
+- [ ] Configurar proxy de desarrollo mediante variable de entorno con default local seguro.
+- [ ] Agregar una comprobación visible mínima del estado API sin diseñar todavía el producto final.
+- [ ] Probar éxito y fallo de conectividad.
+
+##### FND-06 — Verificación y documentación de Sprint 0A
+
+- **Estado:** `PENDING`
+- **Dependencias:** `FND-01`, `FND-02`, `FND-03`, `FND-04`, `FND-05`
+- **Entrega:** instrucciones locales consistentes, verificaciones completas y evidencia asentada en este documento.
+- **Aceptación:** lint, tests, builds y validación Compose pasan; README refleja npm workspaces y rutas reales; no hay secretos ni cambios ajenos.
+- **Evidencia requerida:** comandos, resultados y fecha registrados al cerrar la tarea.
+- [ ] Actualizar README y eliminar contradicciones operativas con Nx/pnpm.
+- [ ] Ejecutar lint, pruebas unitarias, E2E relevantes y builds.
+- [ ] Validar Compose y el stack en ejecución.
+- [ ] Auditar diff, archivos rastreados y posibles secretos.
+- [ ] Registrar evidencia y cambiar estados solo para tareas realmente verificadas.
+
+#### Dependencias posteriores al Sprint 0A
+
+| Tarea | Dependencias | Entrega principal | Estado |
+|---|---|---|---|
+| `CORE-01` Base de datos y migraciones | `FND-06` | Drizzle, migraciones PostgreSQL/PostGIS y roles separados | `PENDING` |
+| `CORE-02` Usuarios, sesiones y membresías | `CORE-01` | login, refresh rotativo HttpOnly, logout y membresías | `PENDING` |
+| `CORE-03` Aislamiento y auditoría | `CORE-02` | autorización tenant, RLS y auditoría | `PENDING` |
+| `VEN-01` Predios | `CORE-03` | CRUD de predios fijos/temporales | `PENDING` |
+| `LAY-01` Layouts versionados | `VEN-01` | geometría, publicación e inmutabilidad | `PENDING` |
+| `EVT-01` Eventos, stands y tarifas | `LAY-01` | evento sobre versión publicada e inventario valorizado | `PENDING` |
+| `EXH-01` Expositores | `CORE-03` | perfil privado/público y consentimiento | `PENDING` |
+| `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01` | holds, locking e idempotencia | `PENDING` |
+| `PAY-01` Mercado Pago | `RES-01` | checkout, Webhooks y conciliación | `PENDING` |
+| `PUB-01` Portal público | `EVT-01`, `EXH-01`, `RES-01` | catálogo, mapa, disponibilidad y accesibilidad | `PENDING` |
+| `REP-01` Reportes | `PAY-01` | ocupación, GMV y exportaciones CSV | `PENDING` |
+
+Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de RLS permanecen pendientes y deberán incorporarse como subtareas verificables antes de declarar completo el Sprint 0 general. Sprint 0A no las reemplaza.
+
 ## 11. Roadmap
 Sprint 0 (1 semana): ADRs, UX, repo, CI, entorno, diseño RLS.
 S1-S2 (4 semanas): core tenants, auth, venues, editor base.
@@ -302,7 +406,7 @@ AC-15 La caducidad de hold se determina por servidor y tareas reintentables.
 AC-16 Backups restaurados se verifican en entorno separado.
 
 ## 13. Contratos de infraestructura y Docker
-Estructura `apps/api` (NestJS), `apps/web` (Angular), `infra/docker-compose.yml`, `.env.example`, `package.json` monorepo. Compose de desarrollo debe iniciar PostgreSQL/PostGIS, Redis, MinIO, API y Web con servicios y volúmenes persistentes. Prohibir contraseñas de ejemplo para producción.
+Estructura `apps/api` (NestJS), `apps/web` (Angular), `docker-compose.yml`, `.env.example`, `package.json` monorepo. Compose de desarrollo debe iniciar PostgreSQL/PostGIS, Redis, LocalStack limitado a S3, API y Web con servicios y volúmenes persistentes. Prohibir contraseñas de ejemplo para producción.
 
 ### 13.1 Configuración por entorno
 `.env.example` es la plantilla versionada para desarrollo local; `.env` nunca se versiona. Los secretos de ejemplo son marcadores que deben reemplazarse, no credenciales utilizables. `POSTGRES_PASSWORD` debe ser hexadecimal seguro para que la URI PostgreSQL generada por Compose no requiera escape de caracteres. Compose sustituye los endpoints `localhost` de `DATABASE_URL`, `REDIS_URL` y `S3_ENDPOINT` por nombres de servicio dentro de la red Docker.
@@ -312,7 +416,7 @@ Estructura `apps/api` (NestJS), `apps/web` (Angular), `infra/docker-compose.yml`
 | `NODE_ENV`, `PORT`, `WEB_PORT`, `CORS_ORIGIN` | Configuración local de API/web; CORS solo permite el origen del frontend local. |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL` | PostgreSQL/PostGIS local; las credenciales se generan localmente y nunca se comparten. |
 | `REDIS_URL` | Redis local para BullMQ, jobs y cache. |
-| `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE` | Almacenamiento local compatible con S3; en desarrollo, las credenciales S3 deben coincidir con las credenciales root de MinIO. En producción se requieren credenciales de mínimo privilegio. |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE` | LocalStack emula S3 en desarrollo con credenciales públicas de simulación; en producción se requiere un proveedor S3 y credenciales de mínimo privilegio administradas fuera de Git. |
 | `MP_ENVIRONMENT`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | Mercado Pago usa `sandbox` localmente. Las credenciales pueden quedar vacías para flujos que no son de pago; pagos deben fallar con error explícito y configurable hasta configurarlas. |
 | `JWT_SECRET` | Marcador opcional hasta decidir en un ADR entre JWT y sesión HttpOnly; no se debe consumir antes de esa decisión. |
 | `SENTRY_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT` | Integraciones opcionales de observabilidad; pueden quedar vacías localmente. |

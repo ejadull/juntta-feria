@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.superpowers
+.worktrees
+node_modules
+**/node_modules
+dist
+**/dist
+coverage
+**/coverage
+*.log
+docs
+
