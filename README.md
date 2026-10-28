@@ -46,13 +46,22 @@ Construir una plataforma web que permita administrar ferias permanentes e itiner
 
 ## Desarrollo local
 
-La especificación es el entregable inicial. Para iniciar el entorno integral, implementar `apps/api` y `apps/web`, los Dockerfiles de desarrollo y las migraciones. A continuación:
+La base de `apps/api` (NestJS + Fastify) y `apps/web` (Angular) ya está creada; todavía no incluye los módulos de negocio, migraciones ni Dockerfiles de desarrollo. Para instalar dependencias y ejecutar las aplicaciones de forma local:
 
 ```bash
 cp .env.example .env
 # Reemplazar los valores REPLACE_* con secretos locales únicos y completar
 # las credenciales sandbox de Mercado Pago solo si se probarán pagos.
 
+npm install
+npm run dev:api
+# En otra terminal:
+npm run dev:web
+```
+
+El entorno integral de Docker Compose requiere los Dockerfiles y servicios de aplicación pendientes:
+
+```bash
 docker compose config
 docker compose up --build -d
 ```
