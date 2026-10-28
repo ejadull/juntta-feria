@@ -304,6 +304,19 @@ AC-16 Backups restaurados se verifican en entorno separado.
 ## 13. Contratos de infraestructura y Docker
 Estructura `apps/api` (NestJS), `apps/web` (Angular), `infra/docker-compose.yml`, `.env.example`, `package.json` monorepo. Compose de desarrollo debe iniciar PostgreSQL/PostGIS, Redis, MinIO, API y Web con servicios y volúmenes persistentes. Prohibir contraseñas de ejemplo para producción.
 
+### 13.1 Configuración por entorno
+`.env.example` es la plantilla versionada para desarrollo local; `.env` nunca se versiona. Los secretos de ejemplo son marcadores que deben reemplazarse, no credenciales utilizables. `POSTGRES_PASSWORD` debe ser hexadecimal seguro para que la URI PostgreSQL generada por Compose no requiera escape de caracteres. Compose sustituye los endpoints `localhost` de `DATABASE_URL`, `REDIS_URL` y `S3_ENDPOINT` por nombres de servicio dentro de la red Docker.
+
+| Variables | Requisito y uso |
+|---|---|
+| `NODE_ENV`, `PORT`, `WEB_PORT`, `CORS_ORIGIN` | Configuración local de API/web; CORS solo permite el origen del frontend local. |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL` | PostgreSQL/PostGIS local; las credenciales se generan localmente y nunca se comparten. |
+| `REDIS_URL` | Redis local para BullMQ, jobs y cache. |
+| `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE` | Almacenamiento local compatible con S3; en desarrollo, las credenciales S3 deben coincidir con las credenciales root de MinIO. En producción se requieren credenciales de mínimo privilegio. |
+| `MP_ENVIRONMENT`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | Mercado Pago usa `sandbox` localmente. Las credenciales pueden quedar vacías para flujos que no son de pago; pagos deben fallar con error explícito y configurable hasta configurarlas. |
+| `JWT_SECRET` | Marcador opcional hasta decidir en un ADR entre JWT y sesión HttpOnly; no se debe consumir antes de esa decisión. |
+| `SENTRY_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT` | Integraciones opcionales de observabilidad; pueden quedar vacías localmente. |
+
 ## 14. Checklist de Definition of Done
 - Tests unitarios de dominio + integración DB + E2E del flujo completo.
 - Índices, migraciones `up/down` probadas, RLS y pruebas de aislamiento.
