@@ -1,3 +1,83 @@
-/* You can add global styles to this file, and also import other style files */
+/* Juntta Design System v1.0 — docs/design/juntta-design-system-v1.md (UX-01). */
 
 @import 'tailwindcss';
+
+/*
+ * Tokens: each --color-* becomes a CSS variable AND a Tailwind utility
+ * (bg-primary, text-text-muted, border-border…). Do not use raw palette colors in components.
+ * `static`: emit every variable even if no utility uses it yet (stand states are for P09/P15).
+ */
+@theme static {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Brand */
+  --color-primary: #055851;
+  --color-primary-hover: #03453f;
+  --color-secondary: #d94f80;
+  --color-secondary-strong: #ba446d; /* pink as text / with white text (4.5:1) */
+  --color-accent: #738711;
+  --color-accent-strong: #65760f; /* olive as text (4.5:1) */
+
+  /* Surfaces */
+  --color-background: #faf9f7;
+  --color-surface: #ffffff;
+  --color-surface-soft: #f5f1ef;
+
+  /* Typography and lines */
+  --color-text: #263532;
+  --color-text-muted: #65716e;
+  --color-border: #e2e8e5; /* decorative dividers only (1.24:1) */
+  --color-border-strong: #898c8b; /* inputs and controls (3:1) */
+
+  /* Operational stand states (P09/P15). Never color alone: label + icon/pattern too. */
+  --color-available: #22815c;
+  --color-reserved: #d69a32;
+  --color-reserved-stroke: #b5822a;
+  --color-occupied: #87938e;
+  --color-occupied-strong: #67706d;
+  --color-blocked: #eceeed; /* disabled look, always with the dashed stroke */
+  --color-blocked-stroke: #8a908e;
+  --color-selected: #326bb5; /* selection and keyboard focus */
+
+  /* Feedback */
+  --color-danger: #c44949; /* validation errors only — not a stand state */
+
+  /* Shape */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+}
+
+@layer base {
+  body {
+    @apply bg-background font-sans text-text antialiased;
+  }
+}
+
+/* Shared building blocks. */
+@layer components {
+  .card {
+    @apply rounded-lg border border-border bg-surface p-5;
+  }
+
+  .field {
+    @apply rounded-md border border-border-strong bg-surface px-2 py-1.5 text-sm text-text;
+    @apply focus-visible:border-selected focus-visible:outline-2 focus-visible:outline-selected/30;
+    @apply disabled:cursor-not-allowed disabled:bg-surface-soft disabled:text-text-muted;
+  }
+
+  .btn {
+    @apply inline-flex min-h-9 items-center gap-1 rounded-md border border-border-strong bg-surface px-3 text-sm font-medium text-text;
+    @apply hover:bg-surface-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-selected;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply border-primary bg-primary text-surface hover:border-primary-hover hover:bg-primary-hover;
+  }
+
+  .btn-danger {
+    @apply border-danger/40 text-danger hover:bg-danger/10;
+  }
+}
