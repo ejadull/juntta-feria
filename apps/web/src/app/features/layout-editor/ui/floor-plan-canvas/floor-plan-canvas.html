@@ -1,107 +1,159 @@
-<svg
-  #svg
-  class="plan"
-  [attr.viewBox]="viewBoxAttr()"
-  preserveAspectRatio="xMidYMid meet"
-  role="group"
-  tabindex="0"
-  [attr.aria-label]="ariaLabel()"
-  (keydown)="onKey($event)"
-  (pointerdown)="onBackgroundDown($event)"
-  (pointermove)="onPointerMove($event)"
-  (pointerup)="onPointerUp($event)"
-  (pointercancel)="onPointerUp($event)"
-  (wheel)="onWheel($event)"
->
-  <rect class="floor" x="0" y="0" [attr.width]="widthM()" [attr.height]="heightM()" />
-
-  @for (line of gridLines(); track line.key) {
-    <line
-      class="grid"
-      [class.major]="line.major"
-      [attr.x1]="line.x1"
-      [attr.y1]="line.y1"
-      [attr.x2]="line.x2"
-      [attr.y2]="line.y2"
-    />
-  }
-
-  @for (x of rulerX(); track x) {
-    <text class="ruler" [attr.x]="x" y="-0.8" text-anchor="middle">{{ x }} m</text>
-  }
-  @for (y of rulerY(); track y) {
-    <text class="ruler" x="-0.6" [attr.y]="y + 0.2" text-anchor="end">{{ y }}</text>
-  }
-
-  <rect class="wall" x="0" y="0" [attr.width]="widthM()" [attr.height]="heightM()" />
-
-  @for (s of shapes(); track s.id) {
-    <g
-      class="shape"
-      [attr.data-id]="s.id"
-      [attr.data-kind]="s.kind"
-      [class.selected]="s.id === selectedId()"
-      [class.invalid]="s.invalid"
-      [class.locked]="!s.rect"
-      [class.readonly]="readOnly()"
-      role="button"
-      tabindex="0"
-      [attr.aria-label]="s.aria"
-      (focus)="selectObject.emit(s.id)"
-      (pointerdown)="onShapeDown($event, s)"
-    >
-      <polygon [attr.points]="s.points" />
-      <text
-        class="label"
-        [attr.x]="s.center.x"
-        [attr.y]="s.center.y + (s.sublabel ? 0 : s.fontSize / 3)"
-        [attr.font-size]="s.fontSize"
-        text-anchor="middle"
-      >
-        {{ s.label }}
-      </text>
-      @if (s.sublabel) {
-        <text
-          class="sublabel"
-          [attr.x]="s.center.x"
-          [attr.y]="s.center.y + s.fontSize * 0.9"
-          [attr.font-size]="s.fontSize * 0.6"
-          text-anchor="middle"
-        >
-          {{ s.sublabel }}
-        </text>
-      }
-      @if (s.invalid) {
-        <text
-          class="warn"
-          [attr.x]="s.center.x"
-          [attr.y]="s.center.y - s.fontSize"
-          [attr.font-size]="s.fontSize * 0.8"
-          text-anchor="middle"
-          aria-hidden="true"
-        >
-          ⚠
-        </text>
-      }
-    </g>
-  }
-
-  @for (h of handles(); track h.handle) {
-    <rect
-      class="handle"
-      [attr.data-handle]="h.handle"
-      [attr.x]="h.x"
-      [attr.y]="h.y"
-      [attr.width]="h.size"
-      [attr.height]="h.size"
-      (pointerdown)="onHandleDown($event, h.handle)"
-    />
-  }
-</svg>
-
-<div class="zoom-controls">
-  <button type="button" aria-label="Acercar" (click)="zoomIn()">+</button>
-  <button type="button" aria-label="Alejar" (click)="zoomOut()">−</button>
-  <button type="button" aria-label="Restablecer vista" (click)="resetView()">⤢</button>
+<div class="plan-bar">
+  <ul class="legend" aria-label="Objetos del plano por tipo">
+    <li class="chip chip-total">
+      Todos <span class="count">{{ objects().length }}</span>
+    </li>
+    @for (item of legend(); track item.kind) {
+      <li class="chip">
+        <span class="swatch" [attr.data-swatch]="item.kind" aria-hidden="true"></span>
+        {{ item.label }} <span class="count">{{ item.count }}</span>
+      </li>
+    }
+  </ul>
+  <span class="venue">{{ venueLabel() }}</span>
+  <button
+    type="button"
+    class="chip chip-toggle"
+    [attr.aria-pressed]="showGrid()"
+    (click)="showGrid.set(!showGrid())"
+  >
+    <span aria-hidden="true">▦</span> Grilla
+  </button>
 </div>
-<div class="scale-badge" aria-live="polite">{{ zoomPercent() }}% · 1 cuadro = 1 m</div>
+
+<div class="plan-area">
+  <svg
+    #svg
+    class="plan"
+    [attr.viewBox]="viewBoxAttr()"
+    preserveAspectRatio="xMidYMid meet"
+    role="group"
+    tabindex="0"
+    [attr.aria-label]="ariaLabel()"
+    (keydown)="onKey($event)"
+    (pointerdown)="onBackgroundDown($event)"
+    (pointermove)="onPointerMove($event)"
+    (pointerup)="onPointerUp($event)"
+    (pointercancel)="onPointerUp($event)"
+    (wheel)="onWheel($event)"
+  >
+    <rect class="floor" x="0" y="0" [attr.width]="widthM()" [attr.height]="heightM()" />
+
+    @if (showGrid()) {
+      @for (line of gridLines(); track line.key) {
+        <line
+          class="grid"
+          [class.major]="line.major"
+          [attr.x1]="line.x1"
+          [attr.y1]="line.y1"
+          [attr.x2]="line.x2"
+          [attr.y2]="line.y2"
+        />
+      }
+    }
+
+    @for (x of rulerX(); track x) {
+      <text class="ruler" [attr.x]="x" y="-0.8" text-anchor="middle">{{ x }} m</text>
+    }
+    @for (y of rulerY(); track y) {
+      <text class="ruler" x="-0.6" [attr.y]="y + 0.2" text-anchor="end">{{ y }}</text>
+    }
+
+    <rect class="wall" x="0" y="0" [attr.width]="widthM()" [attr.height]="heightM()" />
+
+    @for (s of shapes(); track s.id) {
+      <g
+        class="shape"
+        [attr.data-id]="s.id"
+        [attr.data-kind]="s.kind"
+        [class.selected]="s.id === selectedId()"
+        [class.invalid]="s.invalid"
+        [class.locked]="!s.rect"
+        [class.readonly]="readOnly()"
+        role="button"
+        tabindex="0"
+        [attr.aria-label]="s.aria"
+        (focus)="selectObject.emit(s.id)"
+        (pointerdown)="onShapeDown($event, s)"
+      >
+        @if (s.rect; as r) {
+          <!-- Visual body (rounded); the polygon below stays the geometry and the hit area. -->
+          <rect
+            class="body"
+            [attr.x]="r.x"
+            [attr.y]="r.y"
+            [attr.width]="r.w"
+            [attr.height]="r.h"
+            [attr.rx]="s.radius"
+          />
+          @if (s.strip; as t) {
+            <rect
+              class="strip"
+              [attr.x]="t.x"
+              [attr.y]="t.y"
+              [attr.width]="t.w"
+              [attr.height]="t.h"
+              [attr.rx]="t.h / 2"
+            />
+          }
+        }
+        <polygon [class.free]="!s.rect" [attr.points]="s.points" />
+        <text
+          class="label"
+          [class.caps]="s.caps"
+          [attr.x]="s.center.x"
+          [attr.y]="s.center.y + (s.sublabel ? 0 : s.fontSize / 3)"
+          [attr.font-size]="s.fontSize"
+          text-anchor="middle"
+        >
+          {{ s.label }}
+        </text>
+        @if (s.sublabel) {
+          <text
+            class="sublabel"
+            [attr.x]="s.center.x"
+            [attr.y]="s.center.y + s.fontSize * 0.9"
+            [attr.font-size]="s.fontSize * 0.6"
+            text-anchor="middle"
+          >
+            {{ s.sublabel }}
+          </text>
+        }
+        @if (s.invalid) {
+          <text
+            class="warn"
+            [attr.x]="s.center.x"
+            [attr.y]="s.center.y - s.fontSize"
+            [attr.font-size]="s.fontSize * 0.8"
+            text-anchor="middle"
+            aria-hidden="true"
+          >
+            ⚠
+          </text>
+        }
+      </g>
+    }
+
+    @for (h of handles(); track h.handle) {
+      <rect
+        class="handle"
+        [attr.data-handle]="h.handle"
+        [attr.x]="h.x"
+        [attr.y]="h.y"
+        [attr.width]="h.size"
+        [attr.height]="h.size"
+        [attr.rx]="h.size / 4"
+        (pointerdown)="onHandleDown($event, h.handle)"
+      />
+    }
+  </svg>
+
+  <div class="zoom-controls">
+    <button type="button" aria-label="Acercar" (click)="zoomIn()">+</button>
+    <button type="button" aria-label="Alejar" (click)="zoomOut()">−</button>
+    <button type="button" aria-label="Restablecer vista" (click)="resetView()">⤢</button>
+  </div>
+  <div class="scale-badge" aria-live="polite">
+    {{ zoomPercent() }}% · 1 cuadro = 1 m · snap {{ snapLabel() }} m
+  </div>
+</div>

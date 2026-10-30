@@ -21,7 +21,7 @@ const STEPS: readonly SnapStep[] = [0.25, 0.5, 1];
     >
       <div class="flex items-center gap-1">
         <select
-          class="field"
+          class="field w-40"
           aria-label="Tipo a agregar"
           (change)="kindToAdd.set($any(valueOf($event)))"
         >

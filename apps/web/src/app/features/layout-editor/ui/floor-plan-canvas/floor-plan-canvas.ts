@@ -10,6 +10,7 @@ import {
   input,
   linkedSignal,
   output,
+  signal,
   untracked,
   viewChild,
 } from '@angular/core';
@@ -42,7 +43,20 @@ interface Shape {
   readonly center: Point;
   readonly fontSize: number;
   readonly invalid: boolean;
+  /** Visual only: rounded body radius and the stand's top strip (mockup "Stand Studio"). */
+  readonly radius: number;
+  readonly strip: Rect | null;
+  /** Non-stand labels are drawn as small caps ("PASILLO · 4 M"). */
+  readonly caps: boolean;
 }
+
+interface LegendItem {
+  readonly kind: LayoutObjectKind;
+  readonly label: string;
+  readonly count: number;
+}
+
+const AREA = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 });
 
 type Drag =
   | { kind: 'pan'; start: Point; startView: View; scale: number; moved: boolean }
@@ -67,20 +81,34 @@ function toShape(o: LayoutObjectDto, invalid: boolean): Shape {
     x: (Math.min(...xs) + Math.max(...xs)) / 2,
     y: (Math.min(...ys) + Math.max(...ys)) / 2,
   };
-  const name = o.kind === 'STAND' ? o.code?.trim() || 'Sin código' : KIND_LABEL[o.kind];
+  const isStand = o.kind === 'STAND';
+  const name = isStand ? o.code?.trim() || 'Sin código' : KIND_LABEL[o.kind];
   const size = rect ? `${fmt(rect.w)} por ${fmt(rect.h)} metros` : 'forma libre';
   const minSide = rect ? Math.min(rect.w, rect.h) : 2;
+  // Aisles show their width, like "PASILLO CENTRAL · 7 M" in the mockup.
+  const label = o.kind === 'AISLE' && rect ? `${name} · ${fmt(minSide)} m` : name;
   return {
     id: o.id,
     kind: o.kind,
     points: ring.map(([x, y]) => `${x},${y}`).join(' '),
     rect,
-    label: name,
-    sublabel: o.kind === 'STAND' && rect ? `${fmt(rect.w * rect.h)} m²` : '',
-    aria: `${o.kind === 'STAND' ? `Stand ${name}` : name}, ${size}`,
+    label,
+    sublabel: isStand && rect ? `${fmt(rect.w * rect.h)} m²` : '',
+    aria: `${isStand ? `Stand ${name}` : name}, ${size}`,
     center,
-    fontSize: Math.min(0.75, minSide / 3),
+    fontSize: isStand ? Math.min(0.75, minSide / 3) : Math.min(0.7, minSide * 0.32),
     invalid,
+    radius: rect ? Math.min(isStand ? 0.3 : 0.2, minSide * 0.12) : 0,
+    strip:
+      isStand && rect && rect.h >= 1.2
+        ? {
+            x: rect.x + 0.15,
+            y: rect.y + 0.15,
+            w: Math.max(0, rect.w - 0.3),
+            h: Math.min(0.32, rect.h * 0.12),
+          }
+        : null,
+    caps: !isStand,
   };
 }
 
@@ -107,6 +135,8 @@ export class FloorPlanCanvas {
   readonly selectedId = input<string | null>(null);
   readonly invalidIds = input<ReadonlySet<string>>(new Set());
   readonly readOnly = input(false);
+  /** Snap step in meters, shown in the scale badge ("snap 0,5 m"). */
+  readonly snapStep = input(0.5);
 
   readonly selectObject = output<string | null>();
   readonly dragStart = output<void>();
@@ -168,6 +198,21 @@ export class FloorPlanCanvas {
       major: y % 5 === 0,
     }));
     return [...vertical, ...horizontal];
+  });
+
+  protected readonly showGrid = signal(true);
+  protected readonly snapLabel = computed(() => AREA.format(this.snapStep()));
+  protected readonly venueLabel = computed(
+    () =>
+      `Predio ${AREA.format(this.widthM())} × ${AREA.format(this.heightM())} m · ${AREA.format(round2(this.widthM() * this.heightM()))} m²`,
+  );
+  /** Object counts per kind, in a stable order (layout kinds, never commercial states). */
+  protected readonly legend = computed<readonly LegendItem[]>(() => {
+    const counts = new Map<LayoutObjectKind, number>();
+    for (const o of this.objects()) counts.set(o.kind, (counts.get(o.kind) ?? 0) + 1);
+    return (Object.keys(KIND_LABEL) as LayoutObjectKind[])
+      .filter((k) => counts.has(k))
+      .map((kind) => ({ kind, label: KIND_LABEL[kind], count: counts.get(kind)! }));
   });
 
   protected readonly rulerX = computed(() => this.rulerMarks(this.widthM()));

@@ -126,6 +126,10 @@ type State = { readonly list: readonly ExhibitorSummaryDto[] } | { readonly erro
       background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
       box-shadow: inset 3px 0 0 var(--color-primary);
     }
+    /* Text on a tint uses --color-text (UX-01 rule); the status badge keeps its own colors. */
+    .row[aria-current='true'] > span:first-child span {
+      color: var(--color-text);
+    }
     .row:focus-visible {
       outline: 2px solid var(--color-selected);
       outline-offset: -2px;

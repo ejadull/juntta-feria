@@ -93,6 +93,10 @@ function toItem(o: LayoutObjectDto, invalid: boolean): Item {
       background: color-mix(in srgb, var(--color-selected) 12%, var(--color-surface));
       box-shadow: inset 3px 0 0 var(--color-selected);
     }
+    /* Text on a tint uses --color-text: text-muted there drops to 4.3:1 (UX-01 rule). */
+    .item[aria-current='true'] span {
+      color: var(--color-text);
+    }
     .item:focus-visible {
       outline: 2px solid var(--color-selected);
       outline-offset: -2px;

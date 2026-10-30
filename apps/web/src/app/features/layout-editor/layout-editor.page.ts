@@ -33,122 +33,150 @@ const STATUS_LABEL: Readonly<Record<LayoutVersionStatus, string>> = {
   imports: [FloorPlanCanvas, ObjectList, ObjectProperties, ValidationPanel, EditorToolbar],
   providers: [LayoutEditorStore],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  // Fills the shell's <main>; the shell owns the viewport height.
-  host: { class: 'flex h-full flex-col bg-surface text-text' },
+  // The shell's <main> scrolls; the page keeps its natural height (mockup "Stand Studio").
+  host: { class: 'block text-text' },
   template: `
-    <header class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-3">
-      <h1 class="text-lg font-semibold">Editor de plano</h1>
-      @if (store.version(); as v) {
-        <span class="text-sm text-text-muted">
-          Versión {{ v.version }} · {{ statusLabel() }} · {{ v.widthM }} × {{ v.heightM }} m
-        </span>
-        <span
-          class="ml-auto text-sm font-medium"
-          [class.text-danger]="issueCount() > 0"
-          [class.text-primary]="issueCount() === 0"
-          role="status"
-        >
-          {{ issueCount() === 0 ? '✓ Sin errores' : '⚠ ' + issueCount() + ' error(es)' }}
-        </span>
-      }
-    </header>
-
-    @if (loadError(); as error) {
-      <p role="alert" class="p-4 text-danger">{{ error }}</p>
-    } @else if (store.version(); as v) {
-      @if (store.isReadOnly()) {
-        <div
-          role="status"
-          class="banner flex flex-wrap items-center gap-3 border-b border-reserved-stroke/50 bg-reserved/15 px-4 py-2 text-sm text-text"
-        >
+    <div class="mx-auto flex max-w-[100rem] flex-col gap-4 px-4 py-6 sm:px-8 sm:py-8">
+      <header class="flex flex-wrap items-end justify-between gap-4">
+        <div class="min-w-0">
+          <p class="text-sm font-semibold tracking-wider text-primary">
+            ORGANIZADOR · PLANO DEL PREDIO
+          </p>
+          <h1 class="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">Editor de plano</h1>
+          @if (store.version(); as v) {
+            <p class="mt-2 text-text-muted">
+              Predio de {{ v.widthM }} × {{ v.heightM }} m a escala. Arrastrá, rotá y duplicá
+              objetos; validá y publicá una versión inmutable.
+            </p>
+          }
+        </div>
+        @if (store.version()) {
           <span
-            ><span aria-hidden="true">🔒</span> Versión {{ statusLabel().toLowerCase() }}: solo
-            lectura.</span
+            role="status"
+            class="inline-flex items-center gap-1.5 rounded-full border border-current px-3 py-1 text-sm font-medium"
+            [class.text-danger]="issueCount() > 0"
+            [class.text-primary]="issueCount() === 0"
           >
-          <span class="text-text">Para cambiar el plano, creá una nueva versión en borrador.</span>
-          <button
-            type="button"
-            class="btn btn-primary ml-auto"
-            [disabled]="busy()"
-            (click)="newVersion()"
-          >
-            Crear nueva versión
-          </button>
-        </div>
-      } @else {
-        <app-editor-toolbar
-          class="border-b border-border px-4 py-2"
-          [step]="store.step()"
-          [canUndo]="store.canUndo()"
-          [canRedo]="store.canRedo()"
-          [canPublish]="store.canPublish()"
-          [isDirty]="store.isDirty()"
-          [busy]="busy()"
-          (add)="addObject($event)"
-          (stepChange)="store.setStep($event)"
-          (undo)="act({ type: 'undo' })"
-          (redo)="act({ type: 'redo' })"
-          (save)="save()"
-          (publish)="publish()"
-        />
-      }
+            {{ issueCount() === 0 ? '✓ Sin errores' : '⚠ ' + issueCount() + ' error(es)' }}
+          </span>
+        }
+      </header>
 
-      <!-- DOM order: canvas first (main content); CSS places the list on the left on wide screens. -->
-      <main
-        class="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[16rem_minmax(0,1fr)_19rem] lg:overflow-hidden"
-      >
-        <app-floor-plan-canvas
-          class="h-[60dvh] lg:order-2 lg:h-auto lg:min-h-0"
-          [widthM]="v.widthM"
-          [heightM]="v.heightM"
-          [objects]="store.objects()"
-          [selectedId]="store.selectedId()"
-          [invalidIds]="invalidIds()"
-          [readOnly]="store.isReadOnly()"
-          (selectObject)="store.select($event)"
-          (dragStart)="store.beginGesture()"
-          (dragTo)="store.move($event.id, $event)"
-          (resizeTo)="store.resize($event.id, $event.handle, $event)"
-          (dragEnd)="store.commitGesture()"
-          (dragCancel)="store.cancelGesture()"
-          (keyAction)="act($event)"
-        />
-        <app-object-list
-          class="border-t border-border p-4 lg:order-1 lg:overflow-y-auto lg:border-t-0 lg:border-r"
-          [objects]="store.objects()"
-          [selectedId]="store.selectedId()"
-          [invalidIds]="invalidIds()"
-          (select)="store.select($event)"
-        />
-        <div
-          class="flex flex-col gap-6 border-t border-border p-4 lg:order-3 lg:overflow-y-auto lg:border-t-0 lg:border-l"
+      @if (loadError(); as error) {
+        <p role="alert" class="card text-danger">{{ error }}</p>
+      } @else if (store.version(); as v) {
+        <section
+          class="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-lg border border-border bg-surface px-5 py-3"
+          aria-label="Versión del plano"
         >
-          <app-object-properties
-            [object]="store.selected()"
-            [step]="store.step()"
+          <div class="flex min-w-0 flex-wrap items-center gap-3">
+            @if (store.isReadOnly()) {
+              <span
+                class="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary"
+              >
+                v{{ v.version }} {{ statusLabel().toLowerCase() }}
+              </span>
+            } @else {
+              <span class="rounded-full bg-reserved/20 px-2.5 py-1 text-xs font-semibold text-text">
+                v{{ v.version }} borrador
+              </span>
+            }
+            <span class="text-sm text-text-muted">
+              Versión {{ v.version }} · {{ statusLabel() }} · {{ v.widthM }} × {{ v.heightM }} m
+            </span>
+          </div>
+          @if (store.isReadOnly()) {
+            <div
+              role="status"
+              class="banner ml-auto flex flex-wrap items-center gap-3 text-sm text-text"
+            >
+              <span>
+                <span aria-hidden="true">🔒</span> Versión {{ statusLabel().toLowerCase() }}: solo
+                lectura. Para cambiar el plano, creá una nueva versión en borrador.
+              </span>
+              <button
+                type="button"
+                class="btn btn-primary"
+                [disabled]="busy()"
+                (click)="newVersion()"
+              >
+                Crear nueva versión
+              </button>
+            </div>
+          } @else {
+            <app-editor-toolbar
+              class="ml-auto"
+              [step]="store.step()"
+              [canUndo]="store.canUndo()"
+              [canRedo]="store.canRedo()"
+              [canPublish]="store.canPublish()"
+              [isDirty]="store.isDirty()"
+              [busy]="busy()"
+              (add)="addObject($event)"
+              (stepChange)="store.setStep($event)"
+              (undo)="act({ type: 'undo' })"
+              (redo)="act({ type: 'redo' })"
+              (save)="save()"
+              (publish)="publish()"
+            />
+          }
+        </section>
+
+        <!-- DOM order: canvas first (main content), then the side panels. -->
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+          <app-floor-plan-canvas
+            class="h-[70vh] min-h-[28rem] rounded-lg border border-border"
+            [widthM]="v.widthM"
+            [heightM]="v.heightM"
+            [objects]="store.objects()"
+            [selectedId]="store.selectedId()"
+            [invalidIds]="invalidIds()"
             [readOnly]="store.isReadOnly()"
-            (patch)="withSelected((id) => store.updateProps(id, $event))"
-            (rotate)="act({ type: 'rotate' })"
-            (duplicate)="act({ type: 'duplicate' })"
-            (remove)="act({ type: 'remove' })"
+            [snapStep]="store.step()"
+            (selectObject)="store.select($event)"
+            (dragStart)="store.beginGesture()"
+            (dragTo)="store.move($event.id, $event)"
+            (resizeTo)="store.resize($event.id, $event.handle, $event)"
+            (dragEnd)="store.commitGesture()"
+            (dragCancel)="store.cancelGesture()"
+            (keyAction)="act($event)"
           />
-          <app-validation-panel
-            [issues]="store.validation()"
-            [serverIssues]="store.serverIssues()"
-            (select)="store.select($event)"
-          />
+          <div class="flex flex-col gap-4">
+            <section class="card">
+              <app-object-properties
+                [object]="store.selected()"
+                [step]="store.step()"
+                [readOnly]="store.isReadOnly()"
+                (patch)="withSelected((id) => store.updateProps(id, $event))"
+                (rotate)="act({ type: 'rotate' })"
+                (duplicate)="act({ type: 'duplicate' })"
+                (remove)="act({ type: 'remove' })"
+              />
+            </section>
+            <section class="card">
+              <app-validation-panel
+                [issues]="store.validation()"
+                [serverIssues]="store.serverIssues()"
+                (select)="store.select($event)"
+              />
+            </section>
+            <section class="card max-h-[30rem] overflow-y-auto">
+              <app-object-list
+                [objects]="store.objects()"
+                [selectedId]="store.selectedId()"
+                [invalidIds]="invalidIds()"
+                (select)="store.select($event)"
+              />
+            </section>
+          </div>
         </div>
-      </main>
-      <p
-        class="border-t border-border px-4 py-1.5 text-sm text-text-muted empty:hidden"
-        aria-live="polite"
-        data-announcer
-      >
-        {{ message() }}
-      </p>
-    } @else {
-      <p class="p-4 text-text-muted">Cargando plano…</p>
-    }
+        <p class="text-sm text-text-muted empty:hidden" aria-live="polite" data-announcer>
+          {{ message() }}
+        </p>
+      } @else {
+        <p class="text-text-muted">Cargando plano…</p>
+      }
+    </div>
   `,
 })
 export class LayoutEditorPage {

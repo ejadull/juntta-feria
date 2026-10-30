@@ -80,7 +80,15 @@ const valueOf = (e: Event): string => (e.target as HTMLInputElement | HTMLSelect
         </div>
       }
     } @else {
-      <p class="text-sm text-text-muted">Seleccioná un objeto en el plano o en la lista.</p>
+      <p class="text-sm text-text-muted">
+        Seleccioná un objeto en el plano o en la lista para editar código, tipo y medidas.
+        Arrastralo para moverlo con snap de {{ step() }} m, o usá las flechas del teclado.
+      </p>
+      <ul class="mt-3 list-disc space-y-1.5 pl-5 text-sm text-text-muted">
+        <li>Las coordenadas se guardan en metros, no en píxeles.</li>
+        <li>Publicar bloquea superposiciones y objetos fuera del predio.</li>
+        <li>Publicar crea una versión inmutable; los eventos publicados no cambian.</li>
+      </ul>
     }
   `,
 })
