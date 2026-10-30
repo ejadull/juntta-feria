@@ -37,7 +37,7 @@ AC-PRD-04: antes de pagar se muestra precio final, condiciones, política de can
 
 ## 2. Arquitectura y tecnología
 - Angular PWA: shell de app, admin lazy loaded, portal feriante y portal público; SSR/prerender para páginas públicas si se requiere SEO.
-- Konva.js o Fabric.js: vista y edición del layout. Coordenadas persistidas en metros, nunca píxeles.
+- SVG nativo: vista y edición del layout ([ADR 0001](../adr/0001-svg-para-editor-y-mapa.md)). Coordenadas persistidas en metros, nunca píxeles.
 - NestJS: monolito modular, controladores REST `/api/v1`, DTOs validados, Swagger/OpenAPI; SSE para actualizaciones de disponibilidad.
 - PostgreSQL + PostGIS: persistencia relacional, geometría planar local (`geometry(Polygon,0)`), RLS como defensa adicional, constraints e índices espaciales.
 - Redis + BullMQ: jobs de reconciliación, notificaciones y vencimientos; el lock/constraint DB sigue siendo fuente de verdad.
@@ -62,7 +62,8 @@ Pool PostgreSQL compartido y tablas compartidas con `tenant_id`; RLS habilitado 
 - layout_versions(id, tenant_id, template_id, version, width_m, height_m, status DRAFT|PUBLISHED|ARCHIVED, published_at)
 - layout_objects(id, tenant_id, layout_version_id, kind STAND|AISLE|ENTRY|EXIT|UTILITY|OBSTACLE|EMERGENCY, code, geometry, metadata)
 - events(id, tenant_id, venue_id, layout_version_id, name, slug, starts_at, ends_at, sales_open_at, sales_close_at, status DRAFT|PUBLISHED|ACTIVE|CLOSED|CANCELLED)
-- event_stands(id, tenant_id, event_id, layout_object_id, code, status AVAILABLE|BLOCKED|ASSIGNED|DISABLED, price_cents, currency, services)
+- event_sectors(id, tenant_id, event_id, name, category_id nullable, sort_order) — agrupación temática por evento ([ADR 0002](../adr/0002-sectores-por-evento.md))
+- event_stands(id, tenant_id, event_id, layout_object_id, sector_id nullable, code, status AVAILABLE|BLOCKED|ASSIGNED|DISABLED, price_cents, currency, services)
 - exhibitors(id, tenant_id, legal_name, trade_name, tax_id nullable, category_id, description, logo_key, public_contact_opt_in)
 - reservations(id, tenant_id, event_stand_id, exhibitor_id, user_id, status, hold_expires_at, price_cents, currency, terms_version, idempotency_key, created_at)
 - payment_attempts(id, tenant_id, reservation_id, provider, provider_preference_id, provider_payment_id, status, amount_cents, currency, external_reference, checkout_url, created_at)
@@ -80,23 +81,38 @@ INV-05: El backend fija amount/currency desde event_stand/pricing snapshot. Nunc
 INV-06: Cambios postpublicación requieren nueva versión y proceso de migración consciente de reservas existentes.
 INV-07: pagos aprobados nunca se pierden: ante una aprobación tardía se crea incidencia de conciliación/reembolso sin adjudicar por error.
 INV-08: la información fiscal y privada de expositores no aparece en el directorio público sin autorización.
+INV-09: un event_stand pertenece como máximo a un sector, y solo a un sector de su mismo evento y tenant (FK compuesta). El layout no tiene sectores: son del evento ([ADR 0002](../adr/0002-sectores-por-evento.md)).
 
 ### 3.3 DDL núcleo ilustrativo
 ```sql
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+CREATE TABLE event_sectors (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL,
+ event_id uuid NOT NULL,
+ name text NOT NULL CHECK (btrim(name) <> ''),
+ category_id uuid,
+ sort_order int NOT NULL DEFAULT 0,
+ UNIQUE (tenant_id, event_id, id)
+);
+-- "Diseño" and "diseño " are the same sector
+CREATE UNIQUE INDEX uq_event_sector_name ON event_sectors (tenant_id, event_id, lower(btrim(name)));
 CREATE TABLE event_stands (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
  tenant_id uuid NOT NULL,
  event_id uuid NOT NULL,
  layout_object_id uuid NOT NULL,
+ sector_id uuid,
  code text NOT NULL,
  status text NOT NULL CHECK (status IN ('AVAILABLE','BLOCKED','ASSIGNED','DISABLED')),
  price_cents bigint NOT NULL CHECK (price_cents >= 0),
  currency char(3) NOT NULL DEFAULT 'ARS',
  UNIQUE (tenant_id, event_id, code),
- UNIQUE (tenant_id, id)
+ UNIQUE (tenant_id, id),
+ -- INV-09; SET NULL with a column list requires PostgreSQL >= 15
+ FOREIGN KEY (tenant_id, event_id, sector_id) REFERENCES event_sectors(tenant_id, event_id, id) ON DELETE SET NULL (sector_id)
 );
 CREATE TABLE reservations (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -150,7 +166,7 @@ Como feriante puedo filtrar stands por metros, superficie, precio, servicios, se
 ### 4.3 Visitante
 Como visitante puedo abrir la página del evento, ver el mapa navegable y conocer marcas, categorías y catálogo básico sin acceder a información privada.
 ### 4.4 Tarifas
-Precio fijo por stand para MVP; snapshot del precio al reservar. Preparar esquema para tarifas por m², ubicación/cercanía a accesos, servicios extras, descuentos promocionales, señas y tramos de preventa en iteraciones posteriores.
+Precio fijo por stand para MVP; snapshot del precio al reservar. Preparar esquema para tarifas por m², por sector (regla `SECTOR` con `config.sectorId`, [ADR 0002](../adr/0002-sectores-por-evento.md)), ubicación/cercanía a accesos, servicios extras, descuentos promocionales, señas y tramos de preventa en iteraciones posteriores.
 ### 4.5 Estados y transición
 Evento DRAFT→PUBLISHED→ACTIVE→CLOSED, CANCELLED desde estados permitidos. Layout DRAFT→PUBLISHED→ARCHIVED; no editar publicado. Reserva HELD→PAYMENT_PENDING→CONFIRMED, o EXPIRED/CANCELLED; confirmado→REFUND_PENDING→REFUNDED según política. Pago siempre se reconcilia separadamente.
 
@@ -169,7 +185,8 @@ Autenticación de panel `Authorization: Bearer <token>` (o sesión HttpOnly con 
 | POST | /api/v1/layout-versions/:id/publish | owner | Validar y publicar versión |
 | POST/GET | /api/v1/events | operator | Crear/listar eventos |
 | POST | /api/v1/events/:id/publish | owner | Publicar evento |
-| GET/PATCH | /api/v1/events/:id/stands | operator | Inventario y tarifas |
+| GET/PATCH | /api/v1/events/:id/stands | operator | Inventario, tarifas y asignación masiva de sector |
+| GET/POST/PATCH/DELETE | /api/v1/events/:id/sectors | operator | Sectores del evento ([ADR 0002](../adr/0002-sectores-por-evento.md)) |
 | GET | /api/v1/public/events/:slug | público | Evento público |
 | GET | /api/v1/public/events/:slug/map | público | GeoJSON y disponibilidad |
 | GET | /api/v1/public/events/:slug/exhibitors | público | Directorio público |
@@ -178,7 +195,8 @@ Autenticación de panel `Authorization: Bearer <token>` (o sesión HttpOnly con 
 | GET | /api/v1/reservations/:id | propietario/admin | Estado de reserva |
 | POST | /api/v1/reservations/:id/cancel | propietario/admin | Cancelar según política |
 | POST | /api/v1/webhooks/mercadopago | proveedor | Recibir eventos firmados |
-| GET | /api/v1/events/:id/metrics | operator | KPIs |
+| GET | /api/v1/events/:id/metrics | operator | KPIs, incluido `occupancyBySector` ([ADR 0002](../adr/0002-sectores-por-evento.md)) (modelo de lectura: D2 de [`org-ui-shell`](changes/archive/2026-10-30-org-ui-shell/design.md)) |
+| GET | /api/v1/exhibitors | operator | Expositores del tenant con datos privados y estado de documentación (D4 de [`org-ui-shell`](changes/archive/2026-10-30-org-ui-shell/design.md)); nunca para vistas públicas |
 | GET | /api/v1/events/:id/reservations/export | operator | Exportación CSV |
 | GET | /api/v1/events/:id/stand-events | público | SSE disponibilidad saneada |
 
@@ -263,9 +281,9 @@ P01 Login/recuperación; P02 Selección de organización; P03 Dashboard; P04 Pre
 | Épica | Historias esenciales | SP aproximados |
 |---|---|---:|
 | EP01 Core SaaS | Tenant, membresías, roles, auth, auditoría | 21 |
-| EP02 Predios | CRUD, ubicación, sectores, medidas | 13 |
+| EP02 Predios | CRUD, ubicación, medidas | 13 |
 | EP03 Editor planos | Canvas, geometría, grid, validación, versionado | 40 |
-| EP04 Eventos y tarifas | Wizard, calendario, vincular plano, precios | 21 |
+| EP04 Eventos y tarifas | Wizard, calendario, vincular plano, sectores, precios | 21 |
 | EP05 Feriantes | Registro, perfil, rubro, documentos | 13 |
 | EP06 Inventario/reservas | Estados, hold, locking, expiración, idempotencia | 34 |
 | EP07 Mercado Pago | Preferencias, Webhooks, conciliación, refund | 34 |
@@ -309,16 +327,19 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 
 ##### FND-03 — Contenedores y Compose reproducibles
 
-- **Estado:** `PENDING`
+- **Estado:** `VERIFIED`
 - **Dependencias:** ninguna
-- **Entrega:** Dockerfiles de desarrollo, contexto raíz compatible con el lockfile único, servicios persistentes e inicialización idempotente del bucket MinIO.
-- **Aceptación:** Compose renderiza y levanta PostgreSQL/PostGIS, Redis, MinIO, inicializador S3, API y Web; puertos host ligados a `127.0.0.1`; servicios sin reinicios inesperados.
+- **Entrega:** Dockerfiles de desarrollo, contexto raíz compatible con el lockfile único, servicios persistentes e inicialización idempotente del bucket en LocalStack (S3).
+- **Aceptación:** Compose renderiza y levanta PostgreSQL/PostGIS, Redis, LocalStack S3 con inicializador de bucket, API y Web; puertos host ligados a `127.0.0.1`; servicios sin reinicios inesperados.
 - **Evidencia requerida:** `docker compose config --quiet`, build, estado/health de contenedores e inspección de bindings sin imprimir secretos.
-- [ ] Crear `.dockerignore` y Dockerfiles de desarrollo para API y Web.
-- [ ] Ajustar los contextos de build al lockfile raíz del workspace.
-- [ ] Agregar inicialización idempotente del bucket local.
-- [ ] Configurar healthchecks, dependencias y volúmenes persistentes.
-- [ ] Verificar bindings loopback y reinicios.
+  - 2026-10-30: `docker compose config --quiet` OK; los 5 servicios `Up`, `postgres`/`redis`/`s3` `healthy`, `RestartCount=0`; todos los `PortBindings` con `HostIp=127.0.0.1`; bucket creado por `infra/localstack/init-s3.sh` (head-bucket || create-bucket).
+  - Fix: defaults de `S3_BUCKET` divergían entre `s3` y `api`; ambos quedan en `juntta-feria-local`.
+  - Hallazgo de entorno: un PostgreSQL del host ocupa `5432` y el puerto del contenedor no se publica (la API no se afecta: usa la red Docker). Se agregó `POSTGRES_HOST_PORT` (default `5432`); definir `5433` en `.env` para acceder desde el host.
+- [x] Crear `.dockerignore` y Dockerfiles de desarrollo para API y Web.
+- [x] Ajustar los contextos de build al lockfile raíz del workspace.
+- [x] Agregar inicialización idempotente del bucket local.
+- [x] Configurar healthchecks, dependencias y volúmenes persistentes.
+- [x] Verificar bindings loopback y reinicios.
 
 #### Sprint 0A — tareas dependientes
 
@@ -360,6 +381,31 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 - [ ] Auditar diff, archivos rastreados y posibles secretos.
 - [ ] Registrar evidencia y cambiar estados solo para tareas realmente verificadas.
 
+#### Fundamentos UX
+
+##### UX-01 — Juntta Design System v1.0: paleta de colores
+
+- **Estado:** `VERIFIED`
+- **Dependencias:** ninguna.
+- **Decisiones (2026-10-30):** Inter desde Google Fonts. El rojo queda solo para errores (`danger`); "Bloqueado" se ve deshabilitado en gris claro con contorno punteado, rayado y candado (detalle y contrastes en el documento de la paleta).
+- **Entrega:** paleta de [`docs/design/juntta-design-system-v1.md`](../design/juntta-design-system-v1.md) como tokens únicos del frontend Angular, aplicada a shell, Panel, Expositores, Reservas y editor de plano; colores de estado de stands listos para P09/P15.
+- **Aceptación:** ningún color de marca o de estado queda hardcodeado fuera de los tokens; todo texto cumple 4.5:1 (AA) y todo contorno/control informativo 3:1; los estados de stand se distinguen además por etiqueta, ícono o patrón; axe sin violaciones serias/críticas en todas las pantallas; suites E2E existentes sin regresiones.
+- **Evidencia requerida:** verificación automatizada del contraste de los pares de tokens usados para texto y controles; reporte axe por pantalla; capturas en desktop y móvil.
+  - 2026-10-30: `ng test --watch=false` → 228/228. 98 clases de paleta cruda (`gray/stone/emerald/amber/red/green`) reemplazadas por tokens y 0 restantes; 0 hex en estilos de componentes (salvo la sombra neutra de los controles de zoom).
+  - 2026-10-30: `ux01.mjs` en Chromium sobre la app en ejecución: los 22 tokens en vivo coinciden con el documento; 22 pares texto/control cumplen 4.5:1 / 3:1 con los valores reales; Inter cargada desde Google Fonts; `lang="es"` y título "Juntta Feria"; marca "juntta." con lema.
+  - 2026-10-30: `org07.mjs` 50/50 (axe-core 4.10.3 en las 5 pantallas, desktop y móvil, sin violaciones serias/críticas, incluida `color-contrast`); editor sin regresiones: `LUI-06` 25/25, `LUI-07` 16/16, `LUI-08` 22/22 (foco esperado actualizado a `selected`).
+- [x] Tokens en `styles.css` con `@theme static` de Tailwind v4 (utilidades `bg-primary`, `text-text-muted`, `border-border`…). `static` hace falta: sin él Tailwind solo emite las variables usadas y los estados de stand (aún sin uso) desaparecían.
+- [x] Variantes accesibles (`secondary-strong`, `accent-strong`, `reserved-stroke`, `occupied-strong`, `border-strong`) más `danger` y `blocked-stroke`.
+- [x] Verificación de contraste de tokens. Desvío: en lugar de un test unitario con valores duplicados en TypeScript, `ux01.mjs` lee las variables CSS reales del navegador, así no hay dos fuentes que puedan divergir.
+- [x] Shell: navegación activa en `primary`, fondo `background`, superficies `surface`/`surface-soft`, marca "juntta." (punto en `secondary`) con el lema "Ferias y encuentros".
+- [x] Botones (`.btn`, `.btn-primary`, `.btn-danger`), campos (`.field` con `border-strong`), badges, `.card` compartida y foco visible en `selected`.
+- [x] Panel (KPIs, gráfico GMV en `primary` y tinte), Expositores (estados de documentación con texto `text` sobre tinte) y Reservas.
+- [x] Editor de plano: colores por `kind` armonizados (stand en `primary`, entradas en `accent`, emergencia en `reserved`, servicios en `secondary`); selección y foco en `selected`; errores en `danger`.
+- [x] Estados de stand definidos como tokens (incluido `blocked` deshabilitado). El ícono/patrón (rayado y candado de "Bloqueado") se implementa con P09/P15; el editor no los usa (INV-03).
+- [x] Inter desde Google Fonts; `index.html` pasa a `lang="es"` (estaba en `en`) y `theme-color` `primary`.
+- [x] El documento de la paleta queda como fuente para el mockup de Lovable (fuera de este repo).
+- Regla aplicada: el texto sobre un tinte de color va en `text`, nunca en el color del tinte (p. ej. `danger` sobre `danger/10` daría ~4.3:1).
+
 #### Dependencias posteriores al Sprint 0A
 
 | Tarea | Dependencias | Entrega principal | Estado |
@@ -368,8 +414,10 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `CORE-02` Usuarios, sesiones y membresías | `CORE-01` | login, refresh rotativo HttpOnly, logout y membresías | `PENDING` |
 | `CORE-03` Aislamiento y auditoría | `CORE-02` | autorización tenant, RLS y auditoría | `PENDING` |
 | `VEN-01` Predios | `CORE-03` | CRUD de predios fijos/temporales | `PENDING` |
-| `LAY-01` Layouts versionados | `VEN-01` | geometría, publicación e inmutabilidad | `PENDING` |
-| `EVT-01` Eventos, stands y tarifas | `LAY-01` | evento sobre versión publicada e inventario valorizado | `PENDING` |
+| `LUI-01..10` Editor de plano frontend | ninguna (ver change) | editor P06 con repositorio en memoria; fija contrato de geometría para `LAY-01` — [change archivado](changes/archive/2026-10-30-lay-ui-floor-plan-editor/proposal.md) · spec [`layout-editor`](specs/layout-editor/spec.md) | `VERIFIED` |
+| `ORG-01..07` Shell del organizador, Panel y Expositores | ninguna (ver change) | navegación, P03 y P11 en consulta con adaptadores en memoria; fija contratos de lectura para `REP-01`/`EXH-01` — [change archivado](changes/archive/2026-10-30-org-ui-shell/proposal.md) · spec [`organizer-shell`](specs/organizer-shell/spec.md) | `VERIFIED` |
+| `LAY-01` Layouts versionados | `VEN-01`, contrato de `LUI-05` | geometría, publicación e inmutabilidad | `PENDING` |
+| `EVT-01` Eventos, stands y tarifas | `LAY-01` | evento sobre versión publicada, sectores por evento ([ADR 0002](../adr/0002-sectores-por-evento.md)) e inventario valorizado | `PENDING` |
 | `EXH-01` Expositores | `CORE-03` | perfil privado/público y consentimiento | `PENDING` |
 | `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01` | holds, locking e idempotencia | `PENDING` |
 | `PAY-01` Mercado Pago | `RES-01` | checkout, Webhooks y conciliación | `PENDING` |
@@ -431,7 +479,7 @@ Estructura `apps/api` (NestJS), `apps/web` (Angular), `docker-compose.yml`, `.en
 - Manual operador, manual feriante y política de soporte.
 
 ## 15. Riesgos y decisiones pendientes
-R1 integración de cobro por cuenta de cada organizador: validar mecanismo legal/técnico y contratos. R2 operación de pago tardío y reservas inconsistentes: conciliación y estados intermedios. R3 plano complejo: determinar importación SVG/DXF y polígonos en futuro. R4 datos personales y fiscales: privacidad argentina/ARCA. R5 eventos en distintas sedes y fechas: reservar por `EventStand`, nunca por plantilla. R6 UI interactiva bajo conexiones lentas: fallback lista; SSE con reconexión.
+R1 integración de cobro por cuenta de cada organizador: validar mecanismo legal/técnico y contratos. R2 operación de pago tardío y reservas inconsistentes: conciliación y estados intermedios. R3 plano complejo: determinar importación SVG/DXF y polígonos en futuro. R4 datos personales y fiscales: privacidad argentina/ARCA. R5 eventos en distintas sedes y fechas: reservar por `EventStand`, nunca por plantilla. R6 UI interactiva bajo conexiones lentas: fallback lista; SSE con reconexión. R7 sectores — **resuelto** (2026-10-30, [ADR 0002](../adr/0002-sectores-por-evento.md)): entidad del evento (`event_sectors` + `event_stands.sector_id`); el plano no cambia y el contorno en mapas se deriva de los stands.
 
 ## 16. Fuentes oficiales consultadas
 - Mercado Pago Preferences: https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-preferences/overview
