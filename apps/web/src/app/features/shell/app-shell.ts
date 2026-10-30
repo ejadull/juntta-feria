@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
+import { ApiStatusService, type ApiStatus } from '../../shared/api/api-status.service';
 import { DEMO_CONTEXT } from '../../shared/demo-context';
 
 type AreaId = 'organizador' | 'feriante' | 'visitante';
@@ -155,7 +156,18 @@ function areaOf(url: string): Area {
       </a>
 
       <div>
-        <p class="mb-1.5 text-xs font-semibold tracking-wider text-text-muted">VER COMO · DEMO</p>
+        <div class="mb-1.5 flex items-center justify-between gap-2">
+          <p class="text-xs font-semibold tracking-wider text-text-muted">VER COMO · DEMO</p>
+          <span
+            data-testid="api-status"
+            role="status"
+            class="api-status"
+            [attr.data-state]="apiStatus()"
+          >
+            <span class="dot" aria-hidden="true"></span>
+            API: {{ apiStatusLabel[apiStatus()] }}
+          </span>
+        </div>
         <div class="segmented" role="group" aria-label="Ver como (demo)">
           @for (a of areas; track a.id) {
             <button type="button" [attr.aria-pressed]="a.id === area().id" (click)="go(a.home)">
@@ -208,6 +220,26 @@ function areaOf(url: string): Area {
     </main>
   `,
   styles: `
+    .api-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      font-size: 0.75rem;
+      color: var(--color-text);
+      white-space: nowrap;
+    }
+    .api-status .dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 999px;
+      background: var(--color-blocked-stroke);
+    }
+    .api-status[data-state='up'] .dot {
+      background: var(--color-available);
+    }
+    .api-status[data-state='down'] .dot {
+      background: var(--color-danger);
+    }
     .segmented {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -271,6 +303,17 @@ export class AppShell {
     { initialValue: this.router.url },
   );
   protected readonly area = computed(() => areaOf(this.currentUrl()));
+
+  // ponytail: checked once per load; add polling or a retry button when a page depends on the API.
+  protected readonly apiStatus = toSignal<ApiStatus | 'checking', 'checking'>(
+    inject(ApiStatusService).check(),
+    { initialValue: 'checking' },
+  );
+  protected readonly apiStatusLabel = {
+    checking: 'verificando…',
+    up: 'conectada',
+    down: 'sin conexión',
+  } as const;
 
   protected go(home: string): void {
     void this.router.navigateByUrl(home);

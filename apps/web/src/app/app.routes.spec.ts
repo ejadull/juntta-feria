@@ -1,3 +1,5 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { Title } from '@angular/platform-browser';
 import { provideRouter, Router, withComponentInputBinding } from '@angular/router';
@@ -6,7 +8,11 @@ import { routes } from './app.routes';
 
 async function open(url: string) {
   TestBed.configureTestingModule({
-    providers: [provideRouter(routes, withComponentInputBinding())],
+    providers: [
+      provideRouter(routes, withComponentInputBinding()),
+      provideHttpClient(),
+      provideHttpClientTesting(),
+    ],
   });
   const harness = await RouterTestingHarness.create(url);
   await harness.fixture.whenStable();
@@ -101,5 +107,29 @@ describe('areas and "Ver como" (PUB-UI-01)', () => {
       expect(host.querySelector('main')?.textContent).toContain('RES-01');
       expect(host.querySelector('main')?.textContent).not.toMatch(/\$\s?\d/);
     }
+  });
+});
+
+describe('API status in the shell (FND-05)', () => {
+  const status = (host: HTMLElement) =>
+    host.querySelector('[data-testid="api-status"]')?.textContent?.replace(/\s+/g, ' ').trim();
+
+  it('shows the API as connected when liveness answers through the app origin', async () => {
+    const { harness, host } = await open('/organizador/panel');
+    expect(status(host)).toBe('API: verificando…');
+    TestBed.inject(HttpTestingController).expectOne('/api/v1/health/live').flush({ status: 'ok' });
+    await harness.fixture.whenStable();
+    expect(status(host)).toBe('API: conectada');
+    expect(host.querySelector('[data-testid="api-status"]')?.getAttribute('role')).toBe('status');
+  });
+
+  it('shows the API as unreachable on failure, without blocking the demo', async () => {
+    const { harness, host } = await open('/ferias');
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/v1/health/live')
+      .error(new ProgressEvent('error'));
+    await harness.fixture.whenStable();
+    expect(status(host)).toBe('API: sin conexión');
+    expect(host.querySelector('main h1')).not.toBeNull();
   });
 });

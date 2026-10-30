@@ -178,3 +178,8 @@ Reglas absolutas:
 - **Formato mínimo.** No usar encabezados innecesarios, listas cuando baste texto corrido ni negrita salvo para información crítica.
 
 El Modo Taverna regula el estilo de comunicación, pero nunca autoriza a omitir errores, riesgos, pruebas no ejecutadas, cambios realizados, archivos afectados, acciones destructivas, información de seguridad ni cualquier elemento exigido por este documento.
+
+
+UPDATE:
+permitido leer y escribir
+.env.example y .env.txt
