@@ -37,8 +37,9 @@ describe('organizer routes (ORG-01)', () => {
   });
 
   it('shows the reservations placeholder', async () => {
-    const { current } = await open('/organizador/reservas');
+    const { current, host } = await open('/organizador/reservas');
     expect(current()).toEqual(['Reservas y cobros']);
+    expect(host.querySelector('main h1')?.textContent).toContain('Reservas y cobros');
   });
 
   it('shows "Página no encontrada" with a link to the Panel (spec: "Ruta inexistente")', async () => {
@@ -55,5 +56,50 @@ describe('organizer routes (ORG-01)', () => {
     const { host } = await open('/organizador/panel');
     expect(host.querySelector('nav')?.getAttribute('aria-label')).toBe('Secciones del organizador');
     expect(host.textContent).toContain('Demo de UX');
+  });
+});
+
+describe('areas and "Ver como" (PUB-UI-01)', () => {
+  const pressed = (host: HTMLElement) =>
+    [...host.querySelectorAll('[aria-label^="Ver como"] button[aria-pressed="true"]')].map((b) =>
+      b.textContent!.trim(),
+    );
+
+  it('shows the feriante area with its navigation (spec: "Ver como")', async () => {
+    const { host, current } = await open('/feriante/explorar');
+    expect(pressed(host)).toEqual(['Feriante']);
+    const items = [...host.querySelectorAll('nav a')].map((a) => a.textContent!.trim());
+    expect(items).toEqual(['Explorar stands', 'Reserva y pago', 'Mis reservas']);
+    expect(current()).toEqual(['Explorar stands']);
+    expect(host.querySelector('main h1')?.textContent).toContain('Elegí tu stand');
+  });
+
+  it('switches area from the demo selector', async () => {
+    const { harness, host, router } = await open('/organizador/panel');
+    const visitor = [
+      ...host.querySelectorAll<HTMLButtonElement>('[aria-label^="Ver como"] button'),
+    ].find((b) => b.textContent!.includes('Visitante'))!;
+    visitor.click();
+    await harness.fixture.whenStable();
+    expect(router.url).toBe('/ferias');
+    expect(pressed(host)).toEqual(['Visitante']);
+  });
+
+  it('keeps "Ferias" and "Mapa y expositores" apart in the visitor navigation', async () => {
+    const list = await open('/ferias');
+    expect(list.current()).toEqual(['Ferias']);
+    TestBed.resetTestingModule();
+    const map = await open('/ferias/patagonia-emprende-2026');
+    expect(map.current()).toEqual(['Mapa y expositores']);
+  });
+
+  it('shows reservation placeholders without simulated data (spec: "Marcadores de reserva")', async () => {
+    for (const path of ['/feriante/reserva', '/feriante/reservas']) {
+      TestBed.resetTestingModule();
+      const { host } = await open(path);
+      expect(host.querySelector('main h1')?.textContent?.trim()).not.toBe('');
+      expect(host.querySelector('main')?.textContent).toContain('RES-01');
+      expect(host.querySelector('main')?.textContent).not.toMatch(/\$\s?\d/);
+    }
   });
 });

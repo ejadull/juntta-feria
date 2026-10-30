@@ -4,7 +4,12 @@
  */
 export const DEMO_CONTEXT = {
   organization: { name: 'Asociación Patagonia Emprende', plan: 'Plan Pro' },
-  event: { id: 'demo-event', name: 'Patagonia Emprende 2026', layoutVersionId: 'demo-v1' },
+  event: {
+    id: 'demo-event',
+    slug: 'patagonia-emprende-2026',
+    name: 'Patagonia Emprende 2026',
+    layoutVersionId: 'demo-v1',
+  },
 } as const;
 
 export const APP_NAME = 'Juntta Feria';

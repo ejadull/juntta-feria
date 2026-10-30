@@ -1,0 +1,193 @@
+<div class="plan-bar">
+  <div class="legend" role="group" aria-label="Filtrar stands por estado">
+    <button
+      type="button"
+      class="chip chip-total"
+      [attr.aria-pressed]="statusFilter() === null"
+      (click)="statusFilter.set(null)"
+    >
+      Todos <span class="count">{{ stands().length }}</span>
+    </button>
+    @for (status of statuses; track status) {
+      <button
+        type="button"
+        class="chip"
+        [attr.aria-pressed]="statusFilter() === status"
+        (click)="toggleStatus(status)"
+      >
+        <span class="swatch" [attr.data-status]="status" aria-hidden="true"></span>
+        {{ statusLabel[status] }} <span class="count">{{ counts()[status] }}</span>
+      </button>
+    }
+  </div>
+  <button
+    type="button"
+    class="chip chip-toggle"
+    [attr.aria-pressed]="showGrid()"
+    (click)="showGrid.set(!showGrid())"
+  >
+    <span aria-hidden="true">▦</span> Grilla
+  </button>
+</div>
+
+<div class="plan-area">
+  <svg
+    #svg
+    class="plan"
+    [attr.viewBox]="viewBoxAttr()"
+    preserveAspectRatio="xMidYMid meet"
+    role="group"
+    [attr.aria-label]="
+      'Plano de la feria, ' + map().bounds.width + ' por ' + map().bounds.height + ' metros'
+    "
+    (pointerdown)="onPointerDown($event)"
+    (pointermove)="onPointerMove($event)"
+    (pointerup)="onPointerUp()"
+    (pointercancel)="onPointerUp()"
+    (wheel)="onWheel($event)"
+  >
+    <defs>
+      <pattern
+        [attr.id]="hatchId"
+        width="0.6"
+        height="0.6"
+        patternUnits="userSpaceOnUse"
+        patternTransform="rotate(45)"
+      >
+        <line x1="0" y1="0" x2="0" y2="0.6" class="hatch-line" />
+      </pattern>
+    </defs>
+
+    <rect
+      class="floor"
+      x="0"
+      y="0"
+      [attr.width]="map().bounds.width"
+      [attr.height]="map().bounds.height"
+    />
+    @if (showGrid()) {
+      @for (line of gridLines(); track line.key) {
+        <line
+          class="grid"
+          [class.major]="line.major"
+          [attr.x1]="line.x1"
+          [attr.y1]="line.y1"
+          [attr.x2]="line.x2"
+          [attr.y2]="line.y2"
+        />
+      }
+    }
+
+    @for (a of areas(); track $index) {
+      <g class="area" [attr.data-kind]="a.kind">
+        <polygon [attr.points]="a.points" />
+        @if (a.label) {
+          <text
+            class="area-label"
+            [attr.x]="a.cx"
+            [attr.y]="a.cy + a.fontSize / 3"
+            [attr.font-size]="a.fontSize"
+            text-anchor="middle"
+          >
+            {{ a.label }}
+          </text>
+        }
+      </g>
+    }
+
+    @for (o of outlines(); track o.sector) {
+      <rect
+        class="sector"
+        [attr.x]="o.x"
+        [attr.y]="o.y"
+        [attr.width]="o.w"
+        [attr.height]="o.h"
+        rx="0.4"
+      />
+      <text class="sector-label" [attr.x]="o.x + 0.2" [attr.y]="o.y - 0.25">{{ o.sector }}</text>
+    }
+
+    <rect
+      class="wall"
+      x="0"
+      y="0"
+      [attr.width]="map().bounds.width"
+      [attr.height]="map().bounds.height"
+    />
+
+    @for (s of stands(); track s.id) {
+      <g
+        class="stand"
+        [class.status-available]="s.status === 'AVAILABLE'"
+        [class.status-reserved]="s.status === 'RESERVED'"
+        [class.status-occupied]="s.status === 'OCCUPIED'"
+        [class.status-blocked]="s.status === 'BLOCKED'"
+        [class.dimmed]="s.dimmed"
+        [class.selected]="s.id === selectedId()"
+        [attr.data-code]="s.code"
+        role="button"
+        tabindex="0"
+        [attr.aria-label]="s.aria"
+        [attr.aria-pressed]="s.id === selectedId()"
+        (click)="select.emit(s.id)"
+        (keydown)="onStandKey($event, s.id)"
+      >
+        <rect
+          class="body"
+          [attr.x]="s.x"
+          [attr.y]="s.y"
+          [attr.width]="s.w"
+          [attr.height]="s.h"
+          rx="0.3"
+        />
+        @if (s.status === 'OCCUPIED') {
+          <rect
+            class="strip"
+            [attr.x]="s.x + 0.15"
+            [attr.y]="s.y + 0.15"
+            [attr.width]="s.w - 0.3"
+            height="0.32"
+            rx="0.16"
+          />
+        }
+        @if (s.status === 'BLOCKED') {
+          <rect
+            class="hatch"
+            [attr.x]="s.x"
+            [attr.y]="s.y"
+            [attr.width]="s.w"
+            [attr.height]="s.h"
+            rx="0.3"
+            [attr.fill]="'url(#' + hatchId + ')'"
+          />
+          <text
+            class="lock"
+            [attr.x]="s.x + s.w - 0.45"
+            [attr.y]="s.y + 0.75"
+            [attr.font-size]="s.fontSize * 0.8"
+            text-anchor="middle"
+            aria-hidden="true"
+          >
+            🔒
+          </text>
+        }
+        <text
+          class="code"
+          [attr.x]="s.x + s.w / 2"
+          [attr.y]="s.y + s.h / 2 + s.fontSize / 3"
+          [attr.font-size]="s.fontSize"
+          text-anchor="middle"
+        >
+          {{ s.code }}
+        </text>
+      </g>
+    }
+  </svg>
+
+  <div class="zoom-controls">
+    <button type="button" aria-label="Acercar" (click)="zoomIn()">+</button>
+    <button type="button" aria-label="Alejar" (click)="zoomOut()">−</button>
+    <button type="button" aria-label="Restablecer vista" (click)="resetView()">⤢</button>
+  </div>
+  <div class="scale-badge" aria-live="polite">{{ zoomPercent() }}% · 1 cuadro = 1 m</div>
+</div>

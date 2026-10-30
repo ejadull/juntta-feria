@@ -1,19 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { catchError, map, of } from 'rxjs';
+import { fold } from '../../shared/text';
 import {
   ExhibitorRepository,
   type DocumentsStatus,
   type ExhibitorSummaryDto,
 } from './data/exhibitor.repository';
 import { DOCUMENTS_STATUS, ExhibitorDetail } from './ui/exhibitor-detail';
-
-/** Lowercase without diacritics: "Jabonería" matches "jaboneria". */
-const fold = (s: string): string =>
-  s
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
 
 type State = { readonly list: readonly ExhibitorSummaryDto[] } | { readonly error: string };
 
