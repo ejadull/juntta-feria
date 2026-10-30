@@ -1,0 +1,198 @@
+:host {
+  /* Design tokens (UX-01). Kinds are layout categories, not commercial stand states. */
+  --plan-bg: var(--color-surface-soft);
+  --plan-floor: var(--color-surface);
+  --plan-grid: var(--color-border);
+  --plan-wall: var(--color-text);
+  --plan-text: var(--color-text);
+  --plan-muted: var(--color-text-muted);
+  --plan-selected: var(--color-selected);
+  --plan-invalid: var(--color-danger);
+  --plan-handle: var(--color-selected);
+
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: var(--plan-bg);
+}
+
+.plan {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+
+/* Strokes stay in screen pixels at any zoom. */
+.plan line,
+.plan rect,
+.plan polygon {
+  vector-effect: non-scaling-stroke;
+}
+
+.floor {
+  fill: var(--plan-floor);
+}
+
+.wall {
+  fill: none;
+  stroke: var(--plan-wall);
+  stroke-width: 3;
+}
+
+.grid {
+  stroke: var(--plan-grid);
+  stroke-width: 0.5;
+}
+
+.grid.major {
+  stroke-width: 1;
+}
+
+.ruler {
+  font-size: 0.6px;
+  fill: var(--plan-muted);
+}
+
+.shape {
+  cursor: move;
+}
+
+.shape.readonly,
+.shape.locked {
+  cursor: pointer;
+}
+
+.shape polygon {
+  stroke-width: 1.5;
+}
+
+/* Kind: color + dash pattern + text label, so color is never the only cue. */
+.shape[data-kind='STAND'] polygon {
+  fill: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+  stroke: var(--color-primary);
+}
+.shape[data-kind='AISLE'] polygon {
+  fill: var(--color-surface-soft);
+  stroke: var(--color-text-muted);
+  stroke-dasharray: 6 4;
+}
+.shape[data-kind='ENTRY'] polygon,
+.shape[data-kind='EXIT'] polygon {
+  fill: color-mix(in srgb, var(--color-accent) 15%, var(--color-surface));
+  stroke: var(--color-accent-strong);
+}
+.shape[data-kind='EMERGENCY'] polygon {
+  fill: color-mix(in srgb, var(--color-reserved) 18%, var(--color-surface));
+  stroke: var(--color-reserved-stroke);
+  stroke-dasharray: 2 2;
+}
+.shape[data-kind='UTILITY'] polygon {
+  fill: color-mix(in srgb, var(--color-secondary) 10%, var(--color-surface));
+  stroke: var(--color-secondary-strong);
+}
+.shape[data-kind='OBSTACLE'] polygon {
+  fill: color-mix(in srgb, var(--color-text-muted) 18%, var(--color-surface));
+  stroke: var(--color-text);
+  stroke-dasharray: 1 3;
+}
+
+.shape.selected polygon {
+  stroke: var(--plan-selected);
+  stroke-width: 3;
+}
+
+/* Keyboard focus: a thick blue stroke on the shape itself (outline does not follow SVG geometry). */
+.plan:focus {
+  outline: none;
+}
+.plan:focus-visible {
+  outline: 3px solid var(--plan-handle);
+  outline-offset: -3px;
+}
+.shape:focus {
+  outline: none;
+}
+.shape:focus-visible polygon {
+  stroke: var(--plan-handle);
+  stroke-width: 4;
+}
+
+.shape.invalid polygon {
+  stroke: var(--plan-invalid);
+  stroke-width: 3;
+}
+
+.label {
+  fill: var(--plan-text);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.sublabel {
+  fill: var(--plan-muted);
+  pointer-events: none;
+}
+
+.warn {
+  fill: var(--plan-invalid);
+  pointer-events: none;
+}
+
+.handle {
+  fill: var(--color-surface);
+  stroke: var(--plan-handle);
+  stroke-width: 1.5;
+  cursor: crosshair;
+}
+
+.zoom-controls {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 0.75rem;
+  background: var(--color-surface);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
+}
+
+.zoom-controls button {
+  width: 2.25rem;
+  height: 2.25rem;
+  font-size: 1rem;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.zoom-controls button + button {
+  border-top: 1px solid var(--color-border);
+}
+
+.zoom-controls button:hover {
+  background: var(--color-surface-soft);
+}
+
+.zoom-controls button:focus-visible {
+  outline: 2px solid var(--plan-handle);
+  outline-offset: -2px;
+}
+
+.scale-badge {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--plan-muted);
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  pointer-events: none;
+}
