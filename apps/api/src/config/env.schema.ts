@@ -1,0 +1,208 @@
+import { z } from 'zod';
+
+/**
+ * Environment contract (ADR 0004, FND-02). Parsed once at startup.
+ * Errors name the variable and the rule, never the received value (AGENT.md §5/§6).
+ * Reserved variables (AUTH_*, RESERVATION_*, MP_*) are ignored until their task consumes them.
+ */
+
+const LOG_LEVELS = [
+  'fatal',
+  'error',
+  'warn',
+  'info',
+  'debug',
+  'trace',
+] as const;
+const NODE_ENVS = ['development', 'test', 'production'] as const;
+
+export type AppEnvironment = Readonly<{
+  nodeEnv: (typeof NODE_ENVS)[number];
+  apiHost: string;
+  port: number;
+  apiPrefix: string;
+  corsOrigins: readonly string[];
+  logLevel: (typeof LOG_LEVELS)[number];
+  databaseUrl: string;
+  dbPoolMax: number;
+  redisUrl: string;
+  s3: Readonly<{
+    /** Undefined means the provider's default endpoint (real AWS S3). */
+    endpoint: string | undefined;
+    region: string;
+    bucket: string;
+    accessKey: string;
+    secretKey: string;
+    forcePathStyle: boolean;
+  }>;
+  swaggerEnabled: boolean;
+}>;
+
+export class EnvironmentError extends Error {
+  constructor(readonly problems: readonly string[]) {
+    super(`Invalid environment configuration:\n- ${problems.join('\n- ')}`);
+    this.name = 'EnvironmentError';
+  }
+}
+
+/** '' behaves like "not set", so optional variables fall back to their default. */
+const blankAsUndefined = (v: unknown) => (v === '' ? undefined : v);
+
+const required = z
+  .string({ error: 'is required' })
+  .trim()
+  .min(1, { error: 'is required' });
+
+const optionalInt = (min: number, max: number, fallback: number) =>
+  z.preprocess(
+    (v) => (blankAsUndefined(v) === undefined ? undefined : Number(v)),
+    z
+      .number({ error: 'must be a number' })
+      .int({ error: 'must be an integer' })
+      .min(min, { error: `must be >= ${min}` })
+      .max(max, { error: `must be <= ${max}` })
+      .default(fallback),
+  );
+
+const optionalBool = (fallback: boolean) =>
+  z.preprocess(
+    blankAsUndefined,
+    z
+      .enum(['true', 'false', '1', '0'], {
+        error: 'must be true, false, 1 or 0',
+      })
+      .default(fallback ? 'true' : 'false')
+      .transform((v) => v === 'true' || v === '1'),
+  );
+
+function hasProtocol(value: string, protocols: readonly string[]): boolean {
+  try {
+    return protocols.includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
+const urlWith = (protocols: readonly string[]) =>
+  required.refine((v) => hasProtocol(v, protocols), {
+    error: `must be a URL using ${protocols.join(' or ')}`,
+  });
+
+const corsOrigins = required.transform((value, ctx) => {
+  const origins = value.split(',').map((o) => o.trim());
+  if (origins.some((o) => o === '')) {
+    ctx.addIssue({ code: 'custom', message: 'must not contain empty entries' });
+    return z.NEVER;
+  }
+  if (origins.includes('*')) {
+    if (origins.length > 1)
+      ctx.addIssue({
+        code: 'custom',
+        message: "'*' cannot be combined with origins",
+      });
+    return origins;
+  }
+  if (!origins.every((o) => hasProtocol(o, ['http:', 'https:']))) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'each origin must be an http(s) URL',
+    });
+    return z.NEVER;
+  }
+  return origins;
+});
+
+const schema = z
+  .object({
+    NODE_ENV: z.preprocess(
+      blankAsUndefined,
+      z
+        .enum(NODE_ENVS, { error: `must be one of ${NODE_ENVS.join(', ')}` })
+        .default('development'),
+    ),
+    API_HOST: z.preprocess(
+      blankAsUndefined,
+      z.string().trim().min(1).default('0.0.0.0'),
+    ),
+    PORT: optionalInt(1, 65535, 3000),
+    API_PREFIX: z.preprocess(
+      blankAsUndefined,
+      z
+        .string()
+        .default('api/v1')
+        .transform((v) => v.trim().replace(/^\/+|\/+$/g, ''))
+        .refine((v) => v.length > 0, { error: 'must not be empty' }),
+    ),
+    CORS_ORIGINS: corsOrigins,
+    LOG_LEVEL: z.preprocess(
+      blankAsUndefined,
+      z
+        .enum(LOG_LEVELS, { error: `must be one of ${LOG_LEVELS.join(', ')}` })
+        .default('info'),
+    ),
+    DATABASE_URL: urlWith(['postgres:', 'postgresql:']),
+    DB_POOL_MAX: optionalInt(1, 1000, 10),
+    REDIS_URL: urlWith(['redis:', 'rediss:']),
+    S3_ENDPOINT: z.preprocess(
+      blankAsUndefined,
+      z
+        .string()
+        .refine((v) => hasProtocol(v, ['http:', 'https:']), {
+          error: 'must be an http(s) URL',
+        })
+        .optional(),
+    ),
+    S3_REGION: required,
+    S3_BUCKET: required,
+    S3_ACCESS_KEY: required,
+    S3_SECRET_KEY: required,
+    S3_FORCE_PATH_STYLE: optionalBool(false),
+    SWAGGER_ENABLED: optionalBool(false),
+  })
+  .superRefine((env, ctx) => {
+    if (env.NODE_ENV !== 'production') return;
+    if (env.CORS_ORIGINS.includes('*'))
+      ctx.addIssue({
+        code: 'custom',
+        path: ['CORS_ORIGINS'],
+        message: "'*' is not allowed in production",
+      });
+    if (env.SWAGGER_ENABLED)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SWAGGER_ENABLED'],
+        message: 'must be false in production',
+      });
+  });
+
+export function parseEnvironment(input: NodeJS.ProcessEnv): AppEnvironment {
+  const result = schema.safeParse(input);
+  if (!result.success) {
+    // Only the variable name and the rule: issue messages above never interpolate the input.
+    const problems = result.error.issues.map(
+      (i) => `${String(i.path[0] ?? 'environment')}: ${i.message}`,
+    );
+    throw new EnvironmentError([...new Set(problems)]);
+  }
+  const e = result.data;
+  return {
+    nodeEnv: e.NODE_ENV,
+    apiHost: e.API_HOST,
+    port: e.PORT,
+    apiPrefix: e.API_PREFIX,
+    corsOrigins: e.CORS_ORIGINS,
+    logLevel: e.LOG_LEVEL,
+    databaseUrl: e.DATABASE_URL,
+    dbPoolMax: e.DB_POOL_MAX,
+    redisUrl: e.REDIS_URL,
+    s3: {
+      endpoint: e.S3_ENDPOINT,
+      region: e.S3_REGION,
+      bucket: e.S3_BUCKET,
+      accessKey: e.S3_ACCESS_KEY,
+      secretKey: e.S3_SECRET_KEY,
+      forcePathStyle: e.S3_FORCE_PATH_STYLE,
+    },
+    swaggerEnabled: e.SWAGGER_ENABLED,
+  };
+}

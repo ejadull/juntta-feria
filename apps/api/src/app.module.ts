@@ -1,10 +1,19 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller.js';
-import { AppService } from './app.service.js';
+import { ConfigModule } from '@nestjs/config';
+import { configuration } from './config/configuration.js';
+import { HealthModule } from './health/health.module.js';
 
 @Module({
-  imports: [],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      cache: true,
+      // `npm run dev:api` runs from apps/api; the template lives at the repo root.
+      // Compose injects variables directly, so the files are optional.
+      envFilePath: ['.env', '../../.env'],
+      load: [configuration],
+    }),
+    HealthModule,
+  ],
 })
 export class AppModule {}

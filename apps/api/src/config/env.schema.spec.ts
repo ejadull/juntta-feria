@@ -1,0 +1,170 @@
+import { parseEnvironment } from './env.schema.js';
+
+/** Fictitious values only: nothing here is a usable credential. */
+const SECRET = 'fake-secret-value-0123456789abcdef';
+const valid = (): NodeJS.ProcessEnv => ({
+  NODE_ENV: 'development',
+  API_HOST: '0.0.0.0',
+  PORT: '3000',
+  API_PREFIX: '/api/v1/',
+  CORS_ORIGINS: 'http://localhost:4200, http://127.0.0.1:4200',
+  LOG_LEVEL: 'debug',
+  DATABASE_URL: `postgresql://app:${SECRET}@localhost:5432/app`,
+  DB_POOL_MAX: '5',
+  REDIS_URL: 'redis://localhost:6379',
+  S3_ENDPOINT: 'http://localhost:4566',
+  S3_REGION: 'us-east-1',
+  S3_BUCKET: 'local-bucket',
+  S3_ACCESS_KEY: 'test',
+  S3_SECRET_KEY: SECRET,
+  S3_FORCE_PATH_STYLE: 'true',
+  SWAGGER_ENABLED: 'true',
+});
+
+/** Runs the parser expecting a failure; returns the error message. */
+function failure(env: NodeJS.ProcessEnv): string {
+  try {
+    parseEnvironment(env);
+  } catch (error) {
+    return (error as Error).message;
+  }
+  throw new Error('expected parseEnvironment to throw');
+}
+
+describe('parseEnvironment (FND-02)', () => {
+  it('parses a complete local environment into typed values', () => {
+    expect(parseEnvironment(valid())).toEqual({
+      nodeEnv: 'development',
+      apiHost: '0.0.0.0',
+      port: 3000,
+      apiPrefix: 'api/v1',
+      corsOrigins: ['http://localhost:4200', 'http://127.0.0.1:4200'],
+      logLevel: 'debug',
+      databaseUrl: `postgresql://app:${SECRET}@localhost:5432/app`,
+      dbPoolMax: 5,
+      redisUrl: 'redis://localhost:6379',
+      s3: {
+        endpoint: 'http://localhost:4566',
+        region: 'us-east-1',
+        bucket: 'local-bucket',
+        accessKey: 'test',
+        secretKey: SECRET,
+        forcePathStyle: true,
+      },
+      swaggerEnabled: true,
+    });
+  });
+
+  it('applies safe defaults for optional settings', () => {
+    const input = valid();
+    for (const key of [
+      'NODE_ENV',
+      'API_HOST',
+      'PORT',
+      'API_PREFIX',
+      'LOG_LEVEL',
+      'DB_POOL_MAX',
+      'S3_ENDPOINT',
+      'S3_FORCE_PATH_STYLE',
+      'SWAGGER_ENABLED',
+    ])
+      delete input[key];
+    const env = parseEnvironment(input);
+    expect(env).toMatchObject({
+      nodeEnv: 'development',
+      apiHost: '0.0.0.0',
+      port: 3000,
+      apiPrefix: 'api/v1',
+      logLevel: 'info',
+      dbPoolMax: 10,
+      swaggerEnabled: false,
+    });
+    expect(env.s3.endpoint).toBeUndefined();
+    expect(env.s3.forcePathStyle).toBe(false);
+  });
+
+  it.each([
+    'DATABASE_URL',
+    'REDIS_URL',
+    'CORS_ORIGINS',
+    'S3_REGION',
+    'S3_BUCKET',
+    'S3_ACCESS_KEY',
+    'S3_SECRET_KEY',
+  ])('fails naming %s when it is missing', (key) => {
+    const input = valid();
+    delete input[key];
+    expect(failure(input)).toContain(key);
+  });
+
+  it('never echoes received values in the error', () => {
+    const message = failure({
+      ...valid(),
+      DATABASE_URL: `not-a-url-${SECRET}`,
+      S3_SECRET_KEY: '',
+    });
+    expect(message).toContain('DATABASE_URL');
+    expect(message).toContain('S3_SECRET_KEY');
+    expect(message).not.toContain(SECRET);
+    expect(message).not.toContain('not-a-url');
+  });
+
+  it.each([
+    ['DATABASE_URL', 'mysql://host/db'],
+    ['REDIS_URL', 'http://localhost:6379'],
+    ['S3_ENDPOINT', 'not a url'],
+    ['PORT', '0'],
+    ['PORT', '65536'],
+    ['PORT', '30.5'],
+    ['DB_POOL_MAX', '0'],
+    ['NODE_ENV', 'staging'],
+    ['LOG_LEVEL', 'verbose'],
+    ['SWAGGER_ENABLED', 'yes'],
+    ['CORS_ORIGINS', 'http://localhost:4200,,http://x.test'],
+    ['CORS_ORIGINS', 'localhost:4200'],
+  ])('rejects %s=%s', (key, value) => {
+    expect(failure({ ...valid(), [key]: value })).toContain(key);
+  });
+
+  it('accepts a wildcard CORS origin outside production', () => {
+    expect(
+      parseEnvironment({ ...valid(), CORS_ORIGINS: '*' }).corsOrigins,
+    ).toEqual(['*']);
+  });
+
+  describe('production policy', () => {
+    const production = () => ({
+      ...valid(),
+      NODE_ENV: 'production',
+      SWAGGER_ENABLED: 'false',
+    });
+
+    it('rejects a wildcard CORS origin', () => {
+      expect(failure({ ...production(), CORS_ORIGINS: '*' })).toContain(
+        'CORS_ORIGINS',
+      );
+    });
+
+    it('rejects development Swagger', () => {
+      expect(failure({ ...production(), SWAGGER_ENABLED: 'true' })).toContain(
+        'SWAGGER_ENABLED',
+      );
+    });
+
+    it('accepts an explicit allowlist without Swagger', () => {
+      expect(parseEnvironment(production()).nodeEnv).toBe('production');
+    });
+  });
+
+  it('does not require reserved auth, reservation or Mercado Pago variables', () => {
+    const env = parseEnvironment(valid());
+    expect(env).not.toHaveProperty('authAccessTokenSecret');
+    expect(() =>
+      parseEnvironment({
+        ...valid(),
+        MP_ACCESS_TOKEN: '',
+        AUTH_ACCESS_TOKEN_SECRET: '',
+      }),
+    ).not.toThrow();
+  });
+});

@@ -7,8 +7,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-feriaos}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD in .env}
     ports:
-      # Set POSTGRES_HOST_PORT (e.g. 5433) if a host PostgreSQL already owns 5432.
-      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+      # POSTGRES_PORT (e.g. 5433) when a host PostgreSQL already owns 5432; keep DATABASE_URL in sync.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -64,7 +64,7 @@ services:
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:?Define S3_ACCESS_KEY in .env}
       S3_SECRET_KEY: ${S3_SECRET_KEY:?Define S3_SECRET_KEY in .env}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:4200}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:4200}
     ports:
       - "127.0.0.1:${PORT:-3000}:3000"
     volumes:

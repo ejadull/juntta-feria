@@ -302,28 +302,32 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 
 ##### FND-01 — Decisiones arquitectónicas y trazabilidad
 
-- **Estado:** `PENDING`
+- **Estado:** `IN_PROGRESS` (falta corregir las referencias de infraestructura del README)
 - **Dependencias:** ninguna
 - **Entrega:** ADRs para monorepo/ejecución, configuración/autenticación y persistencia/PostGIS; este tablero permanece alineado con el diseño aprobado.
 - **Aceptación:** las decisiones no contradicen el stack existente ni presentan como implementadas capacidades aún pendientes.
 - **Evidencia requerida:** revisión documental, enlaces internos válidos y `git diff --check`.
-- [ ] Crear ADR del monolito modular con npm workspaces.
-- [ ] Crear ADR del contrato de configuración y JWT con refresh token HttpOnly.
-- [ ] Crear ADR de Drizzle ORM con SQL explícito para PostGIS, RLS y constraints críticos.
+  - 2026-10-30: ADRs en `docs/adr/` (una sola carpeta y numeración, en lugar de `docs/architecture/adr/0001-0003` del plan): [0003](../adr/0003-monolito-modular-npm-workspaces.md), [0004](../adr/0004-contrato-de-entorno-y-autenticacion.md), [0005](../adr/0005-drizzle-y-sql-explicito-postgis.md).
+- [x] Crear ADR del monolito modular con npm workspaces.
+- [x] Crear ADR del contrato de configuración y JWT con refresh token HttpOnly.
+- [x] Crear ADR de Drizzle ORM con SQL explícito para PostGIS, RLS y constraints críticos.
 - [ ] Corregir referencias de infraestructura que no coincidan con las rutas reales.
 
 ##### FND-02 — Contrato de entorno y validación
 
-- **Estado:** `PENDING`
+- **Estado:** `IN_PROGRESS` (plantilla y `.env` locales pendientes de acción humana)
 - **Dependencias:** ninguna
 - **Entrega:** `.env.example` completo y seguro, `.env` local coherente y validación tipada al iniciar la API.
 - **Aceptación:** variables requeridas inválidas detienen el arranque con mensajes saneados; variables futuras opcionales no bloquean flujos ajenos; ningún secreto se versiona ni aparece en salidas.
 - **Evidencia requerida:** pruebas unitarias de configuración, comprobación de claves sin valores y revisión de archivos rastreados.
-- [ ] Clasificar variables requeridas, opcionales, predeterminadas y reservadas.
-- [ ] Actualizar `.env.example` con documentación y marcadores inequívocos.
-- [ ] Completar `.env` local preservando valores existentes y generando únicamente secretos faltantes.
-- [ ] Implementar parser, tipado y validación de configuración.
-- [ ] Probar valores válidos, ausentes, malformados e incompatibles con producción.
+  - 2026-10-30: `npm run test --workspace api` → 28/28 (27 de `env.schema.spec.ts`); `node --test scripts/init-local-env.test.mjs` → 5/5; `docker compose config --quiet` OK.
+  - Ajustes aprobados: sin variables `MINIO_*` (el stack usa LocalStack); `CORS_ORIGINS` reemplaza a `CORS_ORIGIN` en Compose; el puerto publicado de PostgreSQL usa `POSTGRES_PORT`, el nombre de la plantilla.
+  - Bloqueo: `Read/Edit(.env.*)` está denegado en la configuración global de Claude Code; la plantilla y el `.env` real los aplica una persona.
+- [x] Clasificar variables requeridas, opcionales, predeterminadas y reservadas (ADR 0004).
+- [ ] Actualizar `.env.example` con documentación y marcadores inequívocos (propuesta entregada; falta aplicarla).
+- [ ] Completar `.env` local preservando valores existentes y generando solo los secretos faltantes (`node scripts/init-local-env.mjs` listo y probado; falta confirmar su ejecución sobre el `.env` real).
+- [x] Implementar parser, tipado y validación de configuración (`apps/api/src/config/env.schema.ts`, `configuration.ts`, `ConfigModule` global).
+- [x] Probar valores válidos, ausentes, malformados e incompatibles con producción (los errores nombran la variable, nunca el valor).
 
 ##### FND-03 — Contenedores y Compose reproducibles
 
@@ -334,7 +338,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 - **Evidencia requerida:** `docker compose config --quiet`, build, estado/health de contenedores e inspección de bindings sin imprimir secretos.
   - 2026-10-30: `docker compose config --quiet` OK; los 5 servicios `Up`, `postgres`/`redis`/`s3` `healthy`, `RestartCount=0`; todos los `PortBindings` con `HostIp=127.0.0.1`; bucket creado por `infra/localstack/init-s3.sh` (head-bucket || create-bucket).
   - Fix: defaults de `S3_BUCKET` divergían entre `s3` y `api`; ambos quedan en `juntta-feria-local`.
-  - Hallazgo de entorno: un PostgreSQL del host ocupa `5432` y el puerto del contenedor no se publica (la API no se afecta: usa la red Docker). Se agregó `POSTGRES_HOST_PORT` (default `5432`); definir `5433` en `.env` para acceder desde el host.
+  - Hallazgo de entorno: un PostgreSQL del host ocupa `5432` y el puerto del contenedor no se publica (la API no se afecta: usa la red Docker). El puerto publicado usa `POSTGRES_PORT` (default `5432`, mismo nombre que la plantilla); definir `5433` en `.env` (y en `DATABASE_URL`) para acceder desde el host.
 - [x] Crear `.dockerignore` y Dockerfiles de desarrollo para API y Web.
 - [x] Ajustar los contextos de build al lockfile raíz del workspace.
 - [x] Agregar inicialización idempotente del bucket local.
@@ -345,16 +349,20 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 
 ##### FND-04 — Base operativa de la API
 
-- **Estado:** `PENDING`
+- **Estado:** `VERIFIED` (con el `.env` local actual; FND-02 sigue abierta sólo por la acción humana sobre `.env`)
 - **Dependencias:** `FND-02`, `FND-03`
 - **Entrega:** prefijo `/api/v1`, CORS validado, correlation ID, errores `application/problem+json`, OpenAPI de desarrollo y health/readiness reales.
 - **Aceptación:** liveness no depende de servicios externos; readiness comprueba PostgreSQL, Redis y acceso al bucket S3; los errores no filtran secretos.
 - **Evidencia requerida:** pruebas unitarias/E2E y requests HTTP contra el stack local.
-- [ ] Configurar bootstrap, prefijo versionado y allowlist CORS.
-- [ ] Implementar propagación/generación de correlation ID.
-- [ ] Implementar filtro global de problemas HTTP.
-- [ ] Implementar liveness y readiness con chequeos diferenciados.
-- [ ] Habilitar OpenAPI únicamente mediante configuración explícita de desarrollo.
+  - 2026-10-30: `vitest run` → 47/47 (correlation ID 9, problem+json 7, readiness 4, entorno 27); `test:e2e` → 7/7 con el bootstrap real y chequeos falsos; `oxlint` 0 hallazgos; `tsc --noEmit` OK.
+  - 2026-10-30: contra el stack Compose: `GET /api/v1/health/live` 200; `GET /api/v1/health/ready` 200 con `postgres`/`redis`/`storage` `up`; con `redis` detenido, ready 503 en 0,2 s marcando sólo `redis: down` (detalle únicamente en el log), live sigue en 200 y ready vuelve a 200 al reiniciarlo; ruta inexistente → 404 `application/problem+json` con `correlationId` y sin la query string; preflight CORS desde `http://localhost:4200` permitido con credenciales y desde otro origen sin `Access-Control-Allow-Origin`; `x-correlation-id` válido se devuelve tal cual y uno inválido se reemplaza por un UUID.
+  - Hallazgo: el 404 nativo del router incluye la URL con query string en el mensaje; el filtro la recorta (podría llevar tokens).
+  - Hallazgo: el watch de `nest start` en el contenedor no detecta cambios del bind mount en Windows; hay que reiniciar `api` (pendiente para FND-06: polling o documentarlo).
+- [x] Configurar bootstrap, prefijo versionado y allowlist CORS (`src/bootstrap.ts`, compartido por `main.ts` y el e2e).
+- [x] Implementar propagación/generación de correlation ID (`x-correlation-id`, charset y largo acotados; si no, UUID v4).
+- [x] Implementar filtro global de problemas HTTP (RFC 9457; 5xx con detalle genérico y stack sólo en el log).
+- [x] Implementar liveness y readiness con chequeos diferenciados (paralelos, timeout de 2 s por dependencia; S3 vía `HeadBucket`).
+- [x] Habilitar OpenAPI únicamente mediante configuración explícita de desarrollo (`SWAGGER_ENABLED`, en `/api/v1/docs`; el esquema lo rechaza en producción).
 
 ##### FND-05 — Conectividad Web–API
 
@@ -421,11 +429,117 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `EVT-01` Eventos, stands y tarifas | `LAY-01` | evento sobre versión publicada, sectores por evento ([ADR 0002](../adr/0002-sectores-por-evento.md)) e inventario valorizado | `PENDING` |
 | `EXH-01` Expositores | `CORE-03` | perfil privado/público y consentimiento | `PENDING` |
 | `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01` | holds, locking e idempotencia | `PENDING` |
-| `PAY-01` Mercado Pago | `RES-01` | checkout, Webhooks y conciliación | `PENDING` |
+| `PAY-00` Decisiones de integración Mercado Pago | ninguna | ADR: track Checkout Pro, credenciales por organizador y validación de firma (ver [EP07](#integración-mercado-pago-ep07)) | `PENDING` |
+| `PAY-01` Proveedor de pagos y credenciales | `FND-04`, `PAY-00` | puerto `PaymentProvider`, adaptador SDK `mercadopago`, sandbox | `PENDING` |
+| `PAY-02` Preferencia Checkout Pro | `RES-01`, `PAY-01` | payment attempt idempotente y preferencia desde snapshot de precio | `PENDING` |
+| `PAY-03` Webhooks de pago | `PAY-02` | firma, inbox deduplicado, consulta server-to-server y confirmación | `PENDING` |
+| `PAY-04` Retorno de checkout (P19) | `PAY-02`, `PUB-UI-01..06` | pantallas aprobado/pendiente/rechazado sin confiar en query params | `PENDING` |
+| `PAY-05` Conciliación y pago tardío | `PAY-03` | job de reconciliación, `LATE_PAYMENT_CONFLICT`, P10 | `PENDING` |
+| `PAY-06` Reembolsos, cancelaciones y contracargos | `PAY-05` | refund total/parcial, cancelación de pendientes, chargebacks | `PENDING` |
+| `PAY-07` Configuración Mercado Pago (P12) | `PAY-01`, `CORE-03` | vincular cuenta vendedora del organizador sin secretos en claro | `PENDING` |
+| `SUB-01` Suscripción SaaS del organizador | `CORE-03`, `PAY-00` | planes (`preapproval_plan`) y suscripciones (`preapproval`); **fuera del MVP** | `PENDING` |
 | `PUB-01` Portal público | `EVT-01`, `EXH-01`, `RES-01` | catálogo, mapa, disponibilidad y accesibilidad | `PENDING` |
-| `REP-01` Reportes | `PAY-01` | ocupación, GMV y exportaciones CSV | `PENDING` |
+| `REP-01` Reportes | `PAY-05` | ocupación, GMV y exportaciones CSV | `PENDING` |
 
 Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de RLS permanecen pendientes y deberán incorporarse como subtareas verificables antes de declarar completo el Sprint 0 general. Sprint 0A no las reemplaza.
+
+#### Integración Mercado Pago (EP07)
+
+Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevada el 2026-10-30 (§16). Lo marcado **(verificar)** no quedó confirmado en ese relevamiento y se valida contra la documentación vigente antes de implementarlo.
+
+##### PAY-00 — Decisiones de integración
+
+- **Estado:** `PENDING`
+- **Dependencias:** ninguna
+- **Entrega:** ADR con las decisiones que condicionan PAY-01..07.
+- **Aceptación:** cada decisión cita la página oficial que la respalda; lo no confirmado queda como riesgo explícito.
+- **Evidencia requerida:** revisión documental con enlaces oficiales vigentes.
+- [ ] Elegir track: Checkout Pro vía **Preferences API** (`POST /checkout/preferences`, el de §7) o vía **Orders API** (Mercado Pago lo recomienda para integraciones nuevas y marca la Payments API como legacy, sin funcionalidades nuevas).
+- [ ] Credenciales por organizador (R1): mecanismo autorizado para cobrar en la cuenta vendedora de cada organizador (OAuth de Mercado Pago u otro vigente) frente a una cuenta única; almacenamiento cifrado (KMS/vault) y rotación.
+- [ ] Validación de `x-signature`: usar `WebhookSignatureValidator` del SDK oficial o el manifest documentado en la pestaña "Sin SDKs" **(verificar plantilla del manifest y algoritmo HMAC)**; ventana de frescura del `ts`.
+- [ ] Uso de `X-Idempotency-Key` en creación de pagos/reembolsos **(verificar en la referencia)**; en Preferences la idempotencia es propia (payment attempt + `external_reference`).
+- [ ] `binary_mode` (sólo aprobado/rechazado) frente a aceptar `pending` (pagos offline) según la duración del hold.
+
+##### PAY-01 — Proveedor de pagos y credenciales
+
+- **Estado:** `PENDING`
+- **Dependencias:** `FND-04`, `PAY-00`
+- **Entrega:** puerto `PaymentProvider` (crear preferencia, obtener pago, reembolsar, cancelar) y adaptador con el SDK oficial `mercadopago`; adaptador falso para tests.
+- **Aceptación:** sin credenciales, las operaciones de pago fallan con error explícito y el resto de la API arranca (§13.1); el Access Token nunca llega al frontend ni a logs; sólo la Public Key es pública.
+- **Evidencia requerida:** tests unitarios del adaptador contra dobles HTTP y prueba en sandbox con usuarios de prueba.
+- [ ] Validar `MP_ENVIRONMENT`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` (y Public Key si se usa SDK de frontend) en el esquema de entorno.
+- [ ] Cliente con timeouts, reintentos acotados sólo en operaciones idempotentes y errores mapeados a problem+json sin filtrar datos del proveedor.
+- [ ] Credenciales de prueba del usuario productivo y usuarios de prueba comprador/vendedor documentados (sin valores) en el README.
+
+##### PAY-02 — Preferencia Checkout Pro
+
+- **Estado:** `PENDING`
+- **Dependencias:** `RES-01`, `PAY-01`
+- **Entrega:** `POST /api/v1/reservations/:id/checkout` crea un payment attempt idempotente y una preferencia por reserva (§6.5).
+- **Aceptación:** el precio sale del snapshot del servidor, nunca del frontend; reintentar no crea una segunda preferencia; si el proveedor falla el hold se mantiene.
+- **Evidencia requerida:** tests de integración con proveedor falso y prueba en sandbox hasta `init_point`.
+- [ ] `items` con `title`, `quantity: 1`, `unit_price` y `currency_id: "ARS"` desde el snapshot; `external_reference` = id del payment attempt.
+- [ ] `notification_url` (prioridad sobre la configurada en el panel), `back_urls` `success`/`pending`/`failure` y `auto_return: "approved"`.
+- [ ] `expires: true` con `expiration_date_to` ≤ vencimiento del hold (ISO 8601 con offset).
+- [ ] Persistir `preference_id` e `init_point` (o `sandbox_init_point` en sandbox) y devolver sólo la URL de checkout.
+
+##### PAY-03 — Webhooks de pago
+
+- **Estado:** `PENDING`
+- **Dependencias:** `PAY-02`
+- **Entrega:** `POST /api/v1/webhooks/mercadopago` con inbox (`payment_webhook_inbox`) y procesamiento asíncrono idempotente (§6.7).
+- **Aceptación:** AC-07 (dos webhooks idénticos, un único efecto); firma inválida → 401 sin procesar; respuesta 200/201 en mucho menos de 22 s (Mercado Pago reintenta cada 15 min); la aprobación sólo ocurre tras `GET /v1/payments/{id}` y cotejo de `external_reference`, cobrador, monto y moneda.
+- **Evidencia requerida:** tests con webhooks duplicados, desordenados y con firma inválida; prueba con el simulador del panel.
+- [ ] Validar `x-signature` (`ts`, `v1`) con `x-request-id` y `data.id` de la query, según PAY-00.
+- [ ] Topics `payment` y órdenes comerciales (`merchant_order`); ignorar con 200 los no suscriptos.
+- [ ] Transiciones monotónicas: un evento viejo no revierte un estado más avanzado.
+- [ ] Mapear estados del pago (`approved`, `pending`, `in_process`, `rejected`, `cancelled`, `refunded`, `charged_back`) y `status_detail` **(verificar lista vigente)**.
+
+##### PAY-04 — Retorno de checkout (P19)
+
+- **Estado:** `PENDING`
+- **Dependencias:** `PAY-02`, `PUB-UI-01..06`
+- **Entrega:** páginas de retorno aprobado/pendiente/rechazado en el área Feriante, que reemplazan el marcador "Reserva y pago".
+- **Aceptación:** los query params del retorno (`payment_id`, `status`, `external_reference`, `merchant_order_id`, `preference_id`…) sólo orientan la UI; el estado mostrado sale de la API propia y se actualiza cuando llega el webhook.
+- **Evidencia requerida:** tests de página, E2E con API simulada y axe.
+- [ ] Estado pendiente con reintento de consulta y explicación de pagos offline.
+- [ ] Rechazado con opción de reintentar dentro del hold.
+
+##### PAY-05 — Conciliación y pago tardío
+
+- **Estado:** `PENDING`
+- **Dependencias:** `PAY-03`
+- **Entrega:** job de conciliación de attempts pendientes y vista P10 de incidencias (§6.6, §6.8, INV-07).
+- **Aceptación:** el hold no se libera a ciegas si el proveedor no responde; un pago aprobado tras la adjudicación genera `LATE_PAYMENT_CONFLICT` sin doble adjudicación.
+- **Evidencia requerida:** tests de reloj controlado y escenarios de carrera.
+- [ ] Consultar el pago o la orden comercial por `external_reference` antes de expirar un hold.
+- [ ] Alertas y KPIs de conciliación pendiente y errores de webhook (§1.4).
+
+##### PAY-06 — Reembolsos, cancelaciones y contracargos
+
+- **Estado:** `PENDING`
+- **Dependencias:** `PAY-05`
+- **Entrega:** reembolso total o parcial (`POST /v1/payments/{id}/refunds`; total con cuerpo vacío, parcial con monto **(verificar nombre del campo)**), cancelación de pagos pendientes y registro de contracargos.
+- **Aceptación:** reembolsos idempotentes y auditados; dentro de los 180 días desde la aprobación; un pago con dos medios se revierte por cada `payment_id`.
+- **Evidencia requerida:** tests con proveedor falso y prueba en sandbox.
+- [ ] Topic de contracargos (`GET /v1/chargebacks/{id}`) e incidencia asociada.
+
+##### PAY-07 — Configuración Mercado Pago (P12)
+
+- **Estado:** `PENDING`
+- **Dependencias:** `PAY-01`, `CORE-03`
+- **Entrega:** pantalla del organizador para vincular y verificar su cuenta vendedora según PAY-00.
+- **Aceptación:** sólo owner/administrador; los secretos nunca vuelven al navegador; estado de vinculación y entorno visibles.
+- **Evidencia requerida:** tests de autorización, de página y axe.
+
+##### SUB-01 — Suscripción SaaS del organizador
+
+- **Estado:** `PENDING` — **fuera del MVP** (§1.5); requiere decisión de producto sobre planes y precios.
+- **Dependencias:** `CORE-03`, `PAY-00`
+- **Entrega:** planes `POST /preapproval_plan` (`reason`, `back_url`, `auto_recurring`: `frequency`, `frequency_type`, `transaction_amount`, `currency_id: "ARS"`, `billing_day`, `free_trial`) y suscripciones `POST /preapproval` (`preapproval_plan_id`, `payer_email`, `card_token_id` con `status: "authorized"`, o `status: "pending"` con `init_point`); cambios con `PUT /preapproval/{id}`.
+- **Aceptación:** el ingreso SaaS se registra aparte del GMV de stands (§1.4); webhooks `subscription_preapproval`, `subscription_authorized_payment` y `subscription_preapproval_plan` con la misma validación de firma que PAY-03.
+- **Evidencia requerida:** prueba en sandbox con usuarios de prueba.
+- [ ] Confirmar valores de `status` para pausar/cancelar **(verificar)** y reglas de usuarios de prueba.
 
 ## 11. Roadmap
 Sprint 0 (1 semana): ADRs, UX, repo, CI, entorno, diseño RLS.
@@ -462,7 +576,7 @@ Estructura `apps/api` (NestJS), `apps/web` (Angular), `docker-compose.yml`, `.en
 
 | Variables | Requisito y uso |
 |---|---|
-| `NODE_ENV`, `PORT`, `WEB_PORT`, `CORS_ORIGIN` | Configuración local de API/web; CORS solo permite el origen del frontend local. |
+| `NODE_ENV`, `API_HOST`, `PORT`, `API_PREFIX`, `WEB_PORT`, `API_PROXY_TARGET`, `CORS_ORIGINS`, `LOG_LEVEL`, `SWAGGER_ENABLED` | Configuración local de API/web; `CORS_ORIGINS` es una lista separada por comas (en producción no admite `*` ni Swagger). Validadas al arrancar ([ADR 0004](../adr/0004-contrato-de-entorno-y-autenticacion.md)). |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL` | PostgreSQL/PostGIS local; las credenciales se generan localmente y nunca se comparten. |
 | `REDIS_URL` | Redis local para BullMQ, jobs y cache. |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE` | LocalStack emula S3 en desarrollo con credenciales públicas de simulación; en producción se requiere un proveedor S3 y credenciales de mínimo privilegio administradas fuera de Git. |
@@ -486,5 +600,10 @@ R1 integración de cobro por cuenta de cada organizador: validar mecanismo legal
 - Mercado Pago Preferences: https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-preferences/overview
 - Mercado Pago Checkout Pro API: https://www.mercadopago.com.ar/developers/es/reference/online-payments/checkout-pro-preferences/overview
 - Mercado Pago Webhooks: https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-orders/notifications
+- Mercado Pago crear preferencia (consultado 2026-10-30): https://www.mercadopago.com.ar/developers/es/docs/checkout-pro/create-payment-preference ; referencia: https://www.mercadopago.com.ar/developers/es/reference/online-payments/checkout-pro-preferences/create-preference/post
+- Mercado Pago notificaciones Webhooks (consultado 2026-10-30): https://www.mercadopago.com.ar/developers/es/docs/your-integrations/notifications/webhooks
+- Mercado Pago back_urls y reembolsos (consultado 2026-10-30): https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-preferences/configure-back-urls ; https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-preferences/additional-settings/refunds-and-cancellations
+- Mercado Pago suscripciones (consultado 2026-10-30): https://www.mercadopago.com.ar/developers/es/docs/subscriptions/overview ; https://www.mercadopago.com.ar/developers/es/reference/online-payments/subscriptions/create-preapproval-plan/post ; https://www.mercadopago.com.ar/developers/es/reference/online-payments/subscriptions/create-preapproval/post
+- Mercado Pago Checkout API / Orders (consultado 2026-10-30): https://www.mercadopago.com.ar/developers/es/docs/checkout-api/overview
 - PostGIS ST_IsValid: https://postgis.net/docs/ST_IsValid.html
 - PostGIS ST_Intersects: https://postgis.net/docs/en/ST_Intersects.html

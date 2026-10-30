@@ -1,9 +1,18 @@
 import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter } from '@nestjs/platform-fastify';
+import {
+  FastifyAdapter,
+  type NestFastifyApplication,
+} from '@nestjs/platform-fastify';
 import { AppModule } from './app.module.js';
+import { configureApp, fastifyOptions } from './bootstrap.js';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule, new FastifyAdapter());
-  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
+async function bootstrap(): Promise<void> {
+  const app = await NestFactory.create<NestFastifyApplication>(
+    AppModule,
+    new FastifyAdapter(fastifyOptions()),
+  );
+  const env = configureApp(app);
+  app.enableShutdownHooks(); // closes the readiness clients on SIGTERM
+  await app.listen(env.port, env.apiHost);
 }
 await bootstrap();
