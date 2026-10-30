@@ -63,4 +63,4 @@ PUB-UI-01 ─> PUB-UI-02 ─> PUB-UI-03 ─┬─> PUB-UI-04 ─┐
   - 2026-10-30: sin regresiones: shell del organizador 50/50, `LUI-06` 25/25, `LUI-07` 16/16, `LUI-08` 22/22, `UX-01` 5/5.
 - [x] E2E y axe en las 5 pantallas.
 - [x] Actualizar §10.1.
-- [ ] Archivar el change (pendiente de aprobación del commit).
+- [x] Archivar el change (`specs/public-catalog/spec.md` + `changes/archive/2026-10-30-pub-ui-catalog/`).
