@@ -7,7 +7,9 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "lint": "oxlint src/ e2e/ proxy.conf.cjs proxy.conf.test.mjs playwright.config.ts",
+    "test:proxy": "node --test proxy.conf.test.mjs"
   },
   "private": true,
   "packageManager": "npm@11.19.1",
@@ -29,6 +31,7 @@
     "@tailwindcss/postcss": "^4.1.12",
     "@vitest/coverage-v8": "^5.0.5",
     "jsdom": "^30.0.0",
+    "oxlint": "^1.58.0",
     "postcss": "^8.5.3",
     "prettier": "^3.8.1",
     "tailwindcss": "^4.1.12",

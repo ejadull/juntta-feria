@@ -13,7 +13,10 @@ test('defaults to the local API for npm runs', () => {
 });
 
 test('uses API_PROXY_TARGET (Compose: http://api:3000)', () => {
-  assert.equal(proxyConfig({ API_PROXY_TARGET: 'http://api:3000' })['/api'].target, 'http://api:3000');
+  assert.equal(
+    proxyConfig({ API_PROXY_TARGET: 'http://api:3000' })['/api'].target,
+    'http://api:3000',
+  );
 });
 
 test('treats a blank value as not set', () => {
@@ -21,6 +24,12 @@ test('treats a blank value as not set', () => {
 });
 
 test('rejects a target that is not an http(s) URL, naming only the variable', () => {
-  assert.throws(() => proxyConfig({ API_PROXY_TARGET: 'api:3000' }), /API_PROXY_TARGET must be an http\(s\) URL/);
-  assert.throws(() => proxyConfig({ API_PROXY_TARGET: 'ftp://x' }), (e) => !e.message.includes('ftp://x'));
+  assert.throws(
+    () => proxyConfig({ API_PROXY_TARGET: 'api:3000' }),
+    /API_PROXY_TARGET must be an http\(s\) URL/,
+  );
+  assert.throws(
+    () => proxyConfig({ API_PROXY_TARGET: 'ftp://x' }),
+    (e) => !e.message.includes('ftp://x'),
+  );
 });

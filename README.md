@@ -1,11 +1,8 @@
-# juntta-feria
-Construir una plataforma web que permita administrar ferias permanentes e itinerantes, diseñar planos de predios con dimensiones reales, comercializar stands, gestionar expositores, cobrar reservas mediante Mercado Pago y ofrecer un directorio interactivo a los visitantes.
-
 # Juntta Feria
 
-**Juntta Feria** es una plataforma SaaS multiempresa para organizar ferias, gestionar predios fijos e itinerantes, diseñar planos reutilizables a escala, comercializar stands y brindar un mapa público de expositores.
+**Juntta Feria** es una plataforma SaaS multiempresa para organizar ferias, gestionar predios fijos e itinerantes, diseñar planos reutilizables a escala, comercializar stands, cobrar reservas con Mercado Pago y brindar un mapa público de expositores.
 
-> Estado: fase de especificación. Este repositorio aún no debe considerarse una aplicación operativa.
+> **Estado:** en desarrollo, sin versión operativa. El frontend tiene las vistas de Organizador, Feriante y Visitante con **datos de demostración en memoria**. La API tiene la base operativa (configuración validada, `/api/v1`, errores `problem+json`, health checks) pero todavía **no tiene dominio, base de datos migrada ni autenticación**. El avance por tarea está en [§10.1 de la especificación](docs/openspec/specification.md#101-plan-de-ejecución-y-subtareas).
 
 ## Objetivos
 
@@ -16,24 +13,28 @@ Construir una plataforma web que permita administrar ferias permanentes e itiner
 - Mostrar a visitantes un mapa interactivo de expositores y productos.
 - Registrar auditoría, pagos, ocupación y reportes operativos.
 
-## Alcance del MVP
+## Stack
 
-| Componente | Tecnología propuesta |
-| --- | --- |
-| Frontend responsive/PWA | Angular + TypeScript |
-| Editor de planos | Konva.js o Fabric.js; coordenadas locales en metros |
-| API | NestJS / REST / OpenAPI |
-| Persistencia | PostgreSQL 16 + PostGIS |
-| Jobs, cache y colas | Redis + BullMQ |
-| Archivos | Almacenamiento compatible S3, MinIO para desarrollo |
-| Pagos | Mercado Pago Checkout Pro + Webhooks |
-| Entorno local | Docker Compose |
+| Componente | Tecnología | Estado |
+| --- | --- | --- |
+| Monorepo | npm workspaces (`apps/api`, `apps/web`) — [ADR 0003](docs/adr/0003-monolito-modular-npm-workspaces.md) | en uso |
+| Frontend | Angular 22 (standalone, signals) + Tailwind CSS 4 — [Design System v1](docs/design/juntta-design-system-v1.md) | en uso, datos de demo |
+| Editor y mapa de stands | SVG con coordenadas en metros — [ADR 0001](docs/adr/0001-svg-para-editor-y-mapa.md) | en uso |
+| API | NestJS 12 + Fastify, OpenAPI sólo en desarrollo | base operativa |
+| Configuración y auth | entorno validado con Zod; JWT + refresh rotativo HttpOnly — [ADR 0004](docs/adr/0004-contrato-de-entorno-y-autenticacion.md) | entorno en uso; auth pendiente (`CORE-02`) |
+| Persistencia | PostgreSQL 16 + PostGIS con Drizzle y SQL explícito — [ADR 0005](docs/adr/0005-drizzle-y-sql-explicito-postgis.md) | contenedor listo; migraciones pendientes (`CORE-01`) |
+| Cache y colas | Redis | contenedor listo |
+| Archivos | S3 (en desarrollo: LocalStack, bucket creado al iniciar) | contenedor listo |
+| Pagos | Mercado Pago Checkout Pro + Webhooks | pendiente (`PAY-00..07`) |
+| Entorno local | Docker Compose (sólo desarrollo) | en uso |
 
 ## Documentación
 
-- [OpenSpec funcional y técnico](docs/openspec/specification.md): PRD, dominios, modelo de datos, API, seguridad, reglas de negocio, backlog, aceptación y roadmap.
-- [Docker Compose de referencia](docker-compose.yml): plantilla para entorno de desarrollo, **no ejecutable completamente hasta crear las apps y Dockerfiles**.
-- [Variables de entorno de ejemplo](.env.example): copiar a `.env` y definir credenciales propias. No versionar `.env`.
+- [Especificación OpenSpec](docs/openspec/specification.md): PRD, dominios, modelo de datos, API, seguridad, reglas de negocio, tablero de tareas, aceptación y roadmap.
+- [Specs por capacidad](docs/openspec/specs/) y [changes archivados](docs/openspec/changes/archive/).
+- [ADRs](docs/adr/): decisiones de arquitectura vigentes.
+- [Juntta Design System v1](docs/design/juntta-design-system-v1.md): paleta, tokens y contraste.
+- [Propuesta original de stack](docs/vision/stack-propuesto-original.md): borrador histórico de producto (PWA, offline, performance); **no vigente** donde contradice los ADR.
 
 ## Flujo principal
 
@@ -46,330 +47,81 @@ Construir una plataforma web que permita administrar ferias permanentes e itiner
 
 ## Desarrollo local
 
-La base de `apps/api` (NestJS + Fastify) y `apps/web` (Angular) ya está creada; todavía no incluye los módulos de negocio, migraciones ni Dockerfiles de desarrollo. Para instalar dependencias y ejecutar las aplicaciones de forma local:
+Requisitos: Node.js ≥ 22.12, npm 11 y Docker (Docker Desktop en Windows/macOS).
+
+### 1. Variables de entorno
 
 ```bash
 cp .env.example .env
-# Reemplazar los valores REPLACE_* con secretos locales únicos y completar
-# las credenciales sandbox de Mercado Pago solo si se probarán pagos.
-
-npm install
-npm run dev:api
-# En otra terminal:
-npm run dev:web
+node scripts/init-local-env.mjs
 ```
 
-El entorno integral de Docker Compose requiere los Dockerfiles y servicios de aplicación pendientes:
+El script completa los marcadores `GENERATE_LOCAL_HEX_64` con valores aleatorios, conserva lo que ya tenga `.env`, deja vacías las credenciales de Mercado Pago y sólo informa **nombres** de variables, nunca valores. Las credenciales sandbox de Mercado Pago se cargan a mano recién cuando se trabaje en pagos. `.env` no se versiona.
+
+### 2. Con Docker Compose (recomendado)
 
 ```bash
-docker compose config
 docker compose up --build -d
 ```
 
-`POSTGRES_PASSWORD` debe ser hexadecimal para que la URI PostgreSQL funcione sin codificación adicional. Para MinIO local, `S3_ACCESS_KEY`/`S3_SECRET_KEY` deben coincidir con `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`. Los secretos de Mercado Pago y `JWT_SECRET` son opcionales hasta configurar esos flujos/decidir el mecanismo de autenticación.
+| Servicio | URL local |
+| --- | --- |
+| Web | http://localhost:4200 |
+| API | http://localhost:3000/api/v1 |
+| Liveness / readiness | `/api/v1/health/live` · `/api/v1/health/ready` (PostgreSQL, Redis y bucket S3) |
+| OpenAPI (si `SWAGGER_ENABLED=true`) | http://localhost:3000/api/v1/docs |
 
-**Seguridad:** no publicar tokens de Mercado Pago, credenciales, secretos ni `.env` en Git. El código definitivo debe contemplar aislamiento por tenant, idempotencia, Webhooks verificados y restricciones de concurrencia.
+Todos los puertos se publican sólo en `127.0.0.1`. La web llama siempre a la ruta relativa `/api/v1`; el proxy de desarrollo ([`apps/web/proxy.conf.cjs`](apps/web/proxy.conf.cjs)) la envía a `API_PROXY_TARGET` (`http://api:3000` en Compose). Ambos contenedores detectan cambios de código por polling, porque los bind mounts de Windows/macOS no entregan eventos de archivos.
 
-## Roadmap
+### 3. Con npm (sin contenedores de apps)
 
-1. Core multi-tenant y autenticación.
-2. Predios y editor de planos versionados.
-3. Eventos, stands y tarifas.
-4. Reservas y pagos Mercado Pago.
-5. Perfil del feriante y portal público.
-6. Reportes, hardening, pruebas E2E y piloto.
+```bash
+npm ci
+docker compose up -d postgres redis s3   # dependencias de la API
+npm run dev:api                          # API en :3000, lee ../../.env
+npm run dev:web                          # web en :4200; proxy a http://localhost:3000 por defecto
+```
+
+Si las dependencias del contenedor `api` o `web` quedan desactualizadas después de cambiar `package.json` (volúmenes `*_node_modules`), reinstalarlas dentro del contenedor:
+
+```bash
+docker compose exec -w /workspace api npm ci --workspace api --include-workspace-root=false
+```
+
+## Verificación
+
+| Qué | Comando |
+| --- | --- |
+| Lint (API y web, oxlint) | `npm run lint` |
+| Tests API (unitarios) | `npm test --workspace api` |
+| Tests API (e2e del bootstrap) | `npm run test:e2e --workspace api` |
+| Tests web (unitarios, Vitest) | `docker compose exec -w /workspace/apps/web web npx ng test --watch=false` |
+| Proxy de desarrollo | `npm run test:proxy --workspace web` |
+| E2E web (Playwright, con el stack levantado) | `npm run e2e --workspace web` |
+| Script de entorno | `node --test scripts/init-local-env.test.mjs` |
+| Compose | `docker compose config --quiet` |
+
+En Windows con Git Bash, anteponer `MSYS_NO_PATHCONV=1` a los `docker compose exec -w …`.
+
+## Seguridad
+
+- No versionar `.env`, tokens de Mercado Pago, credenciales ni secretos; los errores de configuración nombran la variable, nunca su valor.
+- El backend es la fuente de verdad de disponibilidad, precios, pagos y adjudicaciones; nunca se acepta un precio enviado por el frontend.
+- El código de dominio debe contemplar aislamiento por tenant, idempotencia, Webhooks verificados y restricciones de concurrencia (§6–§8 de la especificación).
 
 ## Convenciones
 
-- Rama objetivo de integración: `develop`.
-- Las modificaciones de una plantilla no cambian automáticamente los planos ya publicados.
-- El backend es la fuente de verdad para disponibilidad, precios, pagos y adjudicaciones.
-
-
-Stack tecnológico recomendado para Juntta Feria
-Para Juntta Feria, recomiendo desarrollar una PWA instalable, responsive, multiplataforma y con arquitectura modular, utilizando TypeScript tanto en frontend como en backend.
-
-El objetivo es tener una única aplicación que funcione en:
-- Android y iPhone.
-- Tablets Android y iPad.
-- PC con Windows y Linux.
-- Mac.
-- Navegadores web sin necesidad de instalación.
-La misma plataforma tendrá tres experiencias: organizador, feriante y visitante, adaptadas al dispositivo y a los permisos del usuario.
-1. Stack propuesto
-Arquitectura Juntta Feria
-
-Frontend · Angular + TypeScript
-Tailwind CSS
-Angular CDK
-TanStack Query
-
-PWA instalable · Desktop · Tablet · Mobile
-REST / SSE / Web Push
-
-Backend · NestJS + TypeScript
-
-Auth · Tenants · Eventos · Stands · Reservas · Pagos · Social · Notificaciones
-
-
-PostgreSQL
-PostGIS
-
-Redis
-BullMQ
-
-S3
-MinIO / Cloud
-
-
-Mercado Pago
-Web Push
-Konva.js
-Docker
-
-
-Capa	Tecnología recomendada	Justificación
-Frontend	Angular, versión estable compatible al iniciar	Framework estructurado y mantenible
-Lenguaje	TypeScript estricto	Tipado de contratos extremo a extremo
-UI	Tailwind CSS + Angular CDK	Responsive y componentes accesibles
-PWA	Service Workers + Workbox	Instalación y estrategias de caché
-Estado	Angular Signals + TanStack Query	Estado reactivo y sincronización con API
-Editor de planos	Konva.js	Drag & drop, zoom, rotación y edición
-Mapas de ubicación	MapLibre GL JS	Ubicar predios sobre mapas reales
-Backend	NestJS + Fastify	API modular
-ORM	Drizzle ORM + SQL/PostGIS específico	Control de migraciones y consultas espaciales
-Base de datos	PostgreSQL + PostGIS	Datos transaccionales y geometría
-Cache y colas	Redis + BullMQ	Procesamiento asíncrono
-Almacenamiento	S3 compatible	Fotografías y archivos
-Pagos	Mercado Pago Checkout Pro	Reservas y pagos en Argentina
-Notificaciones	Web Push + VAPID	Push multiplataforma
-Infraestructura	Docker Compose + NGINX	Desarrollo y despliegue inicial
-Testing	Vitest, Playwright y Supertest	Pruebas unitarias, E2E e integración
-Monitoreo	OpenTelemetry + Grafana	Métricas, trazas y observabilidad
-
-Una decisión importante: utilizaría Workbox para el Service Worker principal. Angular continúa ofreciendo soporte PWA mediante ng add @angular/pwa, pero su Service Worker integrado está orientado a caching básico y ya no incorpora nuevas funcionalidades salvo correcciones de seguridad. Para las estrategias offline específicas de Juntta Feria, Workbox ofrece más flexibilidad. 
-Angular+1
-
-2. Cómo funcionará en cada dispositivo
-
-
-
-
-
-
-
-
-
-Smartphone · Android / iOS
-
-Experiencia mobile-first para buscar ferias, reservar stands, pagar, recibir notificaciones y publicar fotografías.
-
-Navegación inferior, botones táctiles, tarjetas compactas y formularios simplificados.
-
-
-
-
-
-
-
-
-
-
-
-
-Tablet · Android / iPad
-
-Visualización amplia del plano, interacción táctil, zoom con gestos y administración de reservas.
-
-Especialmente adecuada para personal que trabaja dentro del predio.
-
-
-
-
-
-
-
-
-
-
-
-
-Desktop · Windows / macOS / Linux
-
-Panel administrativo completo, editor avanzado de planos, reportes, facturación y gestión de expositores.
-
-Interfaz con sidebar, tablas extensas, filtros avanzados y operaciones masivas.
-
-
-
-La PWA se instala desde el navegador en las plataformas compatibles. En iPhone y iPad, la instalación normalmente requiere que el usuario la agregue a la pantalla de inicio; la promoción automática de instalación no funciona igual que en Android. 
-MDN+1
-
-Compatibilidad que debemos garantizar
-Funcionalidad	Android	iOS / iPadOS	Desktop
-Instalable	Sí*	Sí, manual	Sí*
-Interfaz responsive	Sí	Sí	Sí
-Notificaciones push	Sí*	Sí, instalada y compatible	Sí*
-Cámara para fotos	Sí	Sí	Según dispositivo
-Lectura QR	Sí	Sí	Con cámara
-Consulta offline	Sí	Sí, con limitaciones	Sí
-Reservas y pagos	Online	Online	Online
-
-*Depende del navegador, la versión del sistema operativo y los permisos concedidos. Web Push en iOS está disponible para aplicaciones agregadas a la pantalla de inicio desde iOS 16.4. 
-Apple Developer Documentation
-3. Estrategia de funcionamiento offline
-Para una feria esto es relevante: los predios pueden tener conectividad irregular o redes móviles saturadas.
-
-Propongo tres niveles de funcionamiento:
-Online — Funcionalidad completa
-
-Reservas, pagos, estados de stands en tiempo real, publicaciones y notificaciones.
-
-
-
-Offline — Consulta
-
-Plano descargado, programa del evento, directorio de expositores, información del stand y comunicaciones sincronizadas previamente.
-
-
-
-Reconexión — Sincronización controlada
-
-Recuperación de datos, actualización del mapa y envío de borradores sociales pendientes, cuando sea seguro hacerlo.
-
-
-
-Utilizaría IndexedDB con Dexie.js para datos estructurados locales y Cache Storage para recursos estáticos.
-
-No permitiría reservar un stand offline: la disponibilidad y el precio deben verificarse contra el servidor para evitar dobles adjudicaciones.
-4. Editor de planos: componente técnico crítico
-Para diseñar los stands recomiendo Konva.js, porque permite trabajar con escenas interactivas basadas en Canvas, múltiples capas, transformaciones y detección de objetos. 
-Konva - JavaScript Canvas 2d Library+1
-
-
-El editor deberá tener:
-- Sistema de coordenadas en metros.
-- Grilla configurable y snap-to-grid.
-- Zoom y desplazamiento táctil.
-- Creación de stands rectangulares y poligonales.
-- Rotación, alineación, duplicación y selección múltiple.
-- Detección de superposiciones.
-- Versionado de planos.
-- Guardado y recuperación.
-- Exportación a SVG, PNG y PDF.
-Separaría técnicamente el editor administrativo, optimizado para desktop y tablets, del visor público, más liviano, optimizado para teléfonos y navegación táctil.
-5. Estructura del repositorio
-Utilizaría un monorepo con pnpm workspaces y Nx para las dependencias entre proyectos.
-juntta-feria/
-├── apps/
-│   ├── web/                  # Angular PWA
-│   ├── api/                  # NestJS REST API
-│   └── worker/               # BullMQ jobs
-│
-├── libs/
-│   ├── ui/                   # Design System
-│   ├── domain/               # Modelos de dominio
-│   ├── contracts/            # Contratos OpenAPI / tipos
-│   ├── auth/
-│   ├── maps/                 # Editor y visor
-│   ├── payments/
-│   ├── notifications/
-│   └── social/
-│
-├── infra/
-│   ├── docker/
-│   ├── nginx/
-│   └── monitoring/
-│
-├── docs/
-│   └── openspec/
-│
-├── docker-compose.yml
-├── nx.json
-├── pnpm-workspace.yaml
-└── README.md
-
-
-Esto facilita compartir contratos y componentes sin dividir prematuramente el sistema en microservicios.
-6. Infraestructura y despliegue
-Para el MVP utilizaría Docker Compose en un VPS o servidor cloud administrado, con almacenamiento persistente y backups automatizados.
-Servicios iniciales
-Contenedor	Función
-juntta-web	Angular PWA servida por NGINX
-juntta-api	API NestJS
-juntta-worker	Notificaciones y trabajos asíncronos
-juntta-postgres	PostgreSQL + PostGIS
-juntta-redis	Cache y colas
-juntta-minio	Archivos y fotografías
-juntta-proxy	HTTPS y proxy inverso
-
-
-En producción separaría progresivamente la base de datos y el almacenamiento del servidor de aplicación. Desde el primer despliegue incluiría HTTPS, backups verificados, auditoría, rate limiting y aislamiento multi-tenant.
-Objetivos de performance
-Indicador	Objetivo inicial
-Lighthouse Performance móvil	≥ 90 en páginas públicas representativas
-LCP móvil, p75	≤ 2,5 segundos
-INP, p75	≤ 200 ms
-CLS, p75	≤ 0,1
-Respuesta API simple, p95	Menos de 300 ms
-Visor de plano	Interacción fluida con 500 stands
-Tamaño inicial de la PWA	Carga por módulos, sin editor en bundle inicial
-
-Estos valores son objetivos de diseño y deben validarse con pruebas de carga y dispositivos reales.
-7. Decisiones finales para Juntta Feria
-Frontend
-
-Angular + TypeScript + Tailwind CSS
-
-
-PWA
-
-Workbox + Web App Manifest + IndexedDB
-
-
-Backend
-
-NestJS + Fastify
-
-
-Base de datos
-
-PostgreSQL + PostGIS
-
-
-Mapas interactivos
-
-Konva.js + visor optimizado
-
-
-Notificaciones
-
-Web Push + VAPID + BullMQ
-
-
-Muro social
-
-NestJS + almacenamiento S3
-
-
-Pagos
-
-Mercado Pago Checkout Pro
-
-
-Arquitectura
-
-Monolito modular multi-tenant
-
-
-Despliegue
-
-Docker Compose, evolucionable a cloud administrado
-
-
-
-Mi recomendación es mantener este stack como estándar arquitectónico de Juntta Feria. Angular y NestJS ofrecen una base consistente, mientras que PostGIS resuelve la parte geométrica del negocio y Workbox permite diseñar una experiencia PWA robusta.
-
-No desarrollaría aplicaciones nativas separadas para Android e iOS en el MVP. Primero validaría el producto con una PWA instalable y, si posteriormente aparecen necesidades específicas de integración con el sistema operativo o distribución en tiendas, evaluaría empaquetarla con Capacitor.
-
-El siguiente paso técnico es actualizar el OpenSpec con esta arquitectura como decisión formal (ADR-001), establecer los requisitos PWA y definir el primer sprint del repositorio ejadull/juntta-feria.
+- Rama de integración: `develop`. Commits con [Conventional Commits](https://www.conventionalcommits.org/).
+- Cambios de producto con OpenSpec: proposal, design, specs y tasks en `docs/openspec/changes/`, archivados al cerrar.
+- Las modificaciones de una plantilla de plano no cambian los planos ya publicados.
+
+## Roadmap
+
+Detalle y dependencias en [§10.1](docs/openspec/specification.md#101-plan-de-ejecución-y-subtareas) y [§11](docs/openspec/specification.md#11-roadmap) de la especificación:
+
+1. Core multi-tenant y autenticación (`CORE-01..03`).
+2. Predios y planos versionados (`VEN-01`, `LAY-01`).
+3. Eventos, stands, tarifas y expositores (`EVT-01`, `EXH-01`).
+4. Reservas y pagos con Mercado Pago (`RES-01`, `PAY-00..07`).
+5. Portal público (`PUB-01`).
+6. Reportes, hardening, E2E y piloto (`REP-01`).

@@ -19,5 +19,12 @@
     "strict": true,
     "strictPropertyInitialization": false,
     "types": ["vitest/globals", "node"]
+  },
+  // Polling for `nest start --watch`: bind mounts on Windows/macOS don't deliver file events to
+  // the container (Nest builds its own watch host, so TSC_WATCHFILE env vars are not enough).
+  "watchOptions": {
+    "watchFile": "dynamicPriorityPolling",
+    "watchDirectory": "dynamicPriorityPolling",
+    "excludeDirectories": ["**/node_modules", "dist"]
   }
 }

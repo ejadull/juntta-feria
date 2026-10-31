@@ -302,7 +302,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 
 ##### FND-01 — Decisiones arquitectónicas y trazabilidad
 
-- **Estado:** `IN_PROGRESS` (falta corregir las referencias de infraestructura del README)
+- **Estado:** `VERIFIED`
 - **Dependencias:** ninguna
 - **Entrega:** ADRs para monorepo/ejecución, configuración/autenticación y persistencia/PostGIS; este tablero permanece alineado con el diseño aprobado.
 - **Aceptación:** las decisiones no contradicen el stack existente ni presentan como implementadas capacidades aún pendientes.
@@ -311,7 +311,8 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 - [x] Crear ADR del monolito modular con npm workspaces.
 - [x] Crear ADR del contrato de configuración y JWT con refresh token HttpOnly.
 - [x] Crear ADR de Drizzle ORM con SQL explícito para PostGIS, RLS y constraints críticos.
-- [ ] Corregir referencias de infraestructura que no coincidan con las rutas reales.
+- [x] Corregir referencias de infraestructura que no coincidan con las rutas reales.
+  - 2026-10-30: README reescrito con el stack y las rutas reales (npm workspaces, LocalStack en lugar de MinIO, editor SVG en lugar de Konva/Fabric, Compose ejecutable, sin `MINIO_*`); el borrador previo (Nx/pnpm, NGINX, Konva) se movió sin cambios a [`docs/vision/stack-propuesto-original.md`](../vision/stack-propuesto-original.md) con aviso de que los ADR mandan.
 
 ##### FND-02 — Contrato de entorno y validación
 
@@ -366,28 +367,38 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 
 ##### FND-05 — Conectividad Web–API
 
-- **Estado:** `PENDING`
+- **Estado:** `VERIFIED`
 - **Dependencias:** `FND-03`, `FND-04`
 - **Entrega:** el frontend consume la API por una ruta relativa estable y usa proxy configurable en desarrollo, sin URLs dependientes del entorno hardcodeadas en componentes.
 - **Aceptación:** Web alcanza liveness a través de su origen local tanto con npm como con Compose.
 - **Evidencia requerida:** prueba del cliente, build Angular y request HTTP atravesando el proxy.
-- [ ] Definir cliente HTTP y base relativa `/api/v1`.
-- [ ] Configurar proxy de desarrollo mediante variable de entorno con default local seguro.
-- [ ] Agregar una comprobación visible mínima del estado API sin diseñar todavía el producto final.
-- [ ] Probar éxito y fallo de conectividad.
+  - 2026-10-30: `ng test --watch=false` → 273/273 (`ApiStatusService` 5: base relativa, éxito, error HTTP, API inalcanzable y cuerpo que no es liveness; shell 2: "conectada" y "sin conexión" sin bloquear la demo); `node --test apps/web/proxy.conf.test.mjs` → 4/4.
+  - 2026-10-30: request a través del proxy: con npm (`ng serve --port 4300`, default `http://localhost:3000`) y con Compose (`:4200`, `API_PROXY_TARGET=http://api:3000`), `GET /api/v1/health/live` → 200 `{"status":"ok"}` y `x-correlation-id` propagado; ruta inexistente → 404 `application/problem+json`.
+  - 2026-10-30: `fnd05.mjs` en Chromium, 6/6: indicador "API: conectada" (`role="status"`) por npm y por Compose; con `api` detenido, "API: sin conexión" y la pantalla sigue usable. Sin regresiones: `org07` 50/50, `pub06` 60/60, `LUI-06` 25/25, `LUI-07` 16/16, `LUI-08` 22/22, `UX-01` 5/5, Playwright `e2e/` 6/6.
+  - Hallazgo: una corrida de `org07`/`pub06` falló de forma intermitente justo después de reformatear archivos del shell: el dev server recargó la página en medio del flujo. Las dos corridas siguientes pasaron completas.
+  - 2026-10-30: `ng build` (autorizado) OK en 4,6 s; avisos de presupuesto de estilos por componente (4 kB): `floor-plan-canvas.css` 6,29 kB (previo) y `stand-map.css` 5,05 kB, a resolver en FND-06 (ajustar presupuesto o recortar).
+- [x] Definir cliente HTTP y base relativa `/api/v1` (`provideHttpClient(withFetch())`, `shared/api/api-base.ts`).
+- [x] Configurar proxy de desarrollo mediante variable de entorno con default local seguro (`apps/web/proxy.conf.cjs`, `API_PROXY_TARGET`, default `http://localhost:3000`, falla si no es http(s) sin mostrar el valor).
+- [x] Agregar una comprobación visible mínima del estado API sin diseñar todavía el producto final (indicador junto a "Ver como").
+- [x] Probar éxito y fallo de conectividad.
 
 ##### FND-06 — Verificación y documentación de Sprint 0A
 
-- **Estado:** `PENDING`
+- **Estado:** `IN_PROGRESS` (verificaciones completas; sólo espera el cierre de `FND-02`, que depende de la acción humana sobre `.env`)
 - **Dependencias:** `FND-01`, `FND-02`, `FND-03`, `FND-04`, `FND-05`
 - **Entrega:** instrucciones locales consistentes, verificaciones completas y evidencia asentada en este documento.
 - **Aceptación:** lint, tests, builds y validación Compose pasan; README refleja npm workspaces y rutas reales; no hay secretos ni cambios ajenos.
 - **Evidencia requerida:** comandos, resultados y fecha registrados al cerrar la tarea.
-- [ ] Actualizar README y eliminar contradicciones operativas con Nx/pnpm.
-- [ ] Ejecutar lint, pruebas unitarias, E2E relevantes y builds.
-- [ ] Validar Compose y el stack en ejecución.
-- [ ] Auditar diff, archivos rastreados y posibles secretos.
-- [ ] Registrar evidencia y cambiar estados solo para tareas realmente verificadas.
+  - 2026-10-30: `npm run lint` (oxlint en API y web; la web suma script `lint` y `oxlint` en devDependencies) sin hallazgos; `npm test --workspace api` 47/47; `npm run test:e2e --workspace api` 7/7; `ng test --watch=false` 273/273; `npm run test:proxy --workspace web` 4/4; `node --test scripts/init-local-env.test.mjs` 5/5; Playwright `e2e/` 6/6; `ng build` sin avisos (presupuesto de estilos por componente 8 kB/12 kB: los lienzos SVG del editor y del mapa pesan 6,3 kB y 5,1 kB).
+  - 2026-10-30: `docker compose config --quiet` OK; stack en ejecución con `health/ready` 200 (PostgreSQL, Redis, S3) y la web alcanzando la API por el proxy. `npm ci --dry-run` en `node:22-alpine` valida el lockfile.
+  - 2026-10-30: el watch de la API en Compose ahora detecta cambios por polling (`watchOptions` en `apps/api/tsconfig.json`; las variables `TSC_WATCHFILE` no alcanzan porque Nest arma su propio host de watch). Verificado editando un archivo: recompila y reinicia sin `restart`.
+  - 2026-10-30: auditoría: `.env` sin versionar; `dist`, `coverage` y `test-results` ignorados; sin patrones de secretos (tokens de Mercado Pago, claves AWS, claves privadas, contraseñas literales) en archivos rastreados; `git diff --check` OK.
+  - 2026-10-30: `npm run build --workspace api` (autorizado) OK; `dist/` sin restos del scaffold.
+- [x] Actualizar README y eliminar contradicciones operativas con Nx/pnpm.
+- [x] Ejecutar lint, pruebas unitarias, E2E relevantes y builds.
+- [x] Validar Compose y el stack en ejecución.
+- [x] Auditar diff, archivos rastreados y posibles secretos.
+- [x] Registrar evidencia y cambiar estados solo para tareas realmente verificadas.
 
 #### Fundamentos UX
 
