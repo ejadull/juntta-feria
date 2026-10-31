@@ -316,7 +316,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 
 ##### FND-02 — Contrato de entorno y validación
 
-- **Estado:** `IN_PROGRESS` (plantilla y `.env` locales pendientes de acción humana)
+- **Estado:** `VERIFIED`
 - **Dependencias:** ninguna
 - **Entrega:** `.env.example` completo y seguro, `.env` local coherente y validación tipada al iniciar la API.
 - **Aceptación:** variables requeridas inválidas detienen el arranque con mensajes saneados; variables futuras opcionales no bloquean flujos ajenos; ningún secreto se versiona ni aparece en salidas.
@@ -325,8 +325,9 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
   - Ajustes aprobados: sin variables `MINIO_*` (el stack usa LocalStack); `CORS_ORIGINS` reemplaza a `CORS_ORIGIN` en Compose; el puerto publicado de PostgreSQL usa `POSTGRES_PORT`, el nombre de la plantilla.
   - Bloqueo: `Read/Edit(.env.*)` está denegado en la configuración global de Claude Code; la plantilla y el `.env` real los aplica una persona.
 - [x] Clasificar variables requeridas, opcionales, predeterminadas y reservadas (ADR 0004).
-- [ ] Actualizar `.env.example` con documentación y marcadores inequívocos (propuesta entregada; falta aplicarla).
-- [ ] Completar `.env` local preservando valores existentes y generando solo los secretos faltantes (`node scripts/init-local-env.mjs` listo y probado; falta confirmar su ejecución sobre el `.env` real).
+- [x] Actualizar `.env.example` con documentación y marcadores inequívocos (aplicado por la persona, commit `8213fd9`).
+- [x] Completar `.env` local preservando valores existentes y generando solo los secretos faltantes (actualizado por la persona el 2026-10-30).
+  - 2026-10-30: validación sin leer `.env`: `docker compose up -d --force-recreate api` arranca sin `EnvironmentError` (el esquema valida todas las variables requeridas) y `GET /api/v1/health/ready` → 200 con `postgres`/`redis`/`storage` `up`.
 - [x] Implementar parser, tipado y validación de configuración (`apps/api/src/config/env.schema.ts`, `configuration.ts`, `ConfigModule` global).
 - [x] Probar valores válidos, ausentes, malformados e incompatibles con producción (los errores nombran la variable, nunca el valor).
 
@@ -350,7 +351,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 
 ##### FND-04 — Base operativa de la API
 
-- **Estado:** `VERIFIED` (con el `.env` local actual; FND-02 sigue abierta sólo por la acción humana sobre `.env`)
+- **Estado:** `VERIFIED`
 - **Dependencias:** `FND-02`, `FND-03`
 - **Entrega:** prefijo `/api/v1`, CORS validado, correlation ID, errores `application/problem+json`, OpenAPI de desarrollo y health/readiness reales.
 - **Aceptación:** liveness no depende de servicios externos; readiness comprueba PostgreSQL, Redis y acceso al bucket S3; los errores no filtran secretos.
@@ -384,7 +385,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 
 ##### FND-06 — Verificación y documentación de Sprint 0A
 
-- **Estado:** `IN_PROGRESS` (verificaciones completas; sólo espera el cierre de `FND-02`, que depende de la acción humana sobre `.env`)
+- **Estado:** `VERIFIED`
 - **Dependencias:** `FND-01`, `FND-02`, `FND-03`, `FND-04`, `FND-05`
 - **Entrega:** instrucciones locales consistentes, verificaciones completas y evidencia asentada en este documento.
 - **Aceptación:** lint, tests, builds y validación Compose pasan; README refleja npm workspaces y rutas reales; no hay secretos ni cambios ajenos.
