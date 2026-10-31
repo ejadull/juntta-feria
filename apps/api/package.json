@@ -19,7 +19,10 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
-    "test:e2e": "vitest run --config ./vitest.config.e2e.ts"
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "test:int": "vitest run --config ./vitest.config.int.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:setup": "node --env-file-if-exists=../../.env scripts/db-setup.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",
@@ -29,6 +32,7 @@
     "@nestjs/core": "^12.0.1",
     "@nestjs/platform-fastify": "^12.0.1",
     "@nestjs/swagger": "^12.0.5",
+    "drizzle-orm": "^0.45.4",
     "ioredis": "^6.0.0",
     "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
@@ -43,6 +47,7 @@
     "@types/node": "^24.0.0",
     "@types/pg": "^8.23.1",
     "@vitest/coverage-v8": "^5.0.5",
+    "drizzle-kit": "^0.31.11",
     "oxlint": "^1.58.0",
     "oxlint-tsgolint": "^7.0.2001",
     "prettier": "^3.4.2",

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { configuration } from './config/configuration.js';
+import { DatabaseModule } from './db/database.module.js';
 import { HealthModule } from './health/health.module.js';
 
 @Module({
@@ -13,6 +14,7 @@ import { HealthModule } from './health/health.module.js';
       envFilePath: ['.env', '../../.env'],
       load: [configuration],
     }),
+    DatabaseModule,
     HealthModule,
   ],
 })

@@ -1,46 +1,26 @@
 import { HeadBucketCommand, S3Client } from '@aws-sdk/client-s3';
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-} from '@nestjs/common';
+import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { Redis } from 'ioredis';
-import pg from 'pg';
+import type pg from 'pg';
 import {
   configuration,
   type AppConfiguration,
 } from '../config/configuration.js';
+import { PG_POOL } from '../db/database.service.js';
 import type { ReadinessCheck } from './readiness.js';
 
 /** Per-check budget; readiness answers within this even if a dependency hangs. */
 export const CHECK_TIMEOUT_MS = 2000;
 
-// ponytail: each check owns a tiny client until CORE-01 adds the shared pool (Drizzle);
-// then PostgresCheck should reuse that pool instead of opening its own.
+/** Uses the application pool (role juntta_app): ready means the API can really query. */
 @Injectable()
-export class PostgresCheck implements ReadinessCheck, OnModuleDestroy {
+export class PostgresCheck implements ReadinessCheck {
   readonly name = 'postgres';
-  private readonly pool: pg.Pool;
 
-  constructor(@Inject(configuration.KEY) env: AppConfiguration) {
-    this.pool = new pg.Pool({
-      connectionString: env.databaseUrl,
-      max: 1,
-      connectionTimeoutMillis: CHECK_TIMEOUT_MS,
-    });
-    // Idle-client errors would otherwise crash the process; the next check reports them.
-    this.pool.on('error', (e) =>
-      new Logger('Readiness').warn(`postgres idle client: ${e.message}`),
-    );
-  }
+  constructor(@Inject(PG_POOL) private readonly pool: pg.Pool) {}
 
   async check(): Promise<void> {
     await this.pool.query('SELECT 1');
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    await this.pool.end();
   }
 }
 

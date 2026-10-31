@@ -2,7 +2,7 @@
 // Creates or completes the ignored local .env from .env.example (ADR 0004, FND-02).
 // - Replaces every GENERATE_LOCAL_HEX_64 marker with a unique 64-char hex secret (node:crypto).
 // - Preserves existing non-placeholder values and keys already in .env.
-// - Rebuilds DATABASE_URL for localhost from POSTGRES_* so it always matches.
+// - Rebuilds DATABASE_URL (app role) and DATABASE_MIGRATION_URL (owner) for localhost.
 // - Never writes Mercado Pago credentials (left empty until PAY-01).
 // - Writes atomically and reports key NAMES only, never values.
 import { randomBytes } from 'node:crypto';
@@ -11,6 +11,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const MARKER = 'GENERATE_LOCAL_HEX_64';
+/** Application role created by `npm run db:setup` (CORE-01). */
+export const APP_DB_USER = 'juntta_app';
 const NEVER_WRITE = new Set(['MP_ACCESS_TOKEN', 'MP_WEBHOOK_SECRET']);
 
 const isEntry = (line) => /^[A-Z0-9_]+=/.test(line);
@@ -49,10 +51,17 @@ export function initLocalEnv({ examplePath, envPath, randomHex = () => randomByt
 
   const pg = (k) => values.get(k) ?? existing.get(k);
   if (values.has('DATABASE_URL') && pg('POSTGRES_USER') && pg('POSTGRES_PASSWORD') && pg('POSTGRES_DB')) {
-    values.set(
-      'DATABASE_URL',
-      `postgresql://${pg('POSTGRES_USER')}:${pg('POSTGRES_PASSWORD')}@localhost:${pg('POSTGRES_PORT') ?? '5432'}/${pg('POSTGRES_DB')}`,
-    );
+    const url = (user, password) =>
+      `postgresql://${user}:${password}@localhost:${pg('POSTGRES_PORT') ?? '5432'}/${pg('POSTGRES_DB')}`;
+    const owner = url(pg('POSTGRES_USER'), pg('POSTGRES_PASSWORD'));
+    // CORE-01: the API connects as juntta_app (no BYPASSRLS); only migrations use the owner role.
+    // ponytail: old templates without APP_DB_PASSWORD keep the owner URL until they are updated.
+    if (pg('APP_DB_PASSWORD')) {
+      values.set('DATABASE_URL', url(APP_DB_USER, pg('APP_DB_PASSWORD')));
+      if (values.has('DATABASE_MIGRATION_URL')) values.set('DATABASE_MIGRATION_URL', owner);
+    } else {
+      values.set('DATABASE_URL', owner);
+    }
   }
 
   // Template layout and comments first, then keys that only exist in the local .env.
