@@ -99,7 +99,7 @@ describe('db:setup (CORE-01)', () => {
   it('applies the migrations: postgis, pgcrypto and tenants', async () => {
     const { rows } = await asOwner((c) =>
       c.query(
-        `SELECT array_agg(extname ORDER BY extname) AS ext, to_regclass('public.tenants') AS tenants
+        `SELECT array_agg(extname::text ORDER BY extname) AS ext, to_regclass('public.tenants')::text AS tenants
            FROM pg_extension WHERE extname IN ('postgis', 'pgcrypto')`,
       ),
     );
@@ -144,9 +144,10 @@ describe('juntta_app and DatabaseService (CORE-01, §2.2)', () => {
       sql`SELECT slug FROM tenants WHERE id = ${T1}`,
     );
     expect(rows).toEqual([{ slug: 'demo-a' }]);
+    // Drizzle wraps driver errors ("Failed query: ..."); the PostgreSQL error is the cause.
     await expect(
       db.db.execute(sql`CREATE TABLE app_ddl_probe (id int)`),
-    ).rejects.toThrow(/permission denied/);
+    ).rejects.toMatchObject({ cause: { code: '42501' } }); // insufficient_privilege
   });
 
   it('cannot bypass RLS; withTenant only sees the current tenant rows', async () => {

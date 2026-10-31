@@ -430,7 +430,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 
 | Tarea | Dependencias | Entrega principal | Estado |
 |---|---|---|---|
-| `CORE-01` Base de datos y migraciones | `FND-06` | Drizzle, migraciones PostgreSQL/PostGIS y roles separados | `PENDING` |
+| `CORE-01` Base de datos y migraciones | `FND-06` | Drizzle, migraciones PostgreSQL/PostGIS y roles separados — [detalle](#core-01--base-de-datos-y-migraciones) | `VERIFIED` |
 | `CORE-02` Usuarios, sesiones y membresías | `CORE-01` | login, refresh rotativo HttpOnly, logout y membresías | `PENDING` |
 | `CORE-03` Aislamiento y auditoría | `CORE-02` | autorización tenant, RLS y auditoría | `PENDING` |
 | `VEN-01` Predios | `CORE-03` | CRUD de predios fijos/temporales | `PENDING` |
@@ -454,6 +454,27 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `REP-01` Reportes | `PAY-05` | ocupación, GMV y exportaciones CSV | `PENDING` |
 
 Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de RLS permanecen pendientes y deberán incorporarse como subtareas verificables antes de declarar completo el Sprint 0 general. Sprint 0A no las reemplaza.
+
+#### Core de plataforma
+
+##### CORE-01 — Base de datos y migraciones
+
+- **Estado:** `VERIFIED`
+- **Dependencias:** `FND-06`
+- **Entrega:** Drizzle ORM con migraciones versionadas ([ADR 0005](../adr/0005-drizzle-y-sql-explicito-postgis.md)), roles separados (§2.2) y acceso a datos con transacciones por tenant.
+- **Aceptación:** la API nunca se conecta con un rol superusuario ni `BYPASSRLS`; las migraciones corren con el rol dueño, que la API no recibe; `withTenant` fija `app.tenant_id` sólo dentro de la transacción; migraciones idempotentes y probadas contra PostgreSQL real.
+- **Evidencia requerida:** pruebas de integración contra PostgreSQL/PostGIS y verificación del stack.
+  - 2026-10-30: `npm run test:int --workspace api` (en el contenedor `db-migrate`, base `<db>_test` recreada) → 9/9: `juntta_app` con `LOGIN` y sin `SUPERUSER`/`BYPASSRLS`/`CREATEROLE`/`CREATEDB`; `postgis`, `pgcrypto` y `tenants` aplicados; la salida de `db:setup` no incluye credenciales; segunda corrida idempotente (2 migraciones registradas); variable faltante → error que la nombra sin mostrar valores; `juntta_app` lee/escribe pero no ejecuta DDL (`42501`); **no puede saltear RLS** (sin tenant ve 0 filas, con `withTenant` sólo las de su tenant); `app.tenant_id` no se filtra a la siguiente consulta en la misma conexión del pool; `withTenant` rechaza ids que no son UUID antes de tocar la base.
+  - 2026-10-30: Compose: `db-migrate` → `role juntta_app created; 2 migrations applied` y termina con 0; la API arranca después y `health/ready` → 200; en `pg_stat_activity` la API conecta como `juntta_app`; dentro del contenedor `api`, `POSTGRES_PASSWORD` y `DATABASE_MIGRATION_URL` vacías y `DATABASE_URL` con `juntta_app`; `juntta_app` puede `INSERT` en `tenants` y no `CREATE` en `public`.
+  - 2026-10-30: `npm test --workspace api` 47/47, `test:e2e` 7/7, `tsc --noEmit` y `oxlint` OK, `node --test scripts/init-local-env.test.mjs` 6/6, `docker compose config --quiet` OK.
+  - Hallazgo: los contenedores de infraestructura quedaron en estado `created` tras reiniciar Docker Desktop (conflicto de nombres al recrear); `docker compose down` (sin `-v`) y `up -d` lo resolvieron sin perder volúmenes.
+- [x] `drizzle-orm@^0.45.4` y `drizzle-kit@^0.31.11`; `apps/api/drizzle.config.ts`, esquema en `src/db/schema.ts`.
+- [x] Migración `0000` (SQL manual): `postgis`, `pgcrypto`, `REVOKE CREATE ON SCHEMA public FROM PUBLIC` y privilegios por defecto DML para `juntta_app`; `0001`: `tenants` (slug único con formato, estado `ACTIVE`/`SUSPENDED`, nombre no vacío).
+- [x] `npm run db:setup` (`apps/api/scripts/db-setup.mjs`): crea o realinea `juntta_app` (contraseña escapada por el driver) y aplica migraciones; sólo informa rol y cantidad de migraciones.
+- [x] `DatabaseModule` global: un pool (`DB_POOL_MAX`), `DatabaseService.withTenant`; readiness usa ese pool.
+- [x] Compose: servicio `db-migrate` previo a la API (`service_completed_successfully`); la API usa `juntta_app` y no recibe credenciales del dueño.
+- [x] `scripts/init-local-env.mjs`: genera `APP_DB_PASSWORD` y arma `DATABASE_URL` (`juntta_app`) y `DATABASE_MIGRATION_URL` (dueño) para localhost.
+- Pendiente para la persona: agregar `DATABASE_MIGRATION_URL` al `.env` (vía `.env.example` + script) para correr `test:int` y `db:setup` desde el host; en Compose no hace falta.
 
 #### Integración Mercado Pago (EP07)
 
@@ -589,7 +610,8 @@ Estructura `apps/api` (NestJS), `apps/web` (Angular), `docker-compose.yml`, `.en
 | Variables | Requisito y uso |
 |---|---|
 | `NODE_ENV`, `API_HOST`, `PORT`, `API_PREFIX`, `WEB_PORT`, `API_PROXY_TARGET`, `CORS_ORIGINS`, `LOG_LEVEL`, `SWAGGER_ENABLED` | Configuración local de API/web; `CORS_ORIGINS` es una lista separada por comas (en producción no admite `*` ni Swagger). Validadas al arrancar ([ADR 0004](../adr/0004-contrato-de-entorno-y-autenticacion.md)). |
-| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL` | PostgreSQL/PostGIS local; las credenciales se generan localmente y nunca se comparten. |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL` | PostgreSQL/PostGIS local; las credenciales se generan localmente y nunca se comparten. `DATABASE_URL` usa el rol de aplicación `juntta_app` (sin superusuario ni `BYPASSRLS`, §2.2). |
+| `APP_DB_PASSWORD`, `DATABASE_MIGRATION_URL` | `CORE-01`: contraseña del rol `juntta_app` (generada por `scripts/init-local-env.mjs`) y conexión del rol dueño, usada **sólo** por `npm run db:setup` / el servicio `db-migrate`. La API nunca recibe la URL ni la contraseña del dueño (Compose las vacía en el servicio `api`). |
 | `REDIS_URL` | Redis local para BullMQ, jobs y cache. |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE` | LocalStack emula S3 en desarrollo con credenciales públicas de simulación; en producción se requiere un proveedor S3 y credenciales de mínimo privilegio administradas fuera de Git. |
 | `MP_ENVIRONMENT`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | Mercado Pago usa `sandbox` localmente. Las credenciales pueden quedar vacías para flujos que no son de pago; pagos deben fallar con error explícito y configurable hasta configurarlas. |

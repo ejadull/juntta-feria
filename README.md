@@ -2,7 +2,7 @@
 
 **Juntta Feria** es una plataforma SaaS multiempresa para organizar ferias, gestionar predios fijos e itinerantes, diseñar planos reutilizables a escala, comercializar stands, cobrar reservas con Mercado Pago y brindar un mapa público de expositores.
 
-> **Estado:** en desarrollo, sin versión operativa. El frontend tiene las vistas de Organizador, Feriante y Visitante con **datos de demostración en memoria**. La API tiene la base operativa (configuración validada, `/api/v1`, errores `problem+json`, health checks) pero todavía **no tiene dominio, base de datos migrada ni autenticación**. El avance por tarea está en [§10.1 de la especificación](docs/openspec/specification.md#101-plan-de-ejecución-y-subtareas).
+> **Estado:** en desarrollo, sin versión operativa. El frontend tiene las vistas de Organizador, Feriante y Visitante con **datos de demostración en memoria**. La API tiene la base operativa (configuración validada, `/api/v1`, errores `problem+json`, health checks) y la base de datos con migraciones Drizzle y un rol de aplicación sin `BYPASSRLS`, pero todavía **no tiene dominio ni autenticación**. El avance por tarea está en [§10.1 de la especificación](docs/openspec/specification.md#101-plan-de-ejecución-y-subtareas).
 
 ## Objetivos
 
@@ -22,7 +22,7 @@
 | Editor y mapa de stands | SVG con coordenadas en metros — [ADR 0001](docs/adr/0001-svg-para-editor-y-mapa.md) | en uso |
 | API | NestJS 12 + Fastify, OpenAPI sólo en desarrollo | base operativa |
 | Configuración y auth | entorno validado con Zod; JWT + refresh rotativo HttpOnly — [ADR 0004](docs/adr/0004-contrato-de-entorno-y-autenticacion.md) | entorno en uso; auth pendiente (`CORE-02`) |
-| Persistencia | PostgreSQL 16 + PostGIS con Drizzle y SQL explícito — [ADR 0005](docs/adr/0005-drizzle-y-sql-explicito-postgis.md) | contenedor listo; migraciones pendientes (`CORE-01`) |
+| Persistencia | PostgreSQL 16 + PostGIS con Drizzle y SQL explícito — [ADR 0005](docs/adr/0005-drizzle-y-sql-explicito-postgis.md) | migraciones y roles en uso (`CORE-01`); RLS por tenant pendiente (`CORE-03`) |
 | Cache y colas | Redis | contenedor listo |
 | Archivos | S3 (en desarrollo: LocalStack, bucket creado al iniciar) | contenedor listo |
 | Pagos | Mercado Pago Checkout Pro + Webhooks | pendiente (`PAY-00..07`) |
@@ -71,6 +71,8 @@ docker compose up --build -d
 | Liveness / readiness | `/api/v1/health/live` · `/api/v1/health/ready` (PostgreSQL, Redis y bucket S3) |
 | OpenAPI (si `SWAGGER_ENABLED=true`) | http://localhost:3000/api/v1/docs |
 
+Al arrancar, el servicio `db-migrate` corre `npm run db:setup` una vez con el rol dueño de la base: crea o actualiza el rol de aplicación `juntta_app` (sin superusuario ni `BYPASSRLS`) y aplica las migraciones de [`apps/api/drizzle/`](apps/api/drizzle/). Recién entonces arranca la API, que se conecta como `juntta_app` y no recibe las credenciales del dueño.
+
 Todos los puertos se publican sólo en `127.0.0.1`. La web llama siempre a la ruta relativa `/api/v1`; el proxy de desarrollo ([`apps/web/proxy.conf.cjs`](apps/web/proxy.conf.cjs)) la envía a `API_PROXY_TARGET` (`http://api:3000` en Compose). Ambos contenedores detectan cambios de código por polling, porque los bind mounts de Windows/macOS no entregan eventos de archivos.
 
 ### 3. Con npm (sin contenedores de apps)
@@ -78,7 +80,8 @@ Todos los puertos se publican sólo en `127.0.0.1`. La web llama siempre a la ru
 ```bash
 npm ci
 docker compose up -d postgres redis s3   # dependencias de la API
-npm run dev:api                          # API en :3000, lee ../../.env
+npm run db:setup --workspace api         # rol juntta_app + migraciones (DATABASE_MIGRATION_URL)
+npm run dev:api                          # API en :3000 como juntta_app, lee ../../.env
 npm run dev:web                          # web en :4200; proxy a http://localhost:3000 por defecto
 ```
 
@@ -95,6 +98,8 @@ docker compose exec -w /workspace api npm ci --workspace api --include-workspace
 | Lint (API y web, oxlint) | `npm run lint` |
 | Tests API (unitarios) | `npm test --workspace api` |
 | Tests API (e2e del bootstrap) | `npm run test:e2e --workspace api` |
+| Tests API (integración con PostgreSQL real, base `<db>_test` descartable) | `npm run test:int --workspace api` (o `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api`) |
+| Nueva migración desde `src/db/schema.ts` | `npm run db:generate --workspace api` (SQL manual: `npx drizzle-kit generate --custom --name=<nombre>`) |
 | Tests web (unitarios, Vitest) | `docker compose exec -w /workspace/apps/web web npx ng test --watch=false` |
 | Proxy de desarrollo | `npm run test:proxy --workspace web` |
 | E2E web (Playwright, con el stack levantado) | `npm run e2e --workspace web` |
