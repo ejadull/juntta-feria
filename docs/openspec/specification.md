@@ -441,7 +441,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `EVT-01` Eventos, stands y tarifas | `LAY-01` | evento sobre versión publicada, sectores por evento ([ADR 0002](../adr/0002-sectores-por-evento.md)) e inventario valorizado | `PENDING` |
 | `EXH-01` Expositores | `CORE-03` | perfil privado/público y consentimiento | `PENDING` |
 | `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01` | holds, locking e idempotencia | `PENDING` |
-| `PAY-00` Decisiones de integración Mercado Pago | ninguna | ADR: track Checkout Pro, credenciales por organizador y validación de firma (ver [EP07](#integración-mercado-pago-ep07)) | `PENDING` |
+| `PAY-00` Decisiones de integración Mercado Pago | ninguna | ADR: track Checkout Pro, credenciales por organizador y validación de firma — [ADR 0006](../adr/0006-integracion-mercado-pago.md) | `VERIFIED` |
 | `PAY-01` Proveedor de pagos y credenciales | `FND-04`, `PAY-00` | puerto `PaymentProvider`, adaptador SDK `mercadopago`, sandbox | `PENDING` |
 | `PAY-02` Preferencia Checkout Pro | `RES-01`, `PAY-01` | payment attempt idempotente y preferencia desde snapshot de precio | `PENDING` |
 | `PAY-03` Webhooks de pago | `PAY-02` | firma, inbox deduplicado, consulta server-to-server y confirmación | `PENDING` |
@@ -497,16 +497,18 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 
 ##### PAY-00 — Decisiones de integración
 
-- **Estado:** `PENDING`
+- **Estado:** `VERIFIED` — [ADR 0006](../adr/0006-integracion-mercado-pago.md)
 - **Dependencias:** ninguna
 - **Entrega:** ADR con las decisiones que condicionan PAY-01..07.
 - **Aceptación:** cada decisión cita la página oficial que la respalda; lo no confirmado queda como riesgo explícito.
 - **Evidencia requerida:** revisión documental con enlaces oficiales vigentes.
-- [ ] Elegir track: Checkout Pro vía **Preferences API** (`POST /checkout/preferences`, el de §7) o vía **Orders API** (Mercado Pago lo recomienda para integraciones nuevas y marca la Payments API como legacy, sin funcionalidades nuevas).
-- [ ] Credenciales por organizador (R1): mecanismo autorizado para cobrar en la cuenta vendedora de cada organizador (OAuth de Mercado Pago u otro vigente) frente a una cuenta única; almacenamiento cifrado (KMS/vault) y rotación.
-- [ ] Validación de `x-signature`: usar `WebhookSignatureValidator` del SDK oficial o el manifest documentado en la pestaña "Sin SDKs" **(verificar plantilla del manifest y algoritmo HMAC)**; ventana de frescura del `ts`.
-- [ ] Uso de `X-Idempotency-Key` en creación de pagos/reembolsos **(verificar en la referencia)**; en Preferences la idempotencia es propia (payment attempt + `external_reference`).
-- [ ] `binary_mode` (sólo aprobado/rechazado) frente a aceptar `pending` (pagos offline) según la duración del hold.
+  - 2026-11-02: ADR 0006 con 13 fuentes oficiales (`mercadopago.com.ar/developers` + SDK `mercadopago` 3.6.1) y riesgos R-MP-1..8 para lo no confirmado.
+  - Corrección: no se confirmó que Mercado Pago "recomiende Orders para integraciones nuevas"; sólo la Payments API figura como legacy.
+- [x] Track: Checkout Pro vía **Preferences API** para el MVP. Orders API queda diferida, porque `application_fee`/split todavía no está documentado ahí. Payments API sólo para `GET` de pagos y reembolsos.
+- [x] Credenciales por organizador (R1): **OAuth de Mercado Pago** (`authorization_code` + PKCE, `offline_access`; access token de 180 días, y cada refresh devuelve uno nuevo). Renovación serializada por organizador y tokens cifrados AES-256-GCM con clave envuelta por KMS/vault (`key_id`). `marketplace_fee` queda fuera del MVP (R-MP-3, R-MP-4).
+- [x] `x-signature`: `WebhookSignatureValidator` del SDK (HMAC-SHA256 sobre `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`). La deriva de `ts` se registra siempre; la tolerancia de 300 s se exige recién tras verificar en sandbox que los reintentos se re-firman (R-MP-1, R-MP-2, R-MP-8).
+- [x] Idempotencia: Preferences propia (payment attempt UUID = `external_reference`, `preference_id` persistido una vez). En reembolsos y escrituras, `X-Idempotency-Key` propio y estable, porque el SDK genera uno nuevo por llamada (R-MP-5).
+- [x] `binary_mode: false`: se aceptan pagos pendientes/offline, `expiration_date_to` ≤ vencimiento del hold y no se libera el hold a ciegas con un attempt pendiente. El pago tardío genera `LATE_PAYMENT_CONFLICT` (R-MP-6).
 
 ##### PAY-01 — Proveedor de pagos y credenciales
 
