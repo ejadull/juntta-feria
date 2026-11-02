@@ -9,6 +9,8 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.int-spec.ts'],
+    globalSetup: ['./test/int.global-setup.ts'],
+    testTimeout: 30_000,
     env: loadEnv('', '../../', ''),
     fileParallelism: false,
   },

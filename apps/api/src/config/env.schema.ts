@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Environment contract (ADR 0004, FND-02). Parsed once at startup.
  * Errors name the variable and the rule, never the received value (AGENT.md §5/§6).
- * Reserved variables (AUTH_*, RESERVATION_*, MP_*) are ignored until their task consumes them.
+ * Reserved variables (RESERVATION_*, MP_*) are ignored until their task consumes them.
  */
 
 const LOG_LEVELS = [
@@ -36,7 +36,19 @@ export type AppEnvironment = Readonly<{
     forcePathStyle: boolean;
   }>;
   swaggerEnabled: boolean;
+  /** CORE-02 (ADR 0004): short JWT access token + opaque rotating refresh token cookie. */
+  auth: Readonly<{
+    accessTokenSecret: string;
+    refreshTokenSecret: string;
+    accessTokenTtlSeconds: number;
+    refreshTokenTtlSeconds: number;
+    refreshCookieName: string;
+    cookieSecure: boolean;
+    cookieSameSite: 'strict' | 'lax';
+  }>;
 }>;
+
+const MIN_SECRET_LENGTH = 32;
 
 export class EnvironmentError extends Error {
   constructor(readonly problems: readonly string[]) {
@@ -82,6 +94,10 @@ function hasProtocol(value: string, protocols: readonly string[]): boolean {
     return false;
   }
 }
+
+const secret = required.refine((v) => v.length >= MIN_SECRET_LENGTH, {
+  error: `must be at least ${MIN_SECRET_LENGTH} characters`,
+});
 
 const urlWith = (protocols: readonly string[]) =>
   required.refine((v) => hasProtocol(v, protocols), {
@@ -158,9 +174,41 @@ const schema = z
     S3_SECRET_KEY: required,
     S3_FORCE_PATH_STYLE: optionalBool(false),
     SWAGGER_ENABLED: optionalBool(false),
+    AUTH_ACCESS_TOKEN_SECRET: secret,
+    AUTH_REFRESH_TOKEN_SECRET: secret,
+    AUTH_ACCESS_TOKEN_TTL_SECONDS: optionalInt(60, 3600, 900),
+    AUTH_REFRESH_TOKEN_TTL_SECONDS: optionalInt(3600, 7_776_000, 1_209_600),
+    AUTH_REFRESH_COOKIE_NAME: z.preprocess(
+      blankAsUndefined,
+      z
+        .string()
+        .regex(/^[A-Za-z0-9_-]{1,64}$/, {
+          error: 'must be 1-64 letters, digits, _ or -',
+        })
+        .default('juntta_rt'),
+    ),
+    AUTH_COOKIE_SECURE: optionalBool(true),
+    AUTH_COOKIE_SAME_SITE: z.preprocess(
+      blankAsUndefined,
+      z
+        .enum(['strict', 'lax'], { error: 'must be strict or lax' })
+        .default('strict'),
+    ),
   })
   .superRefine((env, ctx) => {
+    if (env.AUTH_ACCESS_TOKEN_SECRET === env.AUTH_REFRESH_TOKEN_SECRET)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AUTH_REFRESH_TOKEN_SECRET'],
+        message: 'must differ from AUTH_ACCESS_TOKEN_SECRET',
+      });
     if (env.NODE_ENV !== 'production') return;
+    if (!env.AUTH_COOKIE_SECURE)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AUTH_COOKIE_SECURE'],
+        message: 'must be true in production',
+      });
     if (env.CORS_ORIGINS.includes('*'))
       ctx.addIssue({
         code: 'custom',
@@ -204,5 +252,14 @@ export function parseEnvironment(input: NodeJS.ProcessEnv): AppEnvironment {
       forcePathStyle: e.S3_FORCE_PATH_STYLE,
     },
     swaggerEnabled: e.SWAGGER_ENABLED,
+    auth: {
+      accessTokenSecret: e.AUTH_ACCESS_TOKEN_SECRET,
+      refreshTokenSecret: e.AUTH_REFRESH_TOKEN_SECRET,
+      accessTokenTtlSeconds: e.AUTH_ACCESS_TOKEN_TTL_SECONDS,
+      refreshTokenTtlSeconds: e.AUTH_REFRESH_TOKEN_TTL_SECONDS,
+      refreshCookieName: e.AUTH_REFRESH_COOKIE_NAME,
+      cookieSecure: e.AUTH_COOKIE_SECURE,
+      cookieSameSite: e.AUTH_COOKIE_SAME_SITE,
+    },
   };
 }

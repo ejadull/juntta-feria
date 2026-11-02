@@ -24,6 +24,8 @@ const ENV = {
   S3_ACCESS_KEY: 'test',
   S3_SECRET_KEY: 'test',
   SWAGGER_ENABLED: 'false',
+  AUTH_ACCESS_TOKEN_SECRET: 'fake-access-secret-0123456789abcdef0123456789',
+  AUTH_REFRESH_TOKEN_SECRET: 'fake-refresh-secret-0123456789abcdef012345678',
 };
 
 const fake = (name: string, ok: boolean): ReadinessCheck => ({
@@ -46,7 +48,7 @@ async function start(
   const app = moduleRef.createNestApplication<NestFastifyApplication>(
     new FastifyAdapter(fastifyOptions()),
   );
-  configureApp(app);
+  await configureApp(app);
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   return app;

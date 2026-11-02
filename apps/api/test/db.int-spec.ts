@@ -2,32 +2,17 @@ import { execFileSync } from 'node:child_process';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { DatabaseService } from '../src/db/database.service.js';
+import { appTestUrl, ownerPassword, ownerTestUrl, required } from './int.env.js';
 
 /**
  * CORE-01 against a real PostgreSQL (ADR 0005): roles, migrations, RLS and tenant transactions.
- * Uses a throwaway `<db>_test` database, recreated on every run; never the development data.
+ * The throwaway `<db>_test` database is recreated by int.global-setup.ts; never development data.
  */
 
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value)
-    throw new Error(`${name} is required for integration tests (see README).`);
-  return value;
-}
-
-const ownerUrl = new URL(required('DATABASE_MIGRATION_URL'));
 const appPassword = required('APP_DB_PASSWORD');
-const testDb = `${ownerUrl.pathname.slice(1)}_test`;
-
-const withDb = (db: string, user?: string, password?: string): string => {
-  const url = new URL(ownerUrl);
-  url.pathname = `/${db}`;
-  if (user) url.username = user;
-  if (password) url.password = password;
-  return url.toString();
-};
-const OWNER_TEST_URL = withDb(testDb);
-const APP_TEST_URL = withDb(testDb, 'juntta_app', appPassword);
+const OWNER_TEST_URL = ownerTestUrl();
+const APP_TEST_URL = appTestUrl();
+const ownerUrl = { password: encodeURIComponent(ownerPassword()) };
 
 async function asOwner<T>(
   fn: (c: pg.Client) => Promise<T>,
@@ -61,13 +46,7 @@ let setupOutput = '';
 let db: DatabaseService;
 
 beforeAll(async () => {
-  await asOwner(async (c) => {
-    await c.query(
-      `DROP DATABASE IF EXISTS ${c.escapeIdentifier(testDb)} WITH (FORCE)`,
-    );
-    await c.query(`CREATE DATABASE ${c.escapeIdentifier(testDb)}`);
-  }, withDb('postgres'));
-  setupOutput = runSetup();
+  setupOutput = runSetup(); // second run on the prepared database: realigns the role
   db = new DatabaseService(
     new pg.Pool({ connectionString: APP_TEST_URL, max: 1 }),
   );
@@ -120,7 +99,7 @@ describe('db:setup (CORE-01)', () => {
     const { rows } = await asOwner((c) =>
       c.query('SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations'),
     );
-    expect(rows[0].n).toBe(2);
+    expect(rows[0].n).toBe(3); // 0000 extensions/grants, 0001 tenants, 0002 auth
   });
 
   it('fails naming the missing variable, without echoing values', () => {

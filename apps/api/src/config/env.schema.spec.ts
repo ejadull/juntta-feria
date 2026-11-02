@@ -2,6 +2,8 @@ import { parseEnvironment } from './env.schema.js';
 
 /** Fictitious values only: nothing here is a usable credential. */
 const SECRET = 'fake-secret-value-0123456789abcdef';
+const ACCESS_SECRET = 'fake-access-secret-0123456789abcdef0123456789';
+const REFRESH_SECRET = 'fake-refresh-secret-0123456789abcdef012345678';
 const valid = (): NodeJS.ProcessEnv => ({
   NODE_ENV: 'development',
   API_HOST: '0.0.0.0',
@@ -19,6 +21,8 @@ const valid = (): NodeJS.ProcessEnv => ({
   S3_SECRET_KEY: SECRET,
   S3_FORCE_PATH_STYLE: 'true',
   SWAGGER_ENABLED: 'true',
+  AUTH_ACCESS_TOKEN_SECRET: ACCESS_SECRET,
+  AUTH_REFRESH_TOKEN_SECRET: REFRESH_SECRET,
 });
 
 /** Runs the parser expecting a failure; returns the error message. */
@@ -52,7 +56,40 @@ describe('parseEnvironment (FND-02)', () => {
         forcePathStyle: true,
       },
       swaggerEnabled: true,
+      auth: {
+        accessTokenSecret: ACCESS_SECRET,
+        refreshTokenSecret: REFRESH_SECRET,
+        accessTokenTtlSeconds: 900,
+        refreshTokenTtlSeconds: 1_209_600,
+        refreshCookieName: 'juntta_rt',
+        cookieSecure: true,
+        cookieSameSite: 'strict',
+      },
     });
+  });
+
+  it('reads the auth settings (CORE-02, ADR 0004)', () => {
+    const env = parseEnvironment({
+      ...valid(),
+      AUTH_ACCESS_TOKEN_TTL_SECONDS: '300',
+      AUTH_REFRESH_TOKEN_TTL_SECONDS: '86400',
+      AUTH_REFRESH_COOKIE_NAME: 'rt',
+      AUTH_COOKIE_SECURE: 'false',
+      AUTH_COOKIE_SAME_SITE: 'lax',
+    });
+    expect(env.auth).toMatchObject({
+      accessTokenTtlSeconds: 300,
+      refreshTokenTtlSeconds: 86_400,
+      refreshCookieName: 'rt',
+      cookieSecure: false,
+      cookieSameSite: 'lax',
+    });
+  });
+
+  it('rejects identical access and refresh secrets', () => {
+    expect(
+      failure({ ...valid(), AUTH_REFRESH_TOKEN_SECRET: ACCESS_SECRET }),
+    ).toContain('AUTH_REFRESH_TOKEN_SECRET');
   });
 
   it('applies safe defaults for optional settings', () => {
@@ -91,6 +128,8 @@ describe('parseEnvironment (FND-02)', () => {
     'S3_BUCKET',
     'S3_ACCESS_KEY',
     'S3_SECRET_KEY',
+    'AUTH_ACCESS_TOKEN_SECRET',
+    'AUTH_REFRESH_TOKEN_SECRET',
   ])('fails naming %s when it is missing', (key) => {
     const input = valid();
     delete input[key];
@@ -122,6 +161,14 @@ describe('parseEnvironment (FND-02)', () => {
     ['SWAGGER_ENABLED', 'yes'],
     ['CORS_ORIGINS', 'http://localhost:4200,,http://x.test'],
     ['CORS_ORIGINS', 'localhost:4200'],
+    ['AUTH_ACCESS_TOKEN_SECRET', 'too-short'],
+    ['AUTH_ACCESS_TOKEN_TTL_SECONDS', '30'],
+    ['AUTH_ACCESS_TOKEN_TTL_SECONDS', '3601'],
+    ['AUTH_REFRESH_TOKEN_TTL_SECONDS', '3599'],
+    ['AUTH_REFRESH_TOKEN_TTL_SECONDS', '7776001'],
+    ['AUTH_REFRESH_COOKIE_NAME', 'bad name;'],
+    ['AUTH_COOKIE_SECURE', 'maybe'],
+    ['AUTH_COOKIE_SAME_SITE', 'none'],
   ])('rejects %s=%s', (key, value) => {
     expect(failure({ ...valid(), [key]: value })).toContain(key);
   });
@@ -151,19 +198,23 @@ describe('parseEnvironment (FND-02)', () => {
       );
     });
 
+    it('rejects a refresh cookie without Secure', () => {
+      expect(failure({ ...production(), AUTH_COOKIE_SECURE: 'false' })).toContain(
+        'AUTH_COOKIE_SECURE',
+      );
+    });
+
     it('accepts an explicit allowlist without Swagger', () => {
       expect(parseEnvironment(production()).nodeEnv).toBe('production');
     });
   });
 
-  it('does not require reserved auth, reservation or Mercado Pago variables', () => {
-    const env = parseEnvironment(valid());
-    expect(env).not.toHaveProperty('authAccessTokenSecret');
+  it('does not require reserved reservation or Mercado Pago variables', () => {
     expect(() =>
       parseEnvironment({
         ...valid(),
         MP_ACCESS_TOKEN: '',
-        AUTH_ACCESS_TOKEN_SECRET: '',
+        RESERVATION_HOLD_TTL_SECONDS: '',
       }),
     ).not.toThrow();
   });

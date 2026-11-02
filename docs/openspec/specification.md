@@ -431,7 +431,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | Tarea | Dependencias | Entrega principal | Estado |
 |---|---|---|---|
 | `CORE-01` Base de datos y migraciones | `FND-06` | Drizzle, migraciones PostgreSQL/PostGIS y roles separados — [detalle](#core-01--base-de-datos-y-migraciones) | `VERIFIED` |
-| `CORE-02` Usuarios, sesiones y membresías | `CORE-01` | login, refresh rotativo HttpOnly, logout y membresías | `PENDING` |
+| `CORE-02` Usuarios, sesiones y membresías | `CORE-01` | login, refresh rotativo HttpOnly, logout y membresías — [detalle](#core-02--usuarios-sesiones-y-membresías) | `VERIFIED` |
 | `CORE-03` Aislamiento y auditoría | `CORE-02` | autorización tenant, RLS y auditoría | `PENDING` |
 | `VEN-01` Predios | `CORE-03` | CRUD de predios fijos/temporales | `PENDING` |
 | `LUI-01..10` Editor de plano frontend | ninguna (ver change) | editor P06 con repositorio en memoria; fija contrato de geometría para `LAY-01` — [change archivado](changes/archive/2026-10-30-lay-ui-floor-plan-editor/proposal.md) · spec [`layout-editor`](specs/layout-editor/spec.md) | `VERIFIED` |
@@ -475,6 +475,21 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
 - [x] Compose: servicio `db-migrate` previo a la API (`service_completed_successfully`); la API usa `juntta_app` y no recibe credenciales del dueño.
 - [x] `scripts/init-local-env.mjs`: genera `APP_DB_PASSWORD` y arma `DATABASE_URL` (`juntta_app`) y `DATABASE_MIGRATION_URL` (dueño) para localhost.
 - Pendiente para la persona: agregar `DATABASE_MIGRATION_URL` al `.env` (vía `.env.example` + script) para correr `test:int` y `db:setup` desde el host; en Compose no hace falta.
+
+##### CORE-02 — Usuarios, sesiones y membresías
+
+- **Estado:** `VERIFIED`
+- **Dependencias:** `CORE-01`
+- **Entrega:** módulo `auth` con `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout` y `GET /auth/me`, según [ADR 0004](../adr/0004-contrato-de-entorno-y-autenticacion.md); tablas `users`, `memberships` y `refresh_tokens` (migración `0002_auth`).
+- **Aceptación:** contraseñas sólo como hash Argon2id; access token JWT HS256 corto (algoritmo fijado, `iss`/`aud`/`typ`); refresh opaco de 256 bits en cookie `HttpOnly`/`Secure`/`SameSite=Strict` con `Path=/api/v1/auth`, nunca en el body, guardado sólo como HMAC-SHA256; rotación con bloqueo de fila y detección de reutilización que revoca la familia; refresh/logout validan `Origin` contra `CORS_ORIGINS`; respuesta única para credencial inválida, usuario inexistente o deshabilitado (con verificación contra hash ficticio para igualar tiempos); límite de login de 5 intentos por email y 20 por IP cada 15 min (Redis, falla cerrado); las membresías listadas excluyen las deshabilitadas y los tenants suspendidos.
+- **Evidencia requerida:** pruebas de integración contra PostgreSQL real del flujo HTTP completo.
+  - 2026-11-02: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 18/18 (9 de `CORE-01` + 9 de `test/auth.int-spec.ts`): login con email normalizado, cookie con flags y path esperados, sin refresh en el body y sólo membresías de tenants activos; 401 idéntico para contraseña errónea, usuario inexistente y deshabilitado; 400 con body inválido; `/auth/me` con Bearer válido, y 401 con `WWW-Authenticate: Bearer` sin token o con token alterado; rotación y reutilización del refresh viejo → 401 y revocación del nuevo; dos refresh concurrentes con el mismo token → exactamente un 200 y un 401; `Origin` ajeno o ausente → 403 sin consumir el token; logout → 204, cookie borrada y refresh posterior 401; 5 fallos → 429 con `Retry-After` aun con la contraseña correcta.
+  - 2026-11-02: `npm test --workspace api` 76/76 (incluye `tokens`, `password`, `login-rate-limiter`, `env.schema`), `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
+  - Hallazgo: desde el host Windows, `localhost:5432` responde un PostgreSQL nativo (no el del contenedor), así que `test:int` falla con `28P01`; usar la variante en Compose del README.
+- [x] Esquema y migración `0002_auth` (email único sin distinguir mayúsculas, checks de estado y rol, FK con `ON DELETE CASCADE`).
+- [x] `AuthService`, `AuthController`, `AccessTokenGuard`, `LoginRateLimiter` + `RedisCounterStore`; `@fastify/cookie` registrado en `configureApp`.
+- [x] Variables `AUTH_*` validadas en el esquema de entorno (§13.1).
+- Fuera de alcance (tareas siguientes): alta de usuarios, invitaciones y gestión de membresías (sin endpoints todavía; los usuarios se crean por SQL); RLS sobre `memberships` y uso de la membresía para autorizar por tenant (`CORE-03`); limpieza periódica de `refresh_tokens` vencidos; reemplazo del selector "Ver como" del frontend por la sesión.
 
 #### Integración Mercado Pago (EP07)
 
@@ -615,7 +630,7 @@ Estructura `apps/api` (NestJS), `apps/web` (Angular), `docker-compose.yml`, `.en
 | `REDIS_URL` | Redis local para BullMQ, jobs y cache. |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE` | LocalStack emula S3 en desarrollo con credenciales públicas de simulación; en producción se requiere un proveedor S3 y credenciales de mínimo privilegio administradas fuera de Git. |
 | `MP_ENVIRONMENT`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | Mercado Pago usa `sandbox` localmente. Las credenciales pueden quedar vacías para flujos que no son de pago; pagos deben fallar con error explícito y configurable hasta configurarlas. |
-| `JWT_SECRET` | Marcador opcional hasta decidir en un ADR entre JWT y sesión HttpOnly; no se debe consumir antes de esa decisión. |
+| `AUTH_ACCESS_TOKEN_SECRET`, `AUTH_REFRESH_TOKEN_SECRET`, `AUTH_ACCESS_TOKEN_TTL_SECONDS`, `AUTH_REFRESH_TOKEN_TTL_SECONDS`, `AUTH_REFRESH_COOKIE_NAME`, `AUTH_COOKIE_SECURE`, `AUTH_COOKIE_SAME_SITE` | `CORE-02` ([ADR 0004](../adr/0004-contrato-de-entorno-y-autenticacion.md)): secretos de ≥ 32 caracteres y distintos entre sí (generados por `scripts/init-local-env.mjs`); TTL por defecto 900 s / 14 días; cookie `juntta_rt`, `Secure` y `SameSite=Strict` por defecto. En producción `AUTH_COOKIE_SECURE=false` se rechaza. |
 | `SENTRY_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT` | Integraciones opcionales de observabilidad; pueden quedar vacías localmente. |
 
 ## 14. Checklist de Definition of Done

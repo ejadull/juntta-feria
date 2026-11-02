@@ -1,3 +1,4 @@
+import fastifyCookie from '@fastify/cookie';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import type { FastifyServerOptions } from 'fastify';
@@ -19,10 +20,16 @@ export function fastifyOptions(): FastifyServerOptions {
   };
 }
 
-/** Everything main.ts and the e2e tests share: prefix, CORS, correlation id, errors, OpenAPI. */
-export function configureApp(app: NestFastifyApplication): AppConfiguration {
+/**
+ * Everything main.ts and the tests share: prefix, CORS, correlation id, errors, cookies (refresh
+ * token, ADR 0004), OpenAPI. Call before `app.init()`.
+ */
+export async function configureApp(
+  app: NestFastifyApplication,
+): Promise<AppConfiguration> {
   const env = app.get<AppConfiguration>(configuration.KEY);
 
+  await app.register(fastifyCookie);
   app.setGlobalPrefix(env.apiPrefix);
   const anyOrigin = env.corsOrigins.includes('*'); // rejected in production by the env schema
   app.enableCors({

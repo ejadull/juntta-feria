@@ -11,7 +11,7 @@ async function bootstrap(): Promise<void> {
     AppModule,
     new FastifyAdapter(fastifyOptions()),
   );
-  const env = configureApp(app);
+  const env = await configureApp(app);
   app.enableShutdownHooks(); // closes the readiness clients on SIGTERM
   await app.listen(env.port, env.apiHost);
 }
