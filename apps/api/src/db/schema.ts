@@ -1,10 +1,14 @@
 import { sql } from 'drizzle-orm';
 import {
   check,
+  customType,
+  foreignKey,
   index,
+  integer,
   jsonb,
   numeric,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -181,5 +185,121 @@ export const venues = pgTable(
     check('venues_type_check', sql`${t.type} IN ('FIXED', 'TEMPORARY')`),
     check('venues_name_check', sql`btrim(${t.name}) <> ''`),
     check('venues_size_check', sql`${t.widthM} > 0 AND ${t.heightM} > 0`),
+  ],
+);
+
+/** Reusable floor plan of a tenant, optionally tied to a venue (LAY-01, §3.1). */
+export const layoutTemplates = pgTable(
+  'layout_templates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    venueId: uuid('venue_id'),
+    name: text('name').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('layout_templates_tenant_id_unique').on(t.tenantId, t.id),
+    uniqueIndex('layout_templates_tenant_name_unique').on(
+      t.tenantId,
+      sql`lower(btrim(${t.name}))`,
+    ),
+    // Same-tenant venue only (INV-02); a venue in use cannot be deleted.
+    foreignKey({
+      name: 'layout_templates_venue_fk',
+      columns: [t.tenantId, t.venueId],
+      foreignColumns: [venues.tenantId, venues.id],
+    }).onDelete('restrict'),
+    check('layout_templates_name_check', sql`btrim(${t.name}) <> ''`),
+  ],
+);
+
+export const LAYOUT_VERSION_STATUSES = ['DRAFT', 'PUBLISHED', 'ARCHIVED'] as const;
+export type LayoutVersionStatus = (typeof LAYOUT_VERSION_STATUSES)[number];
+
+/**
+ * Numbered version of a template (LAY-01). DRAFT → PUBLISHED → ARCHIVED; only drafts change
+ * (INV-06), enforced by triggers in the migration. At most one draft and one published per template.
+ */
+export const layoutVersions = pgTable(
+  'layout_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    templateId: uuid('template_id').notNull(),
+    version: integer('version').notNull(),
+    widthM: meters('width_m'),
+    heightM: meters('height_m'),
+    status: text('status').$type<LayoutVersionStatus>().notNull().default('DRAFT'),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('layout_versions_tenant_id_unique').on(t.tenantId, t.id),
+    unique('layout_versions_template_version_unique').on(t.templateId, t.version),
+    uniqueIndex('layout_versions_one_draft').on(t.templateId).where(sql`${t.status} = 'DRAFT'`),
+    uniqueIndex('layout_versions_one_published')
+      .on(t.templateId)
+      .where(sql`${t.status} = 'PUBLISHED'`),
+    foreignKey({
+      name: 'layout_versions_template_fk',
+      columns: [t.tenantId, t.templateId],
+      foreignColumns: [layoutTemplates.tenantId, layoutTemplates.id],
+    }).onDelete('cascade'),
+    check('layout_versions_status_check', sql`${t.status} IN ('DRAFT', 'PUBLISHED', 'ARCHIVED')`),
+    check(
+      'layout_versions_published_at_check',
+      sql`(${t.status} = 'DRAFT') = (${t.publishedAt} IS NULL)`,
+    ),
+    check('layout_versions_version_check', sql`${t.version} > 0`),
+    check('layout_versions_size_check', sql`${t.widthM} > 0 AND ${t.heightM} > 0`),
+  ],
+);
+
+export const LAYOUT_OBJECT_KINDS = [
+  'STAND',
+  'AISLE',
+  'ENTRY',
+  'EXIT',
+  'UTILITY',
+  'OBSTACLE',
+  'EMERGENCY',
+] as const;
+export type LayoutObjectKind = (typeof LAYOUT_OBJECT_KINDS)[number];
+
+/** Planar polygon in local meters (§2: SRID 0). Read/written as GeoJSON with ST_* functions. */
+const polygon = customType<{ data: string }>({
+  dataType: () => 'geometry(Polygon,0)',
+});
+
+/**
+ * Object of a layout version (LAY-01). The id comes from the editor and is kept when a version is
+ * cloned, so a stand keeps its identity across versions (INV-06 migrations of reservations).
+ */
+export const layoutObjects = pgTable(
+  'layout_objects',
+  {
+    id: uuid('id').notNull(),
+    tenantId: tenantId(),
+    layoutVersionId: uuid('layout_version_id').notNull(),
+    kind: text('kind').$type<LayoutObjectKind>().notNull(),
+    code: text('code'),
+    geometry: polygon('geometry').notNull(),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+  },
+  (t) => [
+    primaryKey({ name: 'layout_objects_pk', columns: [t.layoutVersionId, t.id] }),
+    // Target of event_stands (tenant, version, object) composite FK (INV-03).
+    unique('layout_objects_tenant_version_id_unique').on(t.tenantId, t.layoutVersionId, t.id),
+    foreignKey({
+      name: 'layout_objects_version_fk',
+      columns: [t.tenantId, t.layoutVersionId],
+      foreignColumns: [layoutVersions.tenantId, layoutVersions.id],
+    }).onDelete('cascade'),
+    check(
+      'layout_objects_kind_check',
+      sql`${t.kind} IN ('STAND', 'AISLE', 'ENTRY', 'EXIT', 'UTILITY', 'OBSTACLE', 'EMERGENCY')`,
+    ),
+    check('layout_objects_metadata_check', sql`jsonb_typeof(${t.metadata}) = 'object'`),
   ],
 );

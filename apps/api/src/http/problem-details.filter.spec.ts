@@ -3,6 +3,7 @@ import {
   HttpException,
   NotFoundException,
   ServiceUnavailableException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { toProblem } from './problem-details.filter.js';
 
@@ -35,6 +36,23 @@ describe('toProblem (RFC 9457)', () => {
     );
     expect(problem.status).toBe(400);
     expect(problem.detail).toBe('name is required; price must be > 0');
+  });
+
+  it('passes a 4xx `issues` list through as an extension member', () => {
+    const issues = [{ code: 'STAND_OVERLAP', objectIds: ['a', 'b'] }];
+    const problem = toProblem(
+      new UnprocessableEntityException({ message: 'Layout has 1 issue', issues }),
+      req,
+    );
+    expect(problem).toMatchObject({ status: 422, detail: 'Layout has 1 issue', issues });
+  });
+
+  it('never exposes `issues` from a 5xx', () => {
+    const problem = toProblem(
+      new HttpException({ message: 'x', issues: [{ secret: true }] }, 500),
+      req,
+    );
+    expect(problem).not.toHaveProperty('issues');
   });
 
   it('accepts a plain string response', () => {

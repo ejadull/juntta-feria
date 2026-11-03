@@ -4,6 +4,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { configuration } from './config/configuration.js';
 import { DatabaseModule } from './db/database.module.js';
 import { HealthModule } from './health/health.module.js';
+import { LayoutsModule } from './layouts/layouts.module.js';
 import { TenancyModule } from './tenancy/tenancy.module.js';
 import { VenuesModule } from './venues/venues.module.js';
 
@@ -22,6 +23,7 @@ import { VenuesModule } from './venues/venues.module.js';
     AuthModule,
     TenancyModule,
     VenuesModule,
+    LayoutsModule,
   ],
 })
 export class AppModule {}

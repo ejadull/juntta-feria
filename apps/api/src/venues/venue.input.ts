@@ -11,7 +11,7 @@ const isTimeZone = (value: string): boolean => {
 };
 
 /** Positive meters with at most two decimals (the column is numeric(10,2)). */
-const meters = z
+export const meters = z
   .number()
   .positive()
   .max(100_000)

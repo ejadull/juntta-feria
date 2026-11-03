@@ -17,6 +17,13 @@ export interface ProblemDetails {
   readonly detail: string;
   readonly instance: string;
   readonly correlationId: string;
+  /** Extension member (RFC 9457 §3.2): per-item problems of a 4xx, e.g. layout validation. */
+  readonly issues?: readonly unknown[];
+}
+
+function issuesOf(response: string | object): readonly unknown[] | undefined {
+  const issues = (response as { issues?: unknown }).issues;
+  return Array.isArray(issues) ? issues : undefined;
 }
 
 const GENERIC_DETAIL =
@@ -48,7 +55,9 @@ export function toProblem(
       : HttpStatus.INTERNAL_SERVER_ERROR;
   const title = STATUS_CODES[status] ?? 'Error';
   const safe = exception instanceof HttpException && status < 500;
+  const issues = safe ? issuesOf(exception.getResponse()) : undefined;
   return {
+    ...(issues ? { issues } : {}),
     type: 'about:blank',
     title,
     status,

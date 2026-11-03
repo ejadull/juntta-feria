@@ -20,6 +20,12 @@ export const isUuid = (value: unknown): value is string =>
 export const isUniqueViolation = (error: unknown): boolean =>
   (error as { cause?: { code?: string } } | null)?.cause?.code === '23505';
 
+/** True when a delete/update was blocked because other rows still reference the row. */
+export const isReferenceViolation = (error: unknown): boolean =>
+  ['23503', '23001'].includes(
+    (error as { cause?: { code?: string } } | null)?.cause?.code ?? '',
+  );
+
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
   readonly db: Database;

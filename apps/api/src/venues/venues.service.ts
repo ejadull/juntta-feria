@@ -2,6 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { eq, sql } from 'drizzle-orm';
 import {
   DatabaseService,
+  isReferenceViolation,
   isUniqueViolation,
   type Transaction,
 } from '../db/database.service.js';
@@ -106,21 +107,28 @@ export class VenuesService {
     actorId: string,
     id: string,
   ): Promise<boolean> {
-    return this.database.withTenant(tenantId, async (tx) => {
-      const [before] = await tx
-        .delete(venues)
-        .where(eq(venues.id, id))
-        .returning(view);
-      if (!before) return false;
-      await this.audit.record(tx, {
-        actorId,
-        action: 'venue.deleted',
-        entityType: 'venue',
-        entityId: id,
-        before,
+    return this.database
+      .withTenant(tenantId, async (tx) => {
+        const [before] = await tx
+          .delete(venues)
+          .where(eq(venues.id, id))
+          .returning(view);
+        if (!before) return false;
+        await this.audit.record(tx, {
+          actorId,
+          action: 'venue.deleted',
+          entityType: 'venue',
+          entityId: id,
+          before,
+        });
+        return true;
+      })
+      .catch((error: unknown) => {
+        // Layout templates (and later events) keep the venue with ON DELETE RESTRICT.
+        if (isReferenceViolation(error))
+          throw new ConflictException('The venue is in use by a layout template.');
+        throw error;
       });
-      return true;
-    });
   }
 
   private async find(

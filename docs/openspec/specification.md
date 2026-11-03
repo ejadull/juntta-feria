@@ -181,10 +181,11 @@ Autenticación de panel `Authorization: Bearer <token>` (access token JWT, [ADR 
 | GET/POST | /api/v1/venues | owner/admin/operator | Listar/crear predios |
 | GET/PATCH | /api/v1/venues/:id | owner/admin/operator | Ver/editar predio |
 | DELETE | /api/v1/venues/:id | owner/admin | Eliminar predio |
-| POST | /api/v1/layout-templates | operator | Plantilla nueva |
-| POST | /api/v1/layout-templates/:id/versions | operator | Clonar nueva versión editable |
-| PUT | /api/v1/layout-versions/:id/objects/:objectId | operator | Actualizar geometría y metadatos |
-| POST | /api/v1/layout-versions/:id/publish | owner | Validar y publicar versión |
+| GET/POST | /api/v1/layout-templates | owner/admin/operator | Listar plantillas con sus versiones / plantilla nueva (devuelve su versión 1 en borrador) |
+| POST | /api/v1/layout-templates/:id/versions | owner/admin/operator | Clonar una versión (`sourceVersionId`) como nuevo borrador |
+| GET | /api/v1/layout-versions/:id | owner/admin/operator | Versión con sus objetos |
+| PUT | /api/v1/layout-versions/:id/objects | owner/admin/operator | Guardar el borrador completo (el editor guarda todo junto, LUI-05 D6) |
+| POST | /api/v1/layout-versions/:id/publish | owner/admin | Validar con PostGIS y publicar; 422 con `issues` si falla |
 | POST/GET | /api/v1/events | operator | Crear/listar eventos |
 | POST | /api/v1/events/:id/publish | owner | Publicar evento |
 | GET/PATCH | /api/v1/events/:id/stands | operator | Inventario, tarifas y asignación masiva de sector |
@@ -439,7 +440,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `LUI-01..10` Editor de plano frontend | ninguna (ver change) | editor P06 con repositorio en memoria; fija contrato de geometría para `LAY-01` — [change archivado](changes/archive/2026-10-30-lay-ui-floor-plan-editor/proposal.md) · spec [`layout-editor`](specs/layout-editor/spec.md) | `VERIFIED` |
 | `ORG-01..07` Shell del organizador, Panel y Expositores | ninguna (ver change) | navegación, P03 y P11 en consulta con adaptadores en memoria; fija contratos de lectura para `REP-01`/`EXH-01` — [change archivado](changes/archive/2026-10-30-org-ui-shell/proposal.md) · spec [`organizer-shell`](specs/organizer-shell/spec.md) | `VERIFIED` |
 | `PUB-UI-01..06` Vistas Feriante y Visitante | ninguna (ver change) | "Ver como", P07 Elegí tu stand y catálogo/mapa público en consulta con adaptador en memoria; fija contrato de lectura para `PUB-01`; reserva y pago como marcadores de `RES-01`/`PAY-01` — [change archivado](changes/archive/2026-10-30-pub-ui-catalog/proposal.md) · spec [`public-catalog`](specs/public-catalog/spec.md) | `VERIFIED` |
-| `LAY-01` Layouts versionados | `VEN-01`, contrato de `LUI-05` | geometría, publicación e inmutabilidad | `PENDING` |
+| `LAY-01` Layouts versionados | `VEN-01`, contrato de `LUI-05` | geometría, publicación e inmutabilidad — [detalle](#lay-01--layouts-versionados) | `VERIFIED` |
 | `EVT-01` Eventos, stands y tarifas | `LAY-01` | evento sobre versión publicada, sectores por evento ([ADR 0002](../adr/0002-sectores-por-evento.md)) e inventario valorizado | `PENDING` |
 | `EXH-01` Expositores | `CORE-03` | perfil privado/público y consentimiento | `PENDING` |
 | `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01` | holds, locking e idempotencia | `PENDING` |
@@ -522,7 +523,24 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
   - 2026-11-03: `npm test --workspace api` 76/76, `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
 - [x] `tenantId()` en el schema: el `tenant_id` de las tablas de tenant toma por defecto el `app.tenant_id` de la transacción, así que el cliente nunca lo provee (lo usan `audit_logs` y `venues`).
 - [x] `UNIQUE (tenant_id, id)` en `venues`, como destino de las FK compuestas de layouts y eventos (INV-02).
-- Fuera de alcance: ubicación geográfica (§3.1 no la define; EP02 menciona "ubicación", alcanza con `address`), paginación del listado y pantalla P04 en el frontend. Cuando existan `layout_templates`/`events`, la baja de un predio en uso fallará por FK y deberá responder 409.
+- Fuera de alcance: ubicación geográfica (§3.1 no la define; EP02 menciona "ubicación", alcanza con `address`), paginación del listado y pantalla P04 en el frontend. La baja de un predio en uso responde 409 desde `LAY-01` (FK `RESTRICT`).
+
+##### LAY-01 — Layouts versionados
+
+- **Estado:** `VERIFIED`
+- **Dependencias:** `VEN-01`, contrato de `LUI-05` ([D2/D4/D6](changes/archive/2026-10-30-lay-ui-floor-plan-editor/design.md))
+- **Entrega:** `LayoutsModule` con las rutas de §5; tablas `layout_templates`, `layout_versions` y `layout_objects` (migración `0005_layouts`), con `geometry(Polygon,0)` en metros e índice GiST.
+- **Decisiones:**
+  - El borrador se guarda completo (`PUT /layout-versions/:id/objects`) en lugar de objeto por objeto, porque así lo hace el puerto `saveDraft` del editor. Las reglas de INV-04 se validan recién al publicar, así que un borrador a medio hacer se puede guardar.
+  - El id del objeto lo genera el editor (UUID) y la clave es `(layout_version_id, id)`: al clonar, un stand conserva su id entre versiones, lo que sirve para migrar reservas (INV-06).
+  - Publicar archiva la versión publicada anterior de la misma plantilla. Cada plantilla tiene como máximo un borrador y una publicada (índices únicos parciales).
+  - La validación de publicación devuelve los códigos del editor más `INVALID_GEOMETRY` (polígonos autointersectados o degenerados, que el editor de rectángulos no dibuja pero un cliente de la API sí puede mandar). El problem+json suma la extensión `issues` (`code`, `objectIds`, `message`).
+- **Aceptación:** INV-04 con PostGIS (`ST_IsValid`, `ST_CoveredBy`, solapamiento de stands > 0.0001 m² según §3.4, stands sobre pasillos/accesos, códigos faltantes o repetidos, sin stands); INV-06 en la base: triggers impiden modificar objetos de una versión no borrador y cualquier cambio a una publicada salvo pasar a `ARCHIVED`; plantilla, versión y objeto con FK compuestas por tenant (INV-02) y RLS `ENABLE` + `FORCE`; predio de otro tenant → 404.
+- **Evidencia requerida:** pruebas de integración contra PostgreSQL/PostGIS real.
+  - 2026-11-03: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 61/61 (17 de `test/layouts.int-spec.ts`): plantilla con versión 1 en borrador del tamaño del predio; predio ajeno → 404 y plantilla sin predio ni medidas → 400; listado por tenant con versiones; borradores con anillo abierto, tipo desconocido, coordenada no numérica, id mal formado o ids repetidos → 400; un borrador inválido se guarda y al publicar → 422 con `STAND_OVERLAP`, `OUT_OF_BOUNDS`, `CODE_MISSING`, `CODE_DUPLICATE`, `STAND_ON_RESERVED` e `INVALID_GEOMETRY` sobre los objetos exactos; `NO_STANDS`; la geometría vuelve idéntica, compartir un borde es válido y OPERATOR → 403 al publicar; versión publicada → 409 al guardar o republicar, y `UPDATE` directo en la base rechazado por los triggers; el clon es versión 2 con los mismos ids y un segundo borrador → 409; publicar la v2 archiva la v1; versión o plantilla de otro tenant → 404; borrar un predio en uso → 409; fuera de un tenant, las tres tablas devuelven 0 filas.
+  - 2026-11-03: `npm test --workspace api` 78/78 (incluye `issues` en problem+json sólo para 4xx), `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
+- Pendiente para la integración con el frontend: un `HttpLayoutRepository` en el editor, que sume `INVALID_GEOMETRY` a `ValidationCode` y lea `issues` del 422 para `PublishRejectedError`.
+- Fuera de alcance: borrar plantillas o borradores, editar las medidas de un borrador, polígonos con huecos y objetos sobre `UTILITY`/`OBSTACLE` (el editor tampoco los valida).
 
 #### Integración Mercado Pago (EP07)
 
