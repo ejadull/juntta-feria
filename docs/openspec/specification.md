@@ -178,7 +178,9 @@ Autenticación de panel `Authorization: Bearer <token>` (access token JWT, [ADR 
 | POST | /api/v1/auth/login | público | Login |
 | GET | /api/v1/me | usuario | Perfil y memberships |
 | POST | /api/v1/tenants | superadmin | Crear organización |
-| GET/POST | /api/v1/venues | owner/operator | Listar/crear predios |
+| GET/POST | /api/v1/venues | owner/admin/operator | Listar/crear predios |
+| GET/PATCH | /api/v1/venues/:id | owner/admin/operator | Ver/editar predio |
+| DELETE | /api/v1/venues/:id | owner/admin | Eliminar predio |
 | POST | /api/v1/layout-templates | operator | Plantilla nueva |
 | POST | /api/v1/layout-templates/:id/versions | operator | Clonar nueva versión editable |
 | PUT | /api/v1/layout-versions/:id/objects/:objectId | operator | Actualizar geometría y metadatos |
@@ -433,7 +435,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `CORE-01` Base de datos y migraciones | `FND-06` | Drizzle, migraciones PostgreSQL/PostGIS y roles separados — [detalle](#core-01--base-de-datos-y-migraciones) | `VERIFIED` |
 | `CORE-02` Usuarios, sesiones y membresías | `CORE-01` | login, refresh rotativo HttpOnly, logout y membresías — [detalle](#core-02--usuarios-sesiones-y-membresías) | `VERIFIED` |
 | `CORE-03` Aislamiento y auditoría | `CORE-02` | autorización tenant, RLS y auditoría — [detalle](#core-03--aislamiento-y-auditoría) | `VERIFIED` |
-| `VEN-01` Predios | `CORE-03` | CRUD de predios fijos/temporales | `PENDING` |
+| `VEN-01` Predios | `CORE-03` | CRUD de predios fijos/temporales — [detalle](#ven-01--predios) | `VERIFIED` |
 | `LUI-01..10` Editor de plano frontend | ninguna (ver change) | editor P06 con repositorio en memoria; fija contrato de geometría para `LAY-01` — [change archivado](changes/archive/2026-10-30-lay-ui-floor-plan-editor/proposal.md) · spec [`layout-editor`](specs/layout-editor/spec.md) | `VERIFIED` |
 | `ORG-01..07` Shell del organizador, Panel y Expositores | ninguna (ver change) | navegación, P03 y P11 en consulta con adaptadores en memoria; fija contratos de lectura para `REP-01`/`EXH-01` — [change archivado](changes/archive/2026-10-30-org-ui-shell/proposal.md) · spec [`organizer-shell`](specs/organizer-shell/spec.md) | `VERIFIED` |
 | `PUB-UI-01..06` Vistas Feriante y Visitante | ninguna (ver change) | "Ver como", P07 Elegí tu stand y catálogo/mapa público en consulta con adaptador en memoria; fija contrato de lectura para `PUB-01`; reserva y pago como marcadores de `RES-01`/`PAY-01` — [change archivado](changes/archive/2026-10-30-pub-ui-catalog/proposal.md) · spec [`public-catalog`](specs/public-catalog/spec.md) | `VERIFIED` |
@@ -506,6 +508,21 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
 - Patrón para las tablas de tenant siguientes (`VEN-01` en adelante): misma política RLS por `app.tenant_id` con `ENABLE` + `FORCE` en la migración que crea la tabla, más un test de aislamiento.
 - Tablas de identidad sin RLS, por diseño: `users`, `memberships` y `refresh_tokens` se leen antes de elegir tenant (login, guard) y sólo las toca el módulo `auth`/`tenancy`; `tenants` también, porque es el ancla. Si en el futuro hiciera falta RLS en `memberships`, la política necesitaría además `app.user_id`.
 - Fuera de alcance: endpoints de auditoría (consulta/exportación), superadministrador de plataforma (`POST /tenants`) y auditoría de login.
+
+#### Dominio
+
+##### VEN-01 — Predios
+
+- **Estado:** `VERIFIED`
+- **Dependencias:** `CORE-03`
+- **Entrega:** `VenuesModule` con `GET/POST /venues` y `GET/PATCH/DELETE /venues/:id` (§5); tabla `venues` (migración `0004_venues`) según §3.1.
+- **Aceptación:** sólo miembros OWNER/ADMIN/OPERATOR leen y editan, y sólo OWNER/ADMIN eliminan; el tenant sale de la sesión (un `tenantId` en el body → 400); tipo `FIXED`/`TEMPORARY`, nombre no vacío y único por tenant sin distinguir mayúsculas ni espacios (índice único → 409, sin carrera de chequear y después insertar), zona horaria IANA válida y medidas en metros > 0 con 2 decimales; un predio de otro tenant, un id inexistente o mal formado → 404; altas, ediciones y bajas auditadas en la misma transacción, con estado anterior y nuevo; RLS `ENABLE` + `FORCE` por `app.tenant_id`.
+- **Evidencia requerida:** pruebas de integración contra PostgreSQL real.
+  - 2026-11-03: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 44/44 (16 de `test/venues.int-spec.ts`): alta 201 auditada; 400 por tipo desconocido, nombre vacío, ancho 0, alto negativo, 3 decimales, zona horaria inexistente y campo extra; nombre duplicado → 409 en el mismo tenant y 201 en otro; listado sólo del tenant y ordenado; 404 para el predio de otro tenant (GET y PATCH), un id inexistente y uno mal formado; PATCH parcial con `before`/`after` auditados; PATCH vacío o inválido → 400; EXHIBITOR → 403 al leer y OPERATOR → 403 al eliminar; baja de OWNER 204 auditada; fuera de un tenant, `venues` devuelve 0 filas.
+  - 2026-11-03: `npm test --workspace api` 76/76, `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
+- [x] `tenantId()` en el schema: el `tenant_id` de las tablas de tenant toma por defecto el `app.tenant_id` de la transacción, así que el cliente nunca lo provee (lo usan `audit_logs` y `venues`).
+- [x] `UNIQUE (tenant_id, id)` en `venues`, como destino de las FK compuestas de layouts y eventos (INV-02).
+- Fuera de alcance: ubicación geográfica (§3.1 no la define; EP02 menciona "ubicación", alcanza con `address`), paginación del listado y pantalla P04 en el frontend. Cuando existan `layout_templates`/`events`, la baja de un predio en uso fallará por FK y deberá responder 409.
 
 #### Integración Mercado Pago (EP07)
 

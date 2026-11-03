@@ -16,6 +16,10 @@ const UUID =
 export const isUuid = (value: unknown): value is string =>
   typeof value === 'string' && UUID.test(value);
 
+/** True when a query failed on a unique constraint (Drizzle wraps the driver error as `cause`). */
+export const isUniqueViolation = (error: unknown): boolean =>
+  (error as { cause?: { code?: string } } | null)?.cause?.code === '23505';
+
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
   readonly db: Database;

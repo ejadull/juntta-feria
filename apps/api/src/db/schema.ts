@@ -3,6 +3,7 @@ import {
   check,
   index,
   jsonb,
+  numeric,
   pgTable,
   text,
   timestamp,
@@ -147,5 +148,38 @@ export const auditLogs = pgTable(
   (t) => [
     index('audit_logs_tenant_created_idx').on(t.tenantId, t.createdAt),
     check('audit_logs_action_check', sql`btrim(${t.action}) <> ''`),
+  ],
+);
+
+export const VENUE_TYPES = ['FIXED', 'TEMPORARY'] as const;
+export type VenueType = (typeof VENUE_TYPES)[number];
+
+/** Meters with centimeter precision, read back as numbers (§2: geometry is stored in meters). */
+const meters = (name: string) =>
+  numeric(name, { precision: 10, scale: 2, mode: 'number' }).notNull();
+
+/** Fixed or temporary venue of a tenant (VEN-01, §3.1). RLS lives in the migration. */
+export const venues = pgTable(
+  'venues',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    type: text('type').$type<VenueType>().notNull(),
+    name: text('name').notNull(),
+    address: text('address'),
+    timezone: text('timezone').notNull(),
+    widthM: meters('width_m'),
+    heightM: meters('height_m'),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Target of composite FKs (tenant_id, venue_id) from layouts and events (INV-02).
+    unique('venues_tenant_id_unique').on(t.tenantId, t.id),
+    // "Predio Norte" and " predio norte" are the same venue.
+    uniqueIndex('venues_tenant_name_unique').on(t.tenantId, sql`lower(btrim(${t.name}))`),
+    check('venues_type_check', sql`${t.type} IN ('FIXED', 'TEMPORARY')`),
+    check('venues_name_check', sql`btrim(${t.name}) <> ''`),
+    check('venues_size_check', sql`${t.widthM} > 0 AND ${t.heightM} > 0`),
   ],
 );
