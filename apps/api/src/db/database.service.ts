@@ -13,6 +13,9 @@ export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+export const isUuid = (value: unknown): value is string =>
+  typeof value === 'string' && UUID.test(value);
+
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
   readonly db: Database;

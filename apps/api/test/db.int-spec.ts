@@ -1,8 +1,14 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import { DatabaseService } from '../src/db/database.service.js';
-import { appTestUrl, ownerPassword, ownerTestUrl, required } from './int.env.js';
+import {
+  appTestUrl,
+  ownerPassword,
+  ownerTestUrl,
+  required,
+} from './int.env.js';
 
 /**
  * CORE-01 against a real PostgreSQL (ADR 0005): roles, migrations, RLS and tenant transactions.
@@ -38,6 +44,10 @@ const runSetup = (env: Record<string, string | undefined> = {}): string =>
     encoding: 'utf8',
     stdio: 'pipe',
   });
+
+const journal = JSON.parse(
+  readFileSync('drizzle/meta/_journal.json', 'utf8'),
+) as { entries: unknown[] };
 
 const T1 = '11111111-1111-4111-8111-111111111111';
 const T2 = '22222222-2222-4222-8222-222222222222';
@@ -99,7 +109,7 @@ describe('db:setup (CORE-01)', () => {
     const { rows } = await asOwner((c) =>
       c.query('SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations'),
     );
-    expect(rows[0].n).toBe(3); // 0000 extensions/grants, 0001 tenants, 0002 auth
+    expect(rows[0].n).toBe(journal.entries.length); // one row per migration in the journal
   });
 
   it('fails naming the missing variable, without echoing values', () => {

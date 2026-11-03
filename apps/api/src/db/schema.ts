@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   check,
   index,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -17,6 +18,16 @@ import {
 
 const createdAt = () =>
   timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
+
+/**
+ * Owner tenant of a row in a tenant table (CORE-03): defaults to the tenant of the current
+ * `withTenant` transaction, so inserts never take it from client input. RLS checks it again.
+ */
+const tenantId = () =>
+  uuid('tenant_id')
+    .notNull()
+    .default(sql`nullif(current_setting('app.tenant_id', true), '')::uuid`)
+    .references(() => tenants.id);
 
 /** Anchor for tenant isolation (§2.2). RLS on tenant tables arrives with CORE-03. */
 export const tenants = pgTable(
@@ -35,7 +46,12 @@ export const tenants = pgTable(
   ],
 );
 
-export const MEMBERSHIP_ROLES = ['OWNER', 'ADMIN', 'OPERATOR', 'EXHIBITOR'] as const;
+export const MEMBERSHIP_ROLES = [
+  'OWNER',
+  'ADMIN',
+  'OPERATOR',
+  'EXHIBITOR',
+] as const;
 export type MembershipRole = (typeof MEMBERSHIP_ROLES)[number];
 
 /** Global accounts (CORE-02). Only the Argon2id hash is stored, never the password. */
@@ -78,7 +94,10 @@ export const memberships = pgTable(
       'memberships_role_check',
       sql`${t.role} IN ('OWNER', 'ADMIN', 'OPERATOR', 'EXHIBITOR')`,
     ),
-    check('memberships_status_check', sql`${t.status} IN ('ACTIVE', 'DISABLED')`),
+    check(
+      'memberships_status_check',
+      sql`${t.status} IN ('ACTIVE', 'DISABLED')`,
+    ),
   ],
 );
 
@@ -103,5 +122,30 @@ export const refreshTokens = pgTable(
   (t) => [
     index('refresh_tokens_family_idx').on(t.familyId),
     index('refresh_tokens_user_idx').on(t.userId),
+  ],
+);
+
+/**
+ * Append-only audit trail per tenant (CORE-03, §3.1). `tenant_id` defaults to the tenant of the
+ * current transaction (`withTenant`); RLS and the missing UPDATE/DELETE grants live in SQL.
+ */
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    actorId: uuid('actor_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    action: text('action').notNull(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id'),
+    beforeJson: jsonb('before_json'),
+    afterJson: jsonb('after_json'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('audit_logs_tenant_created_idx').on(t.tenantId, t.createdAt),
+    check('audit_logs_action_check', sql`btrim(${t.action}) <> ''`),
   ],
 );

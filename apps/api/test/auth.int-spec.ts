@@ -1,40 +1,17 @@
-import { Test } from '@nestjs/testing';
-import {
-  FastifyAdapter,
-  type NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import pg from 'pg';
-import { AppModule } from '../src/app.module.js';
-import { RedisCounterStore } from '../src/auth/redis-counter-store.js';
-import type { CounterStore } from '../src/auth/login-rate-limiter.js';
 import { hashPassword } from '../src/auth/password.js';
-import { configureApp, fastifyOptions } from '../src/bootstrap.js';
-import { READINESS_CHECKS } from '../src/health/readiness.js';
-import { appTestUrl, ownerTestUrl } from './int.env.js';
+import { COOKIE, ORIGIN, startIntApp } from './int.app.js';
+import { ownerTestUrl } from './int.env.js';
 
 /**
  * CORE-02 end to end against a real PostgreSQL (ADR 0004): login, refresh rotation with reuse
  * detection, logout, profile, cookie flags, Origin check and login throttling.
  */
 
-const ORIGIN = 'http://localhost:4200';
-const COOKIE = 'juntta_rt';
 const PASSWORD = 'correct horse battery staple';
 const ACTIVE_TENANT = '33333333-3333-4333-8333-333333333333';
 const SUSPENDED_TENANT = '44444444-4444-4444-8444-444444444444';
-
-/** Map-backed counters: the throttling logic is real, only Redis is replaced. */
-class MemoryCounterStore implements CounterStore {
-  private readonly counts = new Map<string, number>();
-  async incrementWithWindow(key: string, windowSeconds: number) {
-    const count = (this.counts.get(key) ?? 0) + 1;
-    this.counts.set(key, count);
-    return { count, ttl: windowSeconds };
-  }
-  async reset(key: string) {
-    this.counts.delete(key);
-  }
-}
 
 let app: NestFastifyApplication;
 
@@ -69,36 +46,7 @@ async function seed(): Promise<void> {
 
 beforeAll(async () => {
   await seed();
-  const env = {
-    NODE_ENV: 'test',
-    API_PREFIX: 'api/v1',
-    CORS_ORIGINS: ORIGIN,
-    DATABASE_URL: appTestUrl(),
-    // Redis and S3 are never reached (counters and readiness are replaced); values only satisfy the schema.
-    REDIS_URL: 'redis://127.0.0.1:1',
-    S3_ENDPOINT: 'http://127.0.0.1:1',
-    S3_REGION: 'us-east-1',
-    S3_BUCKET: 'test-bucket',
-    S3_ACCESS_KEY: 'test',
-    S3_SECRET_KEY: 'test',
-    SWAGGER_ENABLED: 'false',
-    AUTH_ACCESS_TOKEN_SECRET: 'int-access-secret-0123456789abcdef0123456789',
-    AUTH_REFRESH_TOKEN_SECRET: 'int-refresh-secret-0123456789abcdef012345678',
-    AUTH_REFRESH_COOKIE_NAME: COOKIE,
-  };
-  for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(READINESS_CHECKS)
-    .useValue([])
-    .overrideProvider(RedisCounterStore)
-    .useValue(new MemoryCounterStore())
-    .compile();
-  app = moduleRef.createNestApplication<NestFastifyApplication>(
-    new FastifyAdapter(fastifyOptions()),
-  );
-  await configureApp(app);
-  await app.init();
-  await app.getHttpAdapter().getInstance().ready();
+  app = await startIntApp();
 }, 60_000);
 
 afterAll(async () => {
@@ -107,7 +55,11 @@ afterAll(async () => {
 });
 
 const login = (email: string, password = PASSWORD) =>
-  app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { email, password } });
+  app.inject({
+    method: 'POST',
+    url: '/api/v1/auth/login',
+    payload: { email, password },
+  });
 
 const refresh = (token?: string, origin: string | null = ORIGIN) =>
   app.inject({
@@ -130,7 +82,9 @@ describe('auth (CORE-02, ADR 0004)', () => {
       tokenType: 'Bearer',
       expiresIn: 900,
       user: { email: 'ana@example.com' },
-      memberships: [{ tenantId: ACTIVE_TENANT, tenantSlug: 'feria-activa', role: 'OWNER' }],
+      memberships: [
+        { tenantId: ACTIVE_TENANT, tenantSlug: 'feria-activa', role: 'OWNER' },
+      ],
     });
     expect(body.memberships).toHaveLength(1); // suspended tenant is not offered
     expect(body).not.toHaveProperty('refreshToken');
@@ -150,7 +104,9 @@ describe('auth (CORE-02, ADR 0004)', () => {
     ]);
     for (const res of answers) {
       expect(res.statusCode).toBe(401);
-      expect(res.json().detail ?? res.json().message).toMatch(/invalid email or password/i);
+      expect(res.json().detail ?? res.json().message).toMatch(
+        /invalid email or password/i,
+      );
       expect(refreshCookie(res)).toBeUndefined();
     }
   });
@@ -175,7 +131,10 @@ describe('auth (CORE-02, ADR 0004)', () => {
     expect(me.statusCode).toBe(200);
     expect(me.json()).toMatchObject({ user: { email: 'ana@example.com' } });
 
-    const anonymous = await app.inject({ method: 'GET', url: '/api/v1/auth/me' });
+    const anonymous = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+    });
     expect(anonymous.statusCode).toBe(401);
     expect(anonymous.headers['www-authenticate']).toBe('Bearer');
 
@@ -205,7 +164,9 @@ describe('auth (CORE-02, ADR 0004)', () => {
   it('lets only one of two concurrent refreshes with the same token succeed', async () => {
     const token = refreshCookie(await login('ana@example.com'))!.value;
     const results = await Promise.all([refresh(token), refresh(token)]);
-    expect(results.map((r) => r.statusCode).sort((a, b) => a - b)).toEqual([200, 401]);
+    expect(results.map((r) => r.statusCode).sort((a, b) => a - b)).toEqual([
+      200, 401,
+    ]);
   });
 
   it('refuses refresh and logout from a foreign or missing Origin (CSRF)', async () => {

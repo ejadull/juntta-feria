@@ -22,7 +22,7 @@
 | Editor y mapa de stands | SVG con coordenadas en metros — [ADR 0001](docs/adr/0001-svg-para-editor-y-mapa.md) | en uso |
 | API | NestJS 12 + Fastify, OpenAPI sólo en desarrollo | base operativa |
 | Configuración y auth | entorno validado con Zod; JWT + refresh rotativo HttpOnly — [ADR 0004](docs/adr/0004-contrato-de-entorno-y-autenticacion.md) | entorno y auth en uso (`CORE-02`: login, refresh, logout, `/auth/me`) |
-| Persistencia | PostgreSQL 16 + PostGIS con Drizzle y SQL explícito — [ADR 0005](docs/adr/0005-drizzle-y-sql-explicito-postgis.md) | migraciones y roles en uso (`CORE-01`); RLS por tenant pendiente (`CORE-03`) |
+| Persistencia | PostgreSQL 16 + PostGIS con Drizzle y SQL explícito — [ADR 0005](docs/adr/0005-drizzle-y-sql-explicito-postgis.md) | migraciones y roles en uso (`CORE-01`); RLS por tenant y auditoría en uso (`CORE-03`) |
 | Cache y colas | Redis | contenedor listo |
 | Archivos | S3 (en desarrollo: LocalStack, bucket creado al iniciar) | contenedor listo |
 | Pagos | Mercado Pago Checkout Pro + Webhooks | pendiente (`PAY-00..07`) |

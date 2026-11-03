@@ -171,7 +171,7 @@ Precio fijo por stand para MVP; snapshot del precio al reservar. Preparar esquem
 Evento DRAFT→PUBLISHED→ACTIVE→CLOSED, CANCELLED desde estados permitidos. Layout DRAFT→PUBLISHED→ARCHIVED; no editar publicado. Reserva HELD→PAYMENT_PENDING→CONFIRMED, o EXPIRED/CANCELLED; confirmado→REFUND_PENDING→REFUNDED según política. Pago siempre se reconcilia separadamente.
 
 ## 5. Contratos API REST v1
-Autenticación de panel `Authorization: Bearer <token>` (o sesión HttpOnly con CSRF según decisión de implementación), rol y tenant verificados. Recursos públicos explícitos sin credenciales. Errores `application/problem+json` con `type,title,status,detail,code,traceId`.
+Autenticación de panel `Authorization: Bearer <token>` (access token JWT, [ADR 0004](../adr/0004-contrato-de-entorno-y-autenticacion.md)). Las rutas de tenant reciben la organización elegida en el header `X-Tenant-Id` (P02), y la API verifica en cada request la membresía activa y el rol (`CORE-03`): sin header o con un UUID inválido → 400; tenant ajeno, inexistente o suspendido, o membresía deshabilitada → 404 uniforme; rol insuficiente → 403. Recursos públicos explícitos sin credenciales. Errores `application/problem+json` con `type,title,status,detail,code,traceId`.
 
 | Método | Ruta | Rol | Propósito |
 |---|---|---|---|
@@ -432,7 +432,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 |---|---|---|---|
 | `CORE-01` Base de datos y migraciones | `FND-06` | Drizzle, migraciones PostgreSQL/PostGIS y roles separados — [detalle](#core-01--base-de-datos-y-migraciones) | `VERIFIED` |
 | `CORE-02` Usuarios, sesiones y membresías | `CORE-01` | login, refresh rotativo HttpOnly, logout y membresías — [detalle](#core-02--usuarios-sesiones-y-membresías) | `VERIFIED` |
-| `CORE-03` Aislamiento y auditoría | `CORE-02` | autorización tenant, RLS y auditoría | `PENDING` |
+| `CORE-03` Aislamiento y auditoría | `CORE-02` | autorización tenant, RLS y auditoría — [detalle](#core-03--aislamiento-y-auditoría) | `VERIFIED` |
 | `VEN-01` Predios | `CORE-03` | CRUD de predios fijos/temporales | `PENDING` |
 | `LUI-01..10` Editor de plano frontend | ninguna (ver change) | editor P06 con repositorio en memoria; fija contrato de geometría para `LAY-01` — [change archivado](changes/archive/2026-10-30-lay-ui-floor-plan-editor/proposal.md) · spec [`layout-editor`](specs/layout-editor/spec.md) | `VERIFIED` |
 | `ORG-01..07` Shell del organizador, Panel y Expositores | ninguna (ver change) | navegación, P03 y P11 en consulta con adaptadores en memoria; fija contratos de lectura para `REP-01`/`EXH-01` — [change archivado](changes/archive/2026-10-30-org-ui-shell/proposal.md) · spec [`organizer-shell`](specs/organizer-shell/spec.md) | `VERIFIED` |
@@ -489,7 +489,23 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
 - [x] Esquema y migración `0002_auth` (email único sin distinguir mayúsculas, checks de estado y rol, FK con `ON DELETE CASCADE`).
 - [x] `AuthService`, `AuthController`, `AccessTokenGuard`, `LoginRateLimiter` + `RedisCounterStore`; `@fastify/cookie` registrado en `configureApp`.
 - [x] Variables `AUTH_*` validadas en el esquema de entorno (§13.1).
-- Fuera de alcance (tareas siguientes): alta de usuarios, invitaciones y gestión de membresías (sin endpoints todavía; los usuarios se crean por SQL); RLS sobre `memberships` y uso de la membresía para autorizar por tenant (`CORE-03`); limpieza periódica de `refresh_tokens` vencidos; reemplazo del selector "Ver como" del frontend por la sesión.
+- Fuera de alcance (tareas siguientes): alta de usuarios, invitaciones y gestión de membresías (sin endpoints todavía; los usuarios se crean por SQL); uso de la membresía para autorizar por tenant (`CORE-03`); limpieza periódica de `refresh_tokens` vencidos; reemplazo del selector "Ver como" del frontend por la sesión.
+
+##### CORE-03 — Aislamiento y auditoría
+
+- **Estado:** `VERIFIED`
+- **Dependencias:** `CORE-02`
+- **Entrega:** módulo global `tenancy` con `@TenantScoped(...roles)` (Bearer + `TenantGuard`), `AuditService.record(tx, entry)` y la tabla `audit_logs` (migración `0003_audit_logs`).
+- **Decisión:** el tenant viaja en `X-Tenant-Id` y la membresía se verifica en la base en cada request, de modo que revocar un rol vale al instante (§5). Se descartaron el tenant y el rol dentro del JWT (un rol revocado sigue vigente hasta 15 min) y el tenant en la ruta (obligaba a reescribir §5).
+- **Aceptación:** ninguna ruta de tenant responde sin membresía activa en un tenant activo; la respuesta no revela si el tenant existe; los handlers consultan con `withTenant(request.tenant.id, …)`; `audit_logs` tiene RLS habilitado y forzado, toma su `tenant_id` de `app.tenant_id` y es sólo de agregado para `juntta_app`.
+- **Evidencia requerida:** pruebas de integración contra PostgreSQL real.
+  - 2026-11-03: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 28/28 (incluye 10 de `test/tenancy.int-spec.ts`). Sin token → 401; sin header o con UUID inválido → 400; tenant ajeno, inexistente o suspendido y membresía deshabilitada → el mismo 404 (`status`/`title`/`detail` idénticos); rol no permitido → 403; el handler recibe `{ id, role }`; la acción permitida queda auditada bajo su tenant. En `audit_logs`: otro tenant y una consulta sin tenant ven 0 filas; insertar sin tenant falla; insertar con el `tenant_id` de otro tenant → `42501` (WITH CHECK); `UPDATE`/`DELETE` → `42501`.
+  - 2026-11-03: `npm test --workspace api` 76/76, `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK. El test de idempotencia de CORE-01 ahora toma la cantidad de migraciones del journal.
+- [x] `TenantGuard` + `@TenantScoped` y `TenancyModule` global (reexporta `AuthModule` para que cualquier módulo resuelva los guards).
+- [x] `audit_logs` según §3.1: RLS `ENABLE` + `FORCE`, política `USING`/`WITH CHECK` por `app.tenant_id` y `REVOKE UPDATE, DELETE, TRUNCATE` a `juntta_app`.
+- Patrón para las tablas de tenant siguientes (`VEN-01` en adelante): misma política RLS por `app.tenant_id` con `ENABLE` + `FORCE` en la migración que crea la tabla, más un test de aislamiento.
+- Tablas de identidad sin RLS, por diseño: `users`, `memberships` y `refresh_tokens` se leen antes de elegir tenant (login, guard) y sólo las toca el módulo `auth`/`tenancy`; `tenants` también, porque es el ancla. Si en el futuro hiciera falta RLS en `memberships`, la política necesitaría además `app.user_id`.
+- Fuera de alcance: endpoints de auditoría (consulta/exportación), superadministrador de plataforma (`POST /tenants`) y auditoría de login.
 
 #### Integración Mercado Pago (EP07)
 
