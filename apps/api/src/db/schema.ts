@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
+  char,
   check,
   customType,
   foreignKey,
@@ -301,5 +303,140 @@ export const layoutObjects = pgTable(
       sql`${t.kind} IN ('STAND', 'AISLE', 'ENTRY', 'EXIT', 'UTILITY', 'OBSTACLE', 'EMERGENCY')`,
     ),
     check('layout_objects_metadata_check', sql`jsonb_typeof(${t.metadata}) = 'object'`),
+  ],
+);
+
+export const EVENT_STATUSES = ['DRAFT', 'PUBLISHED', 'ACTIVE', 'CLOSED', 'CANCELLED'] as const;
+export type EventStatus = (typeof EVENT_STATUSES)[number];
+
+const instant = (name: string) => timestamp(name, { withTimezone: true }).notNull();
+
+/**
+ * Event on a published, immutable layout version (EVT-01, INV-03). The slug is global because
+ * the public portal addresses events by slug alone (§5 `/public/events/:slug`).
+ */
+export const events = pgTable(
+  'events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    venueId: uuid('venue_id').notNull(),
+    layoutVersionId: uuid('layout_version_id').notNull(),
+    name: text('name').notNull(),
+    slug: text('slug').notNull().unique(),
+    startsAt: instant('starts_at'),
+    endsAt: instant('ends_at'),
+    salesOpenAt: instant('sales_open_at'),
+    salesCloseAt: instant('sales_close_at'),
+    status: text('status').$type<EventStatus>().notNull().default('DRAFT'),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('events_tenant_id_unique').on(t.tenantId, t.id),
+    // Target of event_stands (tenant, event, layout version): a stand comes from the event's layout.
+    unique('events_tenant_id_layout_unique').on(t.tenantId, t.id, t.layoutVersionId),
+    foreignKey({
+      name: 'events_venue_fk',
+      columns: [t.tenantId, t.venueId],
+      foreignColumns: [venues.tenantId, venues.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'events_layout_version_fk',
+      columns: [t.tenantId, t.layoutVersionId],
+      foreignColumns: [layoutVersions.tenantId, layoutVersions.id],
+    }).onDelete('restrict'),
+    check(
+      'events_status_check',
+      sql`${t.status} IN ('DRAFT', 'PUBLISHED', 'ACTIVE', 'CLOSED', 'CANCELLED')`,
+    ),
+    check('events_name_check', sql`btrim(${t.name}) <> ''`),
+    check('events_slug_check', sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+    check(
+      'events_dates_check',
+      sql`${t.startsAt} < ${t.endsAt} AND ${t.salesOpenAt} < ${t.salesCloseAt} AND ${t.salesCloseAt} <= ${t.endsAt}`,
+    ),
+    check(
+      'events_published_at_check',
+      sql`${t.status} = 'DRAFT' OR ${t.status} = 'CANCELLED' OR ${t.publishedAt} IS NOT NULL`,
+    ),
+  ],
+);
+
+/** Thematic grouping of an event's stands (ADR 0002). */
+export const eventSectors = pgTable(
+  'event_sectors',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    eventId: uuid('event_id').notNull(),
+    name: text('name').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // Target of the INV-09 composite FK from event_stands.
+    unique('event_sectors_tenant_event_id_unique').on(t.tenantId, t.eventId, t.id),
+    // "Diseño" and "diseño " are the same sector.
+    uniqueIndex('event_sectors_name_unique').on(t.tenantId, t.eventId, sql`lower(btrim(${t.name}))`),
+    foreignKey({
+      name: 'event_sectors_event_fk',
+      columns: [t.tenantId, t.eventId],
+      foreignColumns: [events.tenantId, events.id],
+    }).onDelete('cascade'),
+    check('event_sectors_name_check', sql`btrim(${t.name}) <> ''`),
+  ],
+);
+
+export const EVENT_STAND_STATUSES = ['AVAILABLE', 'BLOCKED', 'ASSIGNED', 'DISABLED'] as const;
+export type EventStandStatus = (typeof EVENT_STAND_STATUSES)[number];
+
+/**
+ * Sellable inventory of an event: one row per STAND object of its layout (INV-03). A NULL price
+ * means "no tariff yet" (§4.1: an event cannot be published with sellable stands without one).
+ */
+export const eventStands = pgTable(
+  'event_stands',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    eventId: uuid('event_id').notNull(),
+    layoutVersionId: uuid('layout_version_id').notNull(),
+    layoutObjectId: uuid('layout_object_id').notNull(),
+    sectorId: uuid('sector_id'),
+    code: text('code').notNull(),
+    status: text('status').$type<EventStandStatus>().notNull().default('AVAILABLE'),
+    priceCents: bigint('price_cents', { mode: 'number' }),
+    currency: char('currency', { length: 3 }).notNull().default('ARS'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('event_stands_tenant_id_unique').on(t.tenantId, t.id),
+    unique('event_stands_event_code_unique').on(t.tenantId, t.eventId, t.code),
+    unique('event_stands_event_object_unique').on(t.eventId, t.layoutObjectId),
+    foreignKey({
+      name: 'event_stands_event_fk',
+      columns: [t.tenantId, t.eventId, t.layoutVersionId],
+      foreignColumns: [events.tenantId, events.id, events.layoutVersionId],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'event_stands_layout_object_fk',
+      columns: [t.tenantId, t.layoutVersionId, t.layoutObjectId],
+      foreignColumns: [layoutObjects.tenantId, layoutObjects.layoutVersionId, layoutObjects.id],
+    }).onDelete('restrict'),
+    // INV-09. The migration turns ON DELETE into SET NULL (sector_id) (PostgreSQL >= 15).
+    foreignKey({
+      name: 'event_stands_sector_fk',
+      columns: [t.tenantId, t.eventId, t.sectorId],
+      foreignColumns: [eventSectors.tenantId, eventSectors.eventId, eventSectors.id],
+    }),
+    index('event_stands_event_idx').on(t.eventId),
+    check(
+      'event_stands_status_check',
+      sql`${t.status} IN ('AVAILABLE', 'BLOCKED', 'ASSIGNED', 'DISABLED')`,
+    ),
+    check('event_stands_price_check', sql`${t.priceCents} IS NULL OR ${t.priceCents} >= 0`),
+    check('event_stands_currency_check', sql`${t.currency} = 'ARS'`),
   ],
 );

@@ -186,10 +186,12 @@ Autenticación de panel `Authorization: Bearer <token>` (access token JWT, [ADR 
 | GET | /api/v1/layout-versions/:id | owner/admin/operator | Versión con sus objetos |
 | PUT | /api/v1/layout-versions/:id/objects | owner/admin/operator | Guardar el borrador completo (el editor guarda todo junto, LUI-05 D6) |
 | POST | /api/v1/layout-versions/:id/publish | owner/admin | Validar con PostGIS y publicar; 422 con `issues` si falla |
-| POST/GET | /api/v1/events | operator | Crear/listar eventos |
-| POST | /api/v1/events/:id/publish | owner | Publicar evento |
-| GET/PATCH | /api/v1/events/:id/stands | operator | Inventario, tarifas y asignación masiva de sector |
-| GET/POST/PATCH/DELETE | /api/v1/events/:id/sectors | operator | Sectores del evento ([ADR 0002](../adr/0002-sectores-por-evento.md)) |
+| POST/GET | /api/v1/events | owner/admin/operator | Crear (genera un stand por cada STAND del plano) / listar eventos |
+| GET/PATCH | /api/v1/events/:id | owner/admin/operator | Ver / editar evento en borrador |
+| POST | /api/v1/events/:id/publish | owner/admin | Publicar evento; 422 con `issues` si hay stands vendibles sin precio |
+| GET/PATCH | /api/v1/events/:id/stands | owner/admin/operator | Inventario; edición masiva de precio (centavos), sector y estado (`standIds`) |
+| GET/POST | /api/v1/events/:id/sectors | owner/admin/operator | Sectores del evento ([ADR 0002](../adr/0002-sectores-por-evento.md)) |
+| PATCH/DELETE | /api/v1/events/:id/sectors/:sectorId | owner/admin/operator | Editar / borrar sector (sus stands quedan sin sector) |
 | GET | /api/v1/public/events/:slug | público | Evento público |
 | GET | /api/v1/public/events/:slug/map | público | GeoJSON y disponibilidad |
 | GET | /api/v1/public/events/:slug/exhibitors | público | Directorio público |
@@ -441,7 +443,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `ORG-01..07` Shell del organizador, Panel y Expositores | ninguna (ver change) | navegación, P03 y P11 en consulta con adaptadores en memoria; fija contratos de lectura para `REP-01`/`EXH-01` — [change archivado](changes/archive/2026-10-30-org-ui-shell/proposal.md) · spec [`organizer-shell`](specs/organizer-shell/spec.md) | `VERIFIED` |
 | `PUB-UI-01..06` Vistas Feriante y Visitante | ninguna (ver change) | "Ver como", P07 Elegí tu stand y catálogo/mapa público en consulta con adaptador en memoria; fija contrato de lectura para `PUB-01`; reserva y pago como marcadores de `RES-01`/`PAY-01` — [change archivado](changes/archive/2026-10-30-pub-ui-catalog/proposal.md) · spec [`public-catalog`](specs/public-catalog/spec.md) | `VERIFIED` |
 | `LAY-01` Layouts versionados | `VEN-01`, contrato de `LUI-05` | geometría, publicación e inmutabilidad — [detalle](#lay-01--layouts-versionados) | `VERIFIED` |
-| `EVT-01` Eventos, stands y tarifas | `LAY-01` | evento sobre versión publicada, sectores por evento ([ADR 0002](../adr/0002-sectores-por-evento.md)) e inventario valorizado | `PENDING` |
+| `EVT-01` Eventos, stands y tarifas | `LAY-01` | evento sobre versión publicada, sectores por evento ([ADR 0002](../adr/0002-sectores-por-evento.md)) e inventario valorizado — [detalle](#evt-01--eventos-stands-y-tarifas) | `VERIFIED` |
 | `EXH-01` Expositores | `CORE-03` | perfil privado/público y consentimiento | `PENDING` |
 | `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01` | holds, locking e idempotencia | `PENDING` |
 | `PAY-00` Decisiones de integración Mercado Pago | ninguna | ADR: track Checkout Pro, credenciales por organizador y validación de firma — [ADR 0006](../adr/0006-integracion-mercado-pago.md) | `VERIFIED` |
@@ -541,6 +543,23 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
   - 2026-11-03: `npm test --workspace api` 78/78 (incluye `issues` en problem+json sólo para 4xx), `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
 - Pendiente para la integración con el frontend: un `HttpLayoutRepository` en el editor, que sume `INVALID_GEOMETRY` a `ValidationCode` y lea `issues` del 422 para `PublishRejectedError`.
 - Fuera de alcance: borrar plantillas o borradores, editar las medidas de un borrador, polígonos con huecos y objetos sobre `UTILITY`/`OBSTACLE` (el editor tampoco los valida).
+
+##### EVT-01 — Eventos, stands y tarifas
+
+- **Estado:** `VERIFIED`
+- **Dependencias:** `LAY-01`
+- **Entrega:** `EventsModule` con las rutas de §5; tablas `events`, `event_sectors` y `event_stands` (migración `0006_events`).
+- **Decisiones:**
+  - Al crear el evento se genera un `event_stand` por cada `STAND` de la versión publicada, con el código del plano, estado `AVAILABLE` y **sin precio**.
+  - `price_cents` es nullable (el DDL ilustrativo de §3.3 lo tenía `NOT NULL`): `NULL` significa "sin tarifa" y lo distingue de un stand gratis. Publicar exige precio en todo stand que no esté `DISABLED` (§4.1), y si falta responde 422 con `STAND_WITHOUT_PRICE` / `NO_SELLABLE_STANDS`.
+  - El slug es único global porque el portal público usa `/public/events/:slug`. Si no viene, se genera desde el nombre sin acentos.
+  - Las fechas son ISO 8601 con offset obligatorio. Reglas: inicio < fin, apertura de venta < cierre, y cierre ≤ fin del evento (también como `CHECK`).
+  - Un evento publicado no cambia sus datos, pero el precio de los stands sí, porque cada reserva congela el suyo (INV-05). `ASSIGNED` no lo fija el organizador (lo hará `RES-01`), y el estado de un stand asignado no se puede cambiar.
+- **Aceptación:** INV-03 con FK compuestas (stand → evento + versión, stand → objeto de esa versión) y un trigger que exige versión `PUBLISHED` al crear e impide cambiar plano o predio; INV-09 con la FK `(tenant_id, event_id, sector_id)` y `ON DELETE SET NULL (sector_id)`; sectores únicos por evento sin distinguir mayúsculas; RLS `ENABLE` + `FORCE` en las tres tablas; altas, ediciones, publicación e inventario auditados.
+- **Evidencia requerida:** pruebas de integración contra PostgreSQL real.
+  - 2026-11-03: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 76/76 (15 de `test/events.int-spec.ts`): alta en borrador con slug generado, fechas normalizadas y stands A1–A3 disponibles, sin precio y con el `layoutObjectId` del plano; plano en borrador → 409, predio de otro tenant → 404, fechas incoherentes o sin offset → 400; slug repetido → 409; listado y lectura sólo del tenant; sectores con nombre único (409) y orden por `sortOrder`; precio y sector en bloque; 400 con stands ajenos, sector de otro evento, precio negativo o con decimales, estado `ASSIGNED`, sin cambios o lista vacía; OPERATOR → 403 al publicar; publicar con un stand sin precio → 422 con ese stand; deshabilitarlo y publicar → 200; evento publicado → 409 al editar o republicar, pero el precio sigue editable; edición de borrador con fechas validadas contra las guardadas; borrar un sector deja sus stands sin sector; en la base, un evento sobre un plano en borrador es rechazado y un sector de otro evento → `23503`; alta y publicación auditadas; fuera de un tenant, las tres tablas devuelven 0 filas.
+  - 2026-11-03: `npm test --workspace api` 86/86 (incluye `slugify` y `datesProblem`), `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
+- Fuera de alcance: métricas (`/events/:id/metrics`, `REP-01`), transiciones `ACTIVE`/`CLOSED`/`CANCELLED` (dependen de las reservas, `RES-01`), reglas de tarifa por m² o por sector (§4.4, posteriores al MVP), "copiar sectores de otro evento" y la pantalla P09.
 
 #### Integración Mercado Pago (EP07)
 

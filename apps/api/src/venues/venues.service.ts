@@ -124,9 +124,9 @@ export class VenuesService {
         return true;
       })
       .catch((error: unknown) => {
-        // Layout templates (and later events) keep the venue with ON DELETE RESTRICT.
+        // Layout templates and events keep the venue with ON DELETE RESTRICT.
         if (isReferenceViolation(error))
-          throw new ConflictException('The venue is in use by a layout template.');
+          throw new ConflictException('The venue is in use by a layout template or an event.');
         throw error;
       });
   }

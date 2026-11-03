@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module.js';
 import { configuration } from './config/configuration.js';
 import { DatabaseModule } from './db/database.module.js';
+import { EventsModule } from './events/events.module.js';
 import { HealthModule } from './health/health.module.js';
 import { LayoutsModule } from './layouts/layouts.module.js';
 import { TenancyModule } from './tenancy/tenancy.module.js';
@@ -24,6 +25,7 @@ import { VenuesModule } from './venues/venues.module.js';
     TenancyModule,
     VenuesModule,
     LayoutsModule,
+    EventsModule,
   ],
 })
 export class AppModule {}
