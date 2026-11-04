@@ -551,7 +551,7 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
 - **Entrega:** `EventsModule` con las rutas de §5; tablas `events`, `event_sectors` y `event_stands` (migración `0006_events`).
 - **Decisiones:**
   - Al crear el evento se genera un `event_stand` por cada `STAND` de la versión publicada, con el código del plano, estado `AVAILABLE` y **sin precio**.
-  - `price_cents` es nullable (el DDL ilustrativo de §3.3 lo tenía `NOT NULL`): `NULL` significa "sin tarifa" y lo distingue de un stand gratis. Publicar exige precio en todo stand que no esté `DISABLED` (§4.1), y si falta responde 422 con `STAND_WITHOUT_PRICE` / `NO_SELLABLE_STANDS`.
+  - `price_cents` es nullable (el DDL ilustrativo de §3.3 lo tenía `NOT NULL`): `NULL` significa "sin tarifa" y lo distingue de un stand gratis. La API nunca devuelve `null`: muestra `priceCents: 0` con `hasPrice: false` (decisión 2026-11-04). Publicar exige precio en todo stand que no esté `DISABLED` (§4.1), y si falta responde 422 con `STAND_WITHOUT_PRICE` / `NO_SELLABLE_STANDS`.
   - El slug es único global porque el portal público usa `/public/events/:slug`. Si no viene, se genera desde el nombre sin acentos.
   - Las fechas son ISO 8601 con offset obligatorio. Reglas: inicio < fin, apertura de venta < cierre, y cierre ≤ fin del evento (también como `CHECK`).
   - Un evento publicado no cambia sus datos, pero el precio de los stands sí, porque cada reserva congela el suyo (INV-05). `ASSIGNED` no lo fija el organizador (lo hará `RES-01`), y el estado de un stand asignado no se puede cambiar.

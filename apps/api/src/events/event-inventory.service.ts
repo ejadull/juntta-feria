@@ -25,7 +25,10 @@ const standView = {
   code: eventStands.code,
   sectorId: eventStands.sectorId,
   status: eventStands.status,
-  priceCents: eventStands.priceCents,
+  // NULL in the database means "no tariff yet" (it blocks publishing, §4.1); the API shows it as
+  // 0 with hasPrice=false so clients never handle null and never confuse it with a free stand.
+  priceCents: sql<number>`coalesce(${eventStands.priceCents}, 0)`.mapWith(Number),
+  hasPrice: sql<boolean>`${eventStands.priceCents} IS NOT NULL`,
   currency: eventStands.currency,
 };
 
@@ -35,7 +38,16 @@ const sectorView = {
   sortOrder: eventSectors.sortOrder,
 };
 
-export type EventStand = { [K in keyof typeof standView]: (typeof eventStands.$inferSelect)[K] };
+export interface EventStand {
+  readonly id: string;
+  readonly layoutObjectId: string;
+  readonly code: string;
+  readonly sectorId: string | null;
+  readonly status: (typeof eventStands.$inferSelect)['status'];
+  readonly priceCents: number;
+  readonly hasPrice: boolean;
+  readonly currency: string;
+}
 export type EventSector = { [K in keyof typeof sectorView]: (typeof eventSectors.$inferSelect)[K] };
 
 const SECTOR_NOT_FOUND = 'Sector not found.';
