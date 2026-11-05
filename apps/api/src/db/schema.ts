@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  boolean,
   char,
   check,
   customType,
@@ -438,5 +439,43 @@ export const eventStands = pgTable(
     ),
     check('event_stands_price_check', sql`${t.priceCents} IS NULL OR ${t.priceCents} >= 0`),
     check('event_stands_currency_check', sql`${t.currency} = 'ARS'`),
+  ],
+);
+
+/**
+ * Commercial profile of an exhibitor member in one organization (EXH-01, §3.1). The member owns
+ * it and its public consent (Ley 25.326); `public_consent_at` records when consent was given.
+ * Private data (legal name, CUIT) never leaves organizer views (INV-08).
+ */
+export const exhibitors = pgTable(
+  'exhibitors',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    legalName: text('legal_name').notNull(),
+    tradeName: text('trade_name').notNull(),
+    taxId: text('tax_id'),
+    category: text('category').notNull(),
+    description: text('description').notNull().default(''),
+    logoKey: text('logo_key'),
+    publicContactOptIn: boolean('public_contact_opt_in').notNull().default(false),
+    publicConsentAt: timestamp('public_consent_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Target of the reservations (tenant, exhibitor) composite FK (INV-02).
+    unique('exhibitors_tenant_id_unique').on(t.tenantId, t.id),
+    unique('exhibitors_tenant_user_unique').on(t.tenantId, t.userId),
+    check('exhibitors_names_check', sql`btrim(${t.legalName}) <> '' AND btrim(${t.tradeName}) <> ''`),
+    check('exhibitors_category_check', sql`btrim(${t.category}) <> ''`),
+    check('exhibitors_tax_id_check', sql`${t.taxId} IS NULL OR ${t.taxId} ~ '^[0-9]{11}$'`),
+    check(
+      'exhibitors_consent_check',
+      sql`${t.publicContactOptIn} = (${t.publicConsentAt} IS NOT NULL)`,
+    ),
   ],
 );

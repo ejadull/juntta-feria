@@ -50,6 +50,13 @@
       "when": 1793734287159,
       "tag": "0006_events",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793896237453,
+      "tag": "0007_exhibitors",
+      "breakpoints": true
     }
   ]
 }

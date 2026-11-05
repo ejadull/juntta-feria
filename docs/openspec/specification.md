@@ -201,7 +201,9 @@ Autenticación de panel `Authorization: Bearer <token>` (access token JWT, [ADR 
 | POST | /api/v1/reservations/:id/cancel | propietario/admin | Cancelar según política |
 | POST | /api/v1/webhooks/mercadopago | proveedor | Recibir eventos firmados |
 | GET | /api/v1/events/:id/metrics | operator | KPIs, incluido `occupancyBySector` ([ADR 0002](../adr/0002-sectores-por-evento.md)) (modelo de lectura: D2 de [`org-ui-shell`](changes/archive/2026-10-30-org-ui-shell/design.md)) |
-| GET | /api/v1/exhibitors | operator | Expositores del tenant con datos privados y estado de documentación (D4 de [`org-ui-shell`](changes/archive/2026-10-30-org-ui-shell/design.md)); nunca para vistas públicas |
+| GET | /api/v1/exhibitors | owner/admin/operator | Expositores del tenant con datos privados y estado de documentación (D4 de [`org-ui-shell`](changes/archive/2026-10-30-org-ui-shell/design.md)); nunca para vistas públicas |
+| GET | /api/v1/exhibitors/:id | owner/admin/operator | Ficha privada de un expositor |
+| GET/PUT | /api/v1/me/exhibitor-profile | expositor | Perfil propio en la organización de `X-Tenant-Id`; `PUT` crea (201) o reemplaza (200) y registra el consentimiento público |
 | GET | /api/v1/events/:id/reservations/export | operator | Exportación CSV |
 | GET | /api/v1/events/:id/stand-events | público | SSE disponibilidad saneada |
 
@@ -444,7 +446,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `PUB-UI-01..06` Vistas Feriante y Visitante | ninguna (ver change) | "Ver como", P07 Elegí tu stand y catálogo/mapa público en consulta con adaptador en memoria; fija contrato de lectura para `PUB-01`; reserva y pago como marcadores de `RES-01`/`PAY-01` — [change archivado](changes/archive/2026-10-30-pub-ui-catalog/proposal.md) · spec [`public-catalog`](specs/public-catalog/spec.md) | `VERIFIED` |
 | `LAY-01` Layouts versionados | `VEN-01`, contrato de `LUI-05` | geometría, publicación e inmutabilidad — [detalle](#lay-01--layouts-versionados) | `VERIFIED` |
 | `EVT-01` Eventos, stands y tarifas | `LAY-01` | evento sobre versión publicada, sectores por evento ([ADR 0002](../adr/0002-sectores-por-evento.md)) e inventario valorizado — [detalle](#evt-01--eventos-stands-y-tarifas) | `VERIFIED` |
-| `EXH-01` Expositores | `CORE-03` | perfil privado/público y consentimiento | `PENDING` |
+| `EXH-01` Expositores | `CORE-03` | perfil privado/público y consentimiento — [detalle](#exh-01--expositores) | `VERIFIED` |
 | `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01` | holds, locking e idempotencia | `PENDING` |
 | `PAY-00` Decisiones de integración Mercado Pago | ninguna | ADR: track Checkout Pro, credenciales por organizador y validación de firma — [ADR 0006](../adr/0006-integracion-mercado-pago.md) | `VERIFIED` |
 | `PAY-01` Proveedor de pagos y credenciales | `FND-04`, `PAY-00` | puerto `PaymentProvider`, adaptador SDK `mercadopago`, sandbox | `PENDING` |
@@ -560,6 +562,23 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
   - 2026-11-03: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 76/76 (15 de `test/events.int-spec.ts`): alta en borrador con slug generado, fechas normalizadas y stands A1–A3 disponibles, sin precio y con el `layoutObjectId` del plano; plano en borrador → 409, predio de otro tenant → 404, fechas incoherentes o sin offset → 400; slug repetido → 409; listado y lectura sólo del tenant; sectores con nombre único (409) y orden por `sortOrder`; precio y sector en bloque; 400 con stands ajenos, sector de otro evento, precio negativo o con decimales, estado `ASSIGNED`, sin cambios o lista vacía; OPERATOR → 403 al publicar; publicar con un stand sin precio → 422 con ese stand; deshabilitarlo y publicar → 200; evento publicado → 409 al editar o republicar, pero el precio sigue editable; edición de borrador con fechas validadas contra las guardadas; borrar un sector deja sus stands sin sector; en la base, un evento sobre un plano en borrador es rechazado y un sector de otro evento → `23503`; alta y publicación auditadas; fuera de un tenant, las tres tablas devuelven 0 filas.
   - 2026-11-03: `npm test --workspace api` 86/86 (incluye `slugify` y `datesProblem`), `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
 - Fuera de alcance: métricas (`/events/:id/metrics`, `REP-01`), transiciones `ACTIVE`/`CLOSED`/`CANCELLED` (dependen de las reservas, `RES-01`), reglas de tarifa por m² o por sector (§4.4, posteriores al MVP), "copiar sectores de otro evento" y la pantalla P09.
+
+##### EXH-01 — Expositores
+
+- **Estado:** `VERIFIED`
+- **Dependencias:** `CORE-03`
+- **Entrega:** `ExhibitorsModule` con las rutas de §5; tabla `exhibitors` (migración `0007_exhibitors`).
+- **Decisiones (2026-11-05):**
+  - El perfil lo crea y edita **el propio feriante** (membresía `EXHIBITOR`), uno por usuario y organización (`UNIQUE (tenant_id, user_id)`). El organizador sólo lo lee. Así el consentimiento lo da el titular de los datos (Ley 25.326) y `RES-01` sabe para qué expositor reserva cada usuario.
+  - `public_contact_opt_in` es el consentimiento para aparecer en el directorio público (AC-11, AC-PRD-03). `public_consent_at` guarda cuándo se dio, conserva esa fecha mientras siga vigente y se borra al retirarlo; un `CHECK` exige que los dos campos sean coherentes.
+  - El rubro es texto (`category`), no `category_id` como en §3.1, porque todavía no hay tabla de rubros; se migra cuando exista.
+  - El CUIT es opcional, se valida con el dígito verificador de AFIP (mod 11) y se guarda con sus 11 dígitos.
+  - `documentsStatus` responde `MISSING` hasta que exista `documents` (EP05).
+- **Aceptación:** el dueño y la organización salen de la sesión (un `userId` en el body → 400); sólo `EXHIBITOR` usa `/me/exhibitor-profile` y sólo OWNER/ADMIN/OPERATOR listan expositores; el expositor de otra organización → 404; RLS `ENABLE` + `FORCE`; altas y cambios auditados con estado anterior y nuevo; `UNIQUE (tenant_id, id)` como destino de la FK de reservas (INV-02).
+- **Evidencia requerida:** pruebas de integración contra PostgreSQL real.
+  - 2026-11-05: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 91/91 (15 de `test/exhibitors.int-spec.ts`): sin perfil → 404; el primer `PUT` → 201 con CUIT normalizado y el siguiente → 200; dar consentimiento registra la fecha, que se conserva en ediciones posteriores y se borra al retirarlo; 400 por CUIT con dígito verificador inválido, nombre comercial vacío, rubro faltante, `userId` en el body y consentimiento no booleano; perfil sin CUIT aceptado; el mismo usuario empieza sin perfil en otra organización; OWNER → 403 en `/me/exhibitor-profile` y EXHIBITOR → 403 en `/exhibitors`; el organizador ve CUIT, razón social, rubro y `documentsStatus: MISSING`; expositores de otra organización → lista vacía o 404; alta y tres ediciones auditadas; fuera de un tenant, 0 filas.
+  - 2026-11-05: `npm test --workspace api` 95/95 (incluye `normalizeCuit`), `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
+- Fuera de alcance: registro e invitación de feriantes (los usuarios y membresías se crean por SQL), logo (`logo_key`, con subida de archivos), documentos y su revisión (EP05), tabla de rubros, búsqueda y filtros del lado del servidor (D4 los hace en el cliente) y directorio público (`PUB-01`).
 
 #### Integración Mercado Pago (EP07)
 
