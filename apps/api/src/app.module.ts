@@ -7,6 +7,7 @@ import { EventsModule } from './events/events.module.js';
 import { ExhibitorsModule } from './exhibitors/exhibitors.module.js';
 import { HealthModule } from './health/health.module.js';
 import { LayoutsModule } from './layouts/layouts.module.js';
+import { ReservationsModule } from './reservations/reservations.module.js';
 import { TenancyModule } from './tenancy/tenancy.module.js';
 import { VenuesModule } from './venues/venues.module.js';
 
@@ -28,6 +29,7 @@ import { VenuesModule } from './venues/venues.module.js';
     LayoutsModule,
     EventsModule,
     ExhibitorsModule,
+    ReservationsModule,
   ],
 })
 export class AppModule {}

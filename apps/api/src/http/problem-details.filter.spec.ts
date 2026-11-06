@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
   NotFoundException,
   ServiceUnavailableException,
@@ -45,6 +46,15 @@ describe('toProblem (RFC 9457)', () => {
       req,
     );
     expect(problem).toMatchObject({ status: 422, detail: 'Layout has 1 issue', issues });
+  });
+
+  it('passes a 4xx machine-readable `code` through (§5 error format)', () => {
+    const problem = toProblem(
+      new ConflictException({ message: 'The stand is not available.', code: 'STAND_UNAVAILABLE' }),
+      req,
+    );
+    expect(problem).toMatchObject({ status: 409, code: 'STAND_UNAVAILABLE' });
+    expect(toProblem(new NotFoundException('x'), req)).not.toHaveProperty('code');
   });
 
   it('never exposes `issues` from a 5xx', () => {

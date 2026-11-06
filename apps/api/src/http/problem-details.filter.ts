@@ -19,11 +19,18 @@ export interface ProblemDetails {
   readonly correlationId: string;
   /** Extension member (RFC 9457 §3.2): per-item problems of a 4xx, e.g. layout validation. */
   readonly issues?: readonly unknown[];
+  /** Machine-readable reason of a 4xx (§5), e.g. `STAND_UNAVAILABLE`. */
+  readonly code?: string;
 }
 
 function issuesOf(response: string | object): readonly unknown[] | undefined {
   const issues = (response as { issues?: unknown }).issues;
   return Array.isArray(issues) ? issues : undefined;
+}
+
+function codeOf(response: string | object): string | undefined {
+  const code = (response as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
 }
 
 const GENERIC_DETAIL =
@@ -56,8 +63,10 @@ export function toProblem(
   const title = STATUS_CODES[status] ?? 'Error';
   const safe = exception instanceof HttpException && status < 500;
   const issues = safe ? issuesOf(exception.getResponse()) : undefined;
+  const code = safe ? codeOf(exception.getResponse()) : undefined;
   return {
     ...(issues ? { issues } : {}),
+    ...(code ? { code } : {}),
     type: 'about:blank',
     title,
     status,

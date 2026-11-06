@@ -195,7 +195,8 @@ Autenticación de panel `Authorization: Bearer <token>` (access token JWT, [ADR 
 | GET | /api/v1/public/events/:slug | público | Evento público |
 | GET | /api/v1/public/events/:slug/map | público | GeoJSON y disponibilidad |
 | GET | /api/v1/public/events/:slug/exhibitors | público | Directorio público |
-| POST | /api/v1/reservations | expositor | Crear hold idempotente |
+| POST | /api/v1/reservations | expositor | Crear hold idempotente (`Idempotency-Key`); 201 nuevo, 200 si se repite la clave |
+| GET | /api/v1/reservations | expositor/admin | Reservas propias (expositor) o de la organización; filtro `?eventId=` |
 | POST | /api/v1/reservations/:id/checkout | propietario de reserva | Crear checkout |
 | GET | /api/v1/reservations/:id | propietario/admin | Estado de reserva |
 | POST | /api/v1/reservations/:id/cancel | propietario/admin | Cancelar según política |
@@ -450,8 +451,8 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `EXH-02` Rubros | `EXH-01` | tabla de rubros por organización y migración de `exhibitors.category` (texto) a `category_id`; hoy el rubro es texto libre (decisión 2026-11-05) | `PENDING` |
 | `EXH-03` Documentos del expositor | `EXH-01`, subida de archivos (S3) | `documents` con revisión del organizador; reemplaza el `documentsStatus: MISSING` fijo de EXH-01 | `PENDING` |
 | `EXH-04` Invitación y alta de feriantes | `EXH-01` | link de invitación de un solo uso (también compartible por WhatsApp) que pide los datos básicos y crea la cuenta y la membresía `EXHIBITOR`; registro de altas visible para el administrador (pedido 2026-11-05) — [detalle](#exh-04--invitación-y-alta-de-feriantes) | `VERIFIED` |
-| `EXH-05` Suscripción del feriante | `EXH-04`, `PAY-01` | suscripción **a la plataforma** (decisión 2026-11-06): el feriante le paga a Juntta en la cuenta de Mercado Pago de la plataforma (`preapproval`, no OAuth del organizador) y queda habilitado a reservar en cualquier organización; estado global por usuario. Riesgo: implicancias fiscales de que la plataforma cobre (validar con asesoría, §1.6/R1) | `PENDING` |
-| `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01`, `EXH-04`, `EXH-05` | holds, locking e idempotencia; sólo reserva un feriante con cuenta activa y confirmada, perfil completo y suscripción paga | `PENDING` |
+| `EXH-05` Suscripción del feriante | `EXH-04`, `PAY-01` | suscripción **a la plataforma** (decisión 2026-11-06): el feriante le paga a Juntta en la cuenta de Mercado Pago de la plataforma (`preapproval`, no OAuth del organizador) y queda habilitado a reservar en cualquier organización; estado global por usuario. Riesgo: implicancias fiscales de que la plataforma cobre (validar con asesoría, §1.6/R1). **Hecho en RES-01:** tabla `platform_subscriptions` (estado + `current_period_end`) que RES-01 exige; se activa a mano hasta el webhook (ver RES-01). **Pendiente:** cobro con `preapproval` y webhook | `IN_PROGRESS` |
+| `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01`, `EXH-04`, `EXH-05` | holds, locking e idempotencia; sólo reserva un feriante con cuenta activa y confirmada, perfil completo y suscripción paga — [detalle](#res-01--reservas-concurrentes) | `VERIFIED` |
 | `PAY-00` Decisiones de integración Mercado Pago | ninguna | ADR: track Checkout Pro, credenciales por organizador y validación de firma — [ADR 0006](../adr/0006-integracion-mercado-pago.md) | `VERIFIED` |
 | `PAY-01` Proveedor de pagos y credenciales | `FND-04`, `PAY-00` | puerto `PaymentProvider`, adaptador SDK `mercadopago`, sandbox | `PENDING` |
 | `PAY-02` Preferencia Checkout Pro | `RES-01`, `PAY-01` | payment attempt idempotente y preferencia desde snapshot de precio | `PENDING` |
@@ -602,6 +603,32 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
   - 2026-11-06: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 107/107 (16 de `test/invitations.int-spec.ts`): link de 43 caracteres bajo el origen del front y `wa.me` con el teléfono normalizado y el nombre de la organización; vence en 7 días; 400 por teléfono, email o validez inválidos; el listado no expone link ni hash y no ve otra organización; el link muestra la organización y un token desconocido → 404; 400 por contraseña corta, nombre vacío, email distinto del invitado o campo extra; el alta crea la cuenta confirmada con nombre y teléfono, que puede iniciar sesión con membresía `EXHIBITOR`; el link no se puede reusar (404) y la invitación queda `ACCEPTED`; un email con cuenta → 409; `wa.me` también sin teléfono; revocar → 204, después el link da 404 y revocar de nuevo o revocar una aceptada → 409; una vencida da 404 y figura `EXPIRED`; el OWNER ve el registro con alta, aceptación (y el email) y revocación, OPERATOR → 403 y otra organización ve una lista vacía; fuera de un tenant, 0 filas.
   - 2026-11-06: `npm test --workspace api` 95/95, `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
 - Fuera de alcance: envío del link por email o por la API de WhatsApp Business (hoy el organizador lo comparte él mismo), verificación de email por correo, invitar a una persona que ya tiene cuenta (debería aceptar con sesión iniciada), límite de intentos sobre los endpoints públicos (el token de 256 bits no se puede adivinar) y la pantalla del front.
+
+##### RES-01 — Reservas concurrentes
+
+- **Estado:** `VERIFIED`
+- **Dependencias:** `EVT-01`, `EXH-01`, `EXH-04`, base de `EXH-05`
+- **Entrega:** `ReservationsModule` con las rutas de §5 (`POST/GET /reservations`, `GET /reservations/:id`, `POST /reservations/:id/cancel`); tablas `reservations` y `platform_subscriptions` (migración `0009_reservations`). El problem+json suma `code` (§5).
+- **Reglas, en orden (§6):**
+  1. **Idempotencia:** `Idempotency-Key` UUID obligatorio, único por (organización, usuario). Si se repite con el mismo stand devuelve la reserva original (200); con otro stand → 422 `IDEMPOTENCY_KEY_REUSED`.
+  2. **Habilitación del feriante** (403 con `code`):
+     - cuenta confirmada → si no, `ACCOUNT_NOT_CONFIRMED`;
+     - perfil propio con CUIT → si no, `PROFILE_INCOMPLETE`;
+     - un `exhibitorId` que no es el propio → `EXHIBITOR_NOT_AUTHORIZED`;
+     - suscripción `ACTIVE` con `current_period_end` futuro → si no, `SUBSCRIPTION_REQUIRED`.
+  3. **Evento publicado o activo** dentro de la ventana de venta; si no → 422 `EVENT_SALES_CLOSED`.
+  4. **El stand se bloquea** (`SELECT … FOR UPDATE`). Tiene que estar `AVAILABLE` y con precio; si no → 409 `STAND_UNAVAILABLE`.
+  5. **Un hold vencido se libera en el momento** (`EXPIRED`, auditado). Un HELD no tiene cobro en vuelo hasta `PAY-02`, así que no hace falta la ventana de conciliación de §6.6. Una reserva activa vigente → 409 `STAND_UNAVAILABLE`.
+  6. **Un hold vivo por expositor y evento** ("un stand por checkout", §1.5) → 409 `HOLD_LIMIT`.
+  7. **Hold de 15 minutos** con reloj del servidor. Precio, moneda y versión de términos quedan congelados en la reserva (INV-05).
+- **Invariantes en la base:** índice único parcial de una reserva activa por stand (INV-01), FK compuestas `(tenant_id, event_stand_id)` y `(tenant_id, exhibitor_id)` (INV-02), `CHECK` de hold con vencimiento y RLS `ENABLE` + `FORCE`. `platform_subscriptions` es global por usuario (se paga a la plataforma), sin tenant ni RLS, como `users`.
+- **Lectura:** el expositor sólo ve sus reservas; OWNER/ADMIN/OPERATOR ven las de la organización. Un HELD vencido se muestra `EXPIRED` aunque todavía no se haya escrito. La respuesta trae monto, stand (código y `areaM2` calculada con PostGIS), evento, expositor y términos.
+- **Activación manual de la suscripción** hasta que exista el cobro (`EXH-05`), con el rol dueño:
+  `INSERT INTO platform_subscriptions (user_id, status, current_period_end) SELECT id, 'ACTIVE', now() + interval '30 days' FROM users WHERE lower(email) = lower('<email>') ON CONFLICT (user_id) DO UPDATE SET status = 'ACTIVE', current_period_end = EXCLUDED.current_period_end, updated_at = now();`
+- **Evidencia requerida:** pruebas de integración contra PostgreSQL real.
+  - 2026-11-06: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 125/125 (18 de `test/reservations.int-spec.ts`), repetido 3 veces sin fallos: hold 201 con precio congelado, `areaM2` 9 y vencimiento a 15 min; misma clave → 200 con la misma reserva y con otro stand → 422; sin clave o con clave no UUID → 400; stand tomado → 409 `STAND_UNAVAILABLE`; segundo hold en el mismo evento → 409 `HOLD_LIMIT`; dos feriantes a la vez sobre el mismo stand → exactamente un 201 y un 409; 403 `ACCOUNT_NOT_CONFIRMED`, `PROFILE_INCOMPLETE` (sin perfil y sin CUIT) y `SUBSCRIPTION_REQUIRED` (vencida); venta cerrada → 422; stand deshabilitado → 409; stand inexistente → 404; OWNER → 403; `exhibitorId` ajeno → 403 `EXHIBITOR_NOT_AUTHORIZED`; un hold vencido se lee `EXPIRED` y el siguiente feriante toma el stand (el viejo queda `EXPIRED`); cada feriante ve sólo lo suyo (otro → 404) y el organizador ve todo; cancelar un hold → `CANCELLED`, cancelar de nuevo → 409, el stand queda libre y el organizador puede cancelar; una segunda reserva activa directa en la base → `23505`; holds, vencimientos y cancelaciones auditados; fuera de un tenant, 0 filas.
+  - 2026-11-06: `npm test --workspace api` 96/96 (incluye `code` en problem+json), `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
+- Fuera de alcance: checkout y paso a `PAYMENT_PENDING`/`CONFIRMED` (`PAY-02`/`PAY-03`, que marcarán el stand `ASSIGNED`), job periódico de expiración con ventana de conciliación (`PAY-05`), cancelación de reservas pagas (`PAY-06`), duración del hold configurable (`RESERVATION_HOLD_MINUTES`), rate limit de `POST /reservations` (§5.1: 429) y cobro de la suscripción (`EXH-05`).
 
 #### Integración Mercado Pago (EP07)
 

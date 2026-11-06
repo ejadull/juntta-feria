@@ -516,3 +516,92 @@ export const exhibitorInvitations = pgTable(
     ),
   ],
 );
+
+export const SUBSCRIPTION_STATUSES = ['ACTIVE', 'PAST_DUE', 'CANCELLED'] as const;
+export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
+
+/**
+ * Platform subscription of an exhibitor (EXH-05 base, decision 2026-11-06): paid to Juntta, valid
+ * in every organization, so it is global per user like `users` (no tenant, no RLS). Until the
+ * Mercado Pago preapproval webhook exists it is activated by hand (see spec, RES-01).
+ */
+export const platformSubscriptions = pgTable(
+  'platform_subscriptions',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    status: text('status').$type<SubscriptionStatus>().notNull(),
+    currentPeriodEnd: instant('current_period_end'),
+    providerSubscriptionId: text('provider_subscription_id'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('platform_subscriptions_status_check', sql`${t.status} IN ('ACTIVE', 'PAST_DUE', 'CANCELLED')`),
+  ],
+);
+
+export const RESERVATION_STATUSES = [
+  'HELD',
+  'PAYMENT_PENDING',
+  'CONFIRMED',
+  'EXPIRED',
+  'CANCELLED',
+  'REFUND_PENDING',
+  'REFUNDED',
+] as const;
+export type ReservationStatus = (typeof RESERVATION_STATUSES)[number];
+
+/** Statuses that own the stand (INV-01): at most one per event stand. */
+export const ACTIVE_RESERVATION_STATUSES = ['HELD', 'PAYMENT_PENDING', 'CONFIRMED', 'REFUND_PENDING'] as const;
+
+/**
+ * Reservation of an event stand by an exhibitor (RES-01, §6). Price and terms are a snapshot
+ * taken at hold time (INV-05); the stand and the exhibitor are of the same tenant (INV-02).
+ */
+export const reservations = pgTable(
+  'reservations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    eventStandId: uuid('event_stand_id').notNull(),
+    exhibitorId: uuid('exhibitor_id').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    status: text('status').$type<ReservationStatus>().notNull().default('HELD'),
+    holdExpiresAt: timestamp('hold_expires_at', { withTimezone: true }),
+    priceCents: bigint('price_cents', { mode: 'number' }).notNull(),
+    currency: char('currency', { length: 3 }).notNull(),
+    termsVersion: text('terms_version').notNull(),
+    idempotencyKey: uuid('idempotency_key').notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('reservations_tenant_id_unique').on(t.tenantId, t.id),
+    unique('reservations_idempotency_unique').on(t.tenantId, t.userId, t.idempotencyKey),
+    // INV-01: one active reservation per event stand, whatever the application does.
+    uniqueIndex('reservations_one_active_per_stand')
+      .on(t.eventStandId)
+      .where(sql`${t.status} IN ('HELD', 'PAYMENT_PENDING', 'CONFIRMED', 'REFUND_PENDING')`),
+    index('reservations_exhibitor_idx').on(t.exhibitorId),
+    foreignKey({
+      name: 'reservations_event_stand_fk',
+      columns: [t.tenantId, t.eventStandId],
+      foreignColumns: [eventStands.tenantId, eventStands.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'reservations_exhibitor_fk',
+      columns: [t.tenantId, t.exhibitorId],
+      foreignColumns: [exhibitors.tenantId, exhibitors.id],
+    }).onDelete('restrict'),
+    check(
+      'reservations_status_check',
+      sql`${t.status} IN ('HELD', 'PAYMENT_PENDING', 'CONFIRMED', 'EXPIRED', 'CANCELLED', 'REFUND_PENDING', 'REFUNDED')`,
+    ),
+    check('reservations_hold_check', sql`${t.status} <> 'HELD' OR ${t.holdExpiresAt} IS NOT NULL`),
+    check('reservations_price_check', sql`${t.priceCents} >= 0`),
+    check('reservations_terms_check', sql`btrim(${t.termsVersion}) <> ''`),
+  ],
+);
