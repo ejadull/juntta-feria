@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
+import { AuditLogsController } from './audit-logs.controller.js';
 import { AuditService } from './audit.service.js';
 import { TenantGuard } from './tenant.guard.js';
 
@@ -10,6 +11,7 @@ import { TenantGuard } from './tenant.guard.js';
 @Global()
 @Module({
   imports: [AuthModule],
+  controllers: [AuditLogsController],
   providers: [TenantGuard, AuditService],
   exports: [AuthModule, TenantGuard, AuditService],
 })

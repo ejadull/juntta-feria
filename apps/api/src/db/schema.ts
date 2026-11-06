@@ -70,6 +70,11 @@ export const users = pgTable(
     email: text('email').notNull(),
     passwordHash: text('password_hash').notNull(),
     status: text('status').notNull().default('ACTIVE'),
+    fullName: text('full_name'),
+    /** E.164 digits without "+", e.g. 5491123456789 (EXH-04). */
+    phone: text('phone'),
+    /** Set when the account was confirmed (accepting an invitation, EXH-04); RES-01 requires it. */
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -476,6 +481,38 @@ export const exhibitors = pgTable(
     check(
       'exhibitors_consent_check',
       sql`${t.publicContactOptIn} = (${t.publicConsentAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
+ * One-time invitation of an organization to a future exhibitor (EXH-04). Only a SHA-256 of the
+ * token is stored; the link is shown once, when created. Public lookup goes through the
+ * `exhibitor_invitation_lookup` SECURITY DEFINER function (the link carries no tenant).
+ */
+export const exhibitorInvitations = pgTable(
+  'exhibitor_invitations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    tokenHash: text('token_hash').notNull().unique(),
+    email: text('email'),
+    phone: text('phone'),
+    name: text('name'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    expiresAt: instant('expires_at'),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    acceptedUserId: uuid('accepted_user_id').references(() => users.id, { onDelete: 'set null' }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('exhibitor_invitations_tenant_created_idx').on(t.tenantId, t.createdAt),
+    check(
+      'exhibitor_invitations_final_state_check',
+      sql`${t.acceptedAt} IS NULL OR ${t.revokedAt} IS NULL`,
     ),
   ],
 );

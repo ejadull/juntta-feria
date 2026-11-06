@@ -27,7 +27,9 @@ const standView = {
   status: eventStands.status,
   // NULL in the database means "no tariff yet" (it blocks publishing, §4.1); the API shows it as
   // 0 with hasPrice=false so clients never handle null and never confuse it with a free stand.
-  priceCents: sql<number>`coalesce(${eventStands.priceCents}, 0)`.mapWith(Number),
+  priceCents: sql<number>`coalesce(${eventStands.priceCents}, 0)`.mapWith(
+    Number,
+  ),
   hasPrice: sql<boolean>`${eventStands.priceCents} IS NOT NULL`,
   currency: eventStands.currency,
 };
@@ -48,7 +50,9 @@ export interface EventStand {
   readonly hasPrice: boolean;
   readonly currency: string;
 }
-export type EventSector = { [K in keyof typeof sectorView]: (typeof eventSectors.$inferSelect)[K] };
+export type EventSector = {
+  [K in keyof typeof sectorView]: (typeof eventSectors.$inferSelect)[K];
+};
 
 const SECTOR_NOT_FOUND = 'Sector not found.';
 const DUPLICATE_SECTOR = 'A sector with that name already exists in the event.';
@@ -87,13 +91,28 @@ export class EventInventoryService {
       const targets = await tx
         .select({ id: eventStands.id, status: eventStands.status })
         .from(eventStands)
-        .where(and(eq(eventStands.eventId, eventId), inArray(eventStands.id, standIds)))
+        .where(
+          and(
+            eq(eventStands.eventId, eventId),
+            inArray(eventStands.id, standIds),
+          ),
+        )
         .for('update');
       if (targets.length !== standIds.length)
-        throw new BadRequestException('Invalid stands: some stands do not belong to the event.');
+        throw new BadRequestException(
+          'Invalid stands: some stands do not belong to the event.',
+        );
       if (changes.status && targets.some((s) => s.status === 'ASSIGNED'))
-        throw new ConflictException('An assigned stand cannot change its status.');
-      if (changes.sectorId) await this.requireSector(tx, eventId, changes.sectorId, BadRequestException);
+        throw new ConflictException(
+          'An assigned stand cannot change its status.',
+        );
+      if (changes.sectorId)
+        await this.requireSector(
+          tx,
+          eventId,
+          changes.sectorId,
+          BadRequestException,
+        );
 
       const updated = await tx
         .update(eventStands)
@@ -156,7 +175,12 @@ export class EventInventoryService {
   ): Promise<EventSector> {
     return this.uniqueName(() =>
       this.database.withTenant(tenantId, async (tx) => {
-        const before = await this.requireSector(tx, eventId, sectorId, NotFoundException);
+        const before = await this.requireSector(
+          tx,
+          eventId,
+          sectorId,
+          NotFoundException,
+        );
         const [after] = await tx
           .update(eventSectors)
           .set(patch)
@@ -176,9 +200,19 @@ export class EventInventoryService {
   }
 
   /** Its stands keep existing without sector (FK ON DELETE SET NULL (sector_id), ADR 0002). */
-  removeSector(tenantId: string, actorId: string, eventId: string, sectorId: string): Promise<void> {
+  removeSector(
+    tenantId: string,
+    actorId: string,
+    eventId: string,
+    sectorId: string,
+  ): Promise<void> {
     return this.database.withTenant(tenantId, async (tx) => {
-      const before = await this.requireSector(tx, eventId, sectorId, NotFoundException);
+      const before = await this.requireSector(
+        tx,
+        eventId,
+        sectorId,
+        NotFoundException,
+      );
       await tx.delete(eventSectors).where(eq(eventSectors.id, sectorId));
       await this.audit.record(tx, {
         actorId,
@@ -191,7 +225,10 @@ export class EventInventoryService {
   }
 
   private async requireEvent(tx: Transaction, eventId: string): Promise<void> {
-    const [event] = await tx.select({ id: events.id }).from(events).where(eq(events.id, eventId));
+    const [event] = await tx
+      .select({ id: events.id })
+      .from(events)
+      .where(eq(events.id, eventId));
     if (!event) throw new NotFoundException(EVENT_NOT_FOUND);
   }
 
@@ -205,7 +242,9 @@ export class EventInventoryService {
     const [sector] = await tx
       .select(sectorView)
       .from(eventSectors)
-      .where(and(eq(eventSectors.id, sectorId), eq(eventSectors.eventId, eventId)));
+      .where(
+        and(eq(eventSectors.id, sectorId), eq(eventSectors.eventId, eventId)),
+      );
     if (!sector) throw new error(SECTOR_NOT_FOUND);
     return sector;
   }
@@ -214,7 +253,8 @@ export class EventInventoryService {
     try {
       return await work();
     } catch (error) {
-      if (isUniqueViolation(error)) throw new ConflictException(DUPLICATE_SECTOR);
+      if (isUniqueViolation(error))
+        throw new ConflictException(DUPLICATE_SECTOR);
       throw error;
     }
   }

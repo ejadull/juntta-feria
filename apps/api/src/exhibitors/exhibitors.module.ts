@@ -4,10 +4,20 @@ import {
   MyExhibitorProfileController,
 } from './exhibitors.controller.js';
 import { ExhibitorsService } from './exhibitors.service.js';
+import {
+  InvitationsController,
+  PublicInvitationsController,
+} from './invitations.controller.js';
+import { InvitationsService } from './invitations.service.js';
 
-/** EXH-01: exhibitor profiles (§2.1 ExhibitorsModule). */
+/** EXH-01 exhibitor profiles and EXH-04 invitations (§2.1 ExhibitorsModule). */
 @Module({
-  controllers: [MyExhibitorProfileController, ExhibitorsController],
-  providers: [ExhibitorsService],
+  controllers: [
+    MyExhibitorProfileController,
+    ExhibitorsController,
+    InvitationsController,
+    PublicInvitationsController,
+  ],
+  providers: [ExhibitorsService, InvitationsService],
 })
 export class ExhibitorsModule {}

@@ -447,7 +447,11 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `LAY-01` Layouts versionados | `VEN-01`, contrato de `LUI-05` | geometría, publicación e inmutabilidad — [detalle](#lay-01--layouts-versionados) | `VERIFIED` |
 | `EVT-01` Eventos, stands y tarifas | `LAY-01` | evento sobre versión publicada, sectores por evento ([ADR 0002](../adr/0002-sectores-por-evento.md)) e inventario valorizado — [detalle](#evt-01--eventos-stands-y-tarifas) | `VERIFIED` |
 | `EXH-01` Expositores | `CORE-03` | perfil privado/público y consentimiento — [detalle](#exh-01--expositores) | `VERIFIED` |
-| `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01` | holds, locking e idempotencia | `PENDING` |
+| `EXH-02` Rubros | `EXH-01` | tabla de rubros por organización y migración de `exhibitors.category` (texto) a `category_id`; hoy el rubro es texto libre (decisión 2026-11-05) | `PENDING` |
+| `EXH-03` Documentos del expositor | `EXH-01`, subida de archivos (S3) | `documents` con revisión del organizador; reemplaza el `documentsStatus: MISSING` fijo de EXH-01 | `PENDING` |
+| `EXH-04` Invitación y alta de feriantes | `EXH-01` | link de invitación de un solo uso (también compartible por WhatsApp) que pide los datos básicos y crea la cuenta y la membresía `EXHIBITOR`; registro de altas visible para el administrador (pedido 2026-11-05) — [detalle](#exh-04--invitación-y-alta-de-feriantes) | `VERIFIED` |
+| `EXH-05` Suscripción del feriante | `EXH-04`, `PAY-01` | suscripción **a la plataforma** (decisión 2026-11-06): el feriante le paga a Juntta en la cuenta de Mercado Pago de la plataforma (`preapproval`, no OAuth del organizador) y queda habilitado a reservar en cualquier organización; estado global por usuario. Riesgo: implicancias fiscales de que la plataforma cobre (validar con asesoría, §1.6/R1) | `PENDING` |
+| `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01`, `EXH-04`, `EXH-05` | holds, locking e idempotencia; sólo reserva un feriante con cuenta activa y confirmada, perfil completo y suscripción paga | `PENDING` |
 | `PAY-00` Decisiones de integración Mercado Pago | ninguna | ADR: track Checkout Pro, credenciales por organizador y validación de firma — [ADR 0006](../adr/0006-integracion-mercado-pago.md) | `VERIFIED` |
 | `PAY-01` Proveedor de pagos y credenciales | `FND-04`, `PAY-00` | puerto `PaymentProvider`, adaptador SDK `mercadopago`, sandbox | `PENDING` |
 | `PAY-02` Preferencia Checkout Pro | `RES-01`, `PAY-01` | payment attempt idempotente y preferencia desde snapshot de precio | `PENDING` |
@@ -578,7 +582,26 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
 - **Evidencia requerida:** pruebas de integración contra PostgreSQL real.
   - 2026-11-05: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 91/91 (15 de `test/exhibitors.int-spec.ts`): sin perfil → 404; el primer `PUT` → 201 con CUIT normalizado y el siguiente → 200; dar consentimiento registra la fecha, que se conserva en ediciones posteriores y se borra al retirarlo; 400 por CUIT con dígito verificador inválido, nombre comercial vacío, rubro faltante, `userId` en el body y consentimiento no booleano; perfil sin CUIT aceptado; el mismo usuario empieza sin perfil en otra organización; OWNER → 403 en `/me/exhibitor-profile` y EXHIBITOR → 403 en `/exhibitors`; el organizador ve CUIT, razón social, rubro y `documentsStatus: MISSING`; expositores de otra organización → lista vacía o 404; alta y tres ediciones auditadas; fuera de un tenant, 0 filas.
   - 2026-11-05: `npm test --workspace api` 95/95 (incluye `normalizeCuit`), `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
-- Fuera de alcance: registro e invitación de feriantes (los usuarios y membresías se crean por SQL), logo (`logo_key`, con subida de archivos), documentos y su revisión (EP05), tabla de rubros, búsqueda y filtros del lado del servidor (D4 los hace en el cliente) y directorio público (`PUB-01`).
+- Fuera de alcance: registro e invitación de feriantes (resuelto en `EXH-04`), logo (`logo_key`, con subida de archivos), documentos y su revisión (`EXH-03`), tabla de rubros (`EXH-02`), búsqueda y filtros del lado del servidor (D4 los hace en el cliente) y directorio público (`PUB-01`).
+
+##### EXH-04 — Invitación y alta de feriantes
+
+- **Estado:** `VERIFIED`
+- **Dependencias:** `EXH-01`
+- **Entrega:** tabla `exhibitor_invitations` (migración `0008_invitations`), columnas `users.full_name`, `users.phone` y `users.confirmed_at`, y estas rutas:
+  - Organizador (OWNER/ADMIN/OPERATOR): `POST/GET /exhibitor-invitations` y `DELETE /exhibitor-invitations/:id` (revocar).
+  - Público (quien tiene el link, sin sesión): `GET /public/invitations/:token` y `POST /public/invitations/:token/accept`.
+  - Administradores (OWNER/ADMIN): `GET /audit-logs?entityType=exhibitor_invitation`, el registro de altas.
+- **Decisiones (2026-11-06):**
+  - Link de un solo uso `<web>/invitacion/<token>`, con un token aleatorio de 256 bits del que se guarda sólo el SHA-256. El link y el `whatsappUrl` (`https://wa.me/<teléfono>?text=…`, o sin número para elegir el contacto) se devuelven **sólo al crear**. Vence a los 7 días (1–30 configurable) y se puede revocar.
+  - El alta pide nombre, email, contraseña (≥ 10) y teléfono opcional. Si la invitación se mandó a un email, la cuenta tiene que usar ese email. Crea el usuario **confirmado** (`confirmed_at`: tener el link prueba que la invitación llegó a esa persona) y la membresía `EXHIBITOR`, y consume la invitación, todo en una transacción. Si el email ya tiene cuenta → 409.
+  - El link no lleva tenant: la única lectura entre tenants es la función `exhibitor_invitation_lookup(hash)` (`SECURITY DEFINER`), que devuelve sólo `(id, tenant_id)` de una invitación vigente; el resto corre en `withTenant` con RLS. Por eso esta tabla tiene RLS `ENABLE` sin `FORCE`, y para `juntta_app` sigue aplicando.
+  - La URL base del front se toma del primer origen de `CORS_ORIGINS`; si alguna vez difieren, se agrega una variable `APP_PUBLIC_URL`.
+  - El registro de altas es el `audit_logs` de la organización: `invitation.created`, `invitation.accepted` (con el email de la cuenta nueva) e `invitation.revoked`, con autor y fecha.
+- **Evidencia requerida:** pruebas de integración contra PostgreSQL real.
+  - 2026-11-06: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 107/107 (16 de `test/invitations.int-spec.ts`): link de 43 caracteres bajo el origen del front y `wa.me` con el teléfono normalizado y el nombre de la organización; vence en 7 días; 400 por teléfono, email o validez inválidos; el listado no expone link ni hash y no ve otra organización; el link muestra la organización y un token desconocido → 404; 400 por contraseña corta, nombre vacío, email distinto del invitado o campo extra; el alta crea la cuenta confirmada con nombre y teléfono, que puede iniciar sesión con membresía `EXHIBITOR`; el link no se puede reusar (404) y la invitación queda `ACCEPTED`; un email con cuenta → 409; `wa.me` también sin teléfono; revocar → 204, después el link da 404 y revocar de nuevo o revocar una aceptada → 409; una vencida da 404 y figura `EXPIRED`; el OWNER ve el registro con alta, aceptación (y el email) y revocación, OPERATOR → 403 y otra organización ve una lista vacía; fuera de un tenant, 0 filas.
+  - 2026-11-06: `npm test --workspace api` 95/95, `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
+- Fuera de alcance: envío del link por email o por la API de WhatsApp Business (hoy el organizador lo comparte él mismo), verificación de email por correo, invitar a una persona que ya tiene cuenta (debería aceptar con sesión iniciada), límite de intentos sobre los endpoints públicos (el token de 256 bits no se puede adivinar) y la pantalla del front.
 
 #### Integración Mercado Pago (EP07)
 
