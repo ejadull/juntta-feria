@@ -37,6 +37,8 @@ export interface ProviderPayment {
 export interface PaymentProvider {
   createCheckout(request: CheckoutRequest): Promise<Checkout>;
   getPayment(tenantId: string, paymentId: string): Promise<ProviderPayment>;
+  /** Every payment made against one attempt (PAY-05), whether or not it was ever notified. */
+  findPayments(tenantId: string, externalReference: string): Promise<ProviderPayment[]>;
   refund(
     tenantId: string,
     paymentId: string,

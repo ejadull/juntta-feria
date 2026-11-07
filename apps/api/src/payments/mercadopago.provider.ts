@@ -26,6 +26,27 @@ const RETRIES = 2;
 
 const toUnits = (cents: number): number => cents / 100;
 const toCents = (units: number | undefined): number => Math.round((units ?? 0) * 100);
+/** Fields shared by `GET /v1/payments/{id}` and the search results. */
+interface RawPayment {
+  readonly id?: string | number;
+  readonly status?: string;
+  readonly status_detail?: string;
+  readonly external_reference?: string;
+  readonly transaction_amount?: number;
+  readonly currency_id?: string;
+  readonly collector_id?: string | number;
+}
+
+const toPayment = (p: RawPayment): ProviderPayment => ({
+  id: String(p.id),
+  status: p.status ?? 'unknown',
+  statusDetail: p.status_detail ?? null,
+  externalReference: p.external_reference ?? null,
+  amountCents: toCents(p.transaction_amount),
+  currency: p.currency_id ?? '',
+  collectorId: p.collector_id === undefined ? null : String(p.collector_id),
+});
+
 /** Mercado Pago wants ISO 8601 with an explicit offset. */
 const withOffset = (date: Date): string => date.toISOString().replace('Z', '+00:00');
 
@@ -73,15 +94,17 @@ export class MercadoPagoProvider implements PaymentProvider {
   getPayment(tenantId: string, paymentId: string): Promise<ProviderPayment> {
     return this.call('getPayment', tenantId, async (config) => {
       const p = await new Payment(config).get({ id: paymentId, requestOptions: { maxRetries: RETRIES } });
-      return {
-        id: String(p.id),
-        status: p.status ?? 'unknown',
-        statusDetail: p.status_detail ?? null,
-        externalReference: p.external_reference ?? null,
-        amountCents: toCents(p.transaction_amount),
-        currency: p.currency_id ?? '',
-        collectorId: p.collector_id === undefined ? null : String(p.collector_id),
-      };
+      return toPayment(p);
+    });
+  }
+
+  findPayments(tenantId: string, externalReference: string): Promise<ProviderPayment[]> {
+    return this.call('findPayments', tenantId, async (config) => {
+      const found = await new Payment(config).search({
+        options: { external_reference: externalReference },
+        requestOptions: { maxRetries: RETRIES },
+      });
+      return (found.results ?? []).map(toPayment);
     });
   }
 

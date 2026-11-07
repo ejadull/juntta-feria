@@ -37,6 +37,14 @@ export class FakePaymentProvider implements PaymentProvider {
     return payment ? Promise.resolve(payment) : Promise.reject(providerFailed());
   }
 
+  findPayments(_tenantId: string, externalReference: string): Promise<ProviderPayment[]> {
+    if (this.failures > 0) {
+      this.failures -= 1;
+      return Promise.reject(providerFailed());
+    }
+    return Promise.resolve([...this.payments.values()].filter((p) => p.externalReference === externalReference));
+  }
+
   refund(): Promise<{ id: string; status: string }> {
     return Promise.reject(new Error('FakePaymentProvider.refund is not scripted'));
   }

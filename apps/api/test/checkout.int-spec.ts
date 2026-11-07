@@ -5,6 +5,7 @@ import pg from 'pg';
 import { hashPassword } from '../src/auth/password.js';
 import { DatabaseService } from '../src/db/database.service.js';
 import { PAYMENT_PROVIDER } from '../src/payments/payment-provider.js';
+import { ReconciliationService } from '../src/payments/reconciliation.service.js';
 import { FakePaymentProvider } from './fake-payment-provider.js';
 import { NOTIFICATION_URL, ORIGIN, WEBHOOK_SECRET, startIntApp } from './int.app.js';
 import { ownerTestUrl } from './int.env.js';
@@ -21,7 +22,8 @@ const VENUE = 'c5c5c5c5-c5c5-4c5c-8c5c-c5c5c5c5c5c5';
 const DAY = 86_400_000;
 const PRICE = 2_345_600;
 
-type Who = 'owner' | 'ana' | 'beto' | 'gabi';
+type Who = 'owner' | 'ana' | 'beto' | 'gabi' | 'dani' | 'eli';
+const PEOPLE: Who[] = ['owner', 'ana', 'beto', 'gabi', 'dani', 'eli'];
 const tokens = {} as Record<Who, string>;
 const provider = new FakePaymentProvider();
 
@@ -50,7 +52,7 @@ async function seed(): Promise<void> {
        VALUES ($1, $2, 'FIXED', 'Predio checkout', 'America/Argentina/Buenos_Aires', 30, 20)`,
       [VENUE, T],
     );
-    for (const who of ['owner', 'ana', 'beto', 'gabi'] as Who[]) {
+    for (const who of PEOPLE) {
       const user = await c.query<{ id: string }>(
         `INSERT INTO users (email, password_hash, confirmed_at) VALUES ($1, $2, now()) RETURNING id`,
         [`${who}@checkout.test`, hash],
@@ -133,12 +135,12 @@ beforeAll(async () => {
   await seed();
   app = await startIntApp([], [[PAYMENT_PROVIDER, provider]]);
   database = app.get(DatabaseService);
-  for (const who of ['owner', 'ana', 'beto', 'gabi'] as Who[]) tokens[who] = await login(who);
+  for (const who of PEOPLE) tokens[who] = await login(who);
 
   const template = await call('POST', '/layout-templates', 'owner', { name: 'Plano checkout', venueId: VENUE });
   const version = template.json().id;
   await call('PUT', `/layout-versions/${version}/objects`, 'owner', {
-    objects: ['C1', 'C2', 'C3', 'C4'].map((code, i) => ({
+    objects: ['C1', 'C2', 'C3', 'C4', 'C5', 'C6'].map((code, i) => ({
       id: randomUUID(),
       kind: 'STAND',
       code,
@@ -396,6 +398,9 @@ const auditCount = async (action: string, entityId: string) =>
     )
   ).rows[0].n;
 
+/** The notification whose payment could not be read; PAY-05 retries it. */
+let failedRequestId = '';
+
 describe('Mercado Pago webhooks (PAY-03)', () => {
   it('rejects a missing or invalid signature with 401 and stores nothing', async () => {
     const forged = notify('9001', { signature: sign('9001', 'other', 'not-the-secret') });
@@ -490,7 +495,115 @@ describe('Mercado Pago webhooks (PAY-03)', () => {
 
   it('answers 200 and records FAILED when the payment cannot be read', async () => {
     const { requestId, response } = notify('9999');
+    failedRequestId = requestId;
     expect((await response).statusCode).toBe(200);
     expect(await settled(requestId)).toEqual({ status: 'FAILED', outcome: 'PROVIDER_ERROR' });
+  });
+});
+
+const statusOf = async (who: Who, reservationId: string): Promise<string> =>
+  (await call('GET', `/reservations/${reservationId}`, who)).json().status as string;
+
+const minutesAgo = (minutes: number) => `hold_expires_at = now() - interval '${minutes} minutes'`;
+
+describe('reconciliation (PAY-05)', () => {
+  const reconcile = (now?: Date) => app.get(ReconciliationService).run(now);
+
+  it('keeps an overdue checkout while the provider has a payment in flight', async () => {
+    const gabi = await attemptOf('gabi', 'C3');
+    await setReservation(gabi.reservationId, minutesAgo(10));
+    provider.payments.delete('9201'); // only the in_process payment 9200 remains
+
+    const summary = await reconcile();
+
+    expect(summary.kept).toBeGreaterThanOrEqual(1);
+    expect(await statusOf('gabi', gabi.reservationId)).toBe('PAYMENT_PENDING');
+  });
+
+  it('keeps it when an approved payment does not match the snapshot', async () => {
+    const gabi = await attemptOf('gabi', 'C3');
+    provider.payments.delete('9200');
+    pay('9201', gabi.attemptId, 'approved', PRICE - 100);
+    await reconcile();
+    expect(await statusOf('gabi', gabi.reservationId)).toBe('PAYMENT_PENDING');
+  });
+
+  it('never releases it when the provider does not answer (§6.6)', async () => {
+    const gabi = await attemptOf('gabi', 'C3');
+    provider.payments.delete('9201');
+    provider.failNext();
+    const summary = await reconcile();
+    expect(summary.unreachable).toBe(1);
+    expect(await statusOf('gabi', gabi.reservationId)).toBe('PAYMENT_PENDING');
+  });
+
+  it('expires it only after the reconciliation window, freeing the stand', async () => {
+    const gabi = await attemptOf('gabi', 'C3');
+    await setReservation(gabi.reservationId, minutesAgo(1));
+
+    await reconcile(); // 1 min past the hold: still inside the 5 min window
+    expect(await statusOf('gabi', gabi.reservationId)).toBe('PAYMENT_PENDING');
+
+    await reconcile(new Date(Date.now() + 10 * 60_000)); // controlled clock: past the window
+    expect(await statusOf('gabi', gabi.reservationId)).toBe('EXPIRED');
+    const [attempt] = (
+      await owner((c) => c.query(`SELECT status FROM payment_attempts WHERE id = $1`, [gabi.attemptId]))
+    ).rows;
+    expect(attempt.status).toBe('EXPIRED');
+    expect(await hold('dani', 'C3')).toBeTruthy(); // the stand is free again
+  });
+
+  it('confirms an approved payment that was never notified', async () => {
+    const reservation = await hold('eli', 'C5');
+    expect((await checkout('eli', reservation)).statusCode).toBe(201);
+    const eli = await attemptOf('eli', 'C5');
+    pay('9500', eli.attemptId, 'approved');
+    await setReservation(reservation, minutesAgo(10));
+
+    const summary = await reconcile();
+
+    expect(summary.confirmed).toBe(1);
+    expect(await statusOf('eli', reservation)).toBe('CONFIRMED');
+  });
+
+  it('retries a failed webhook until the payment can be read', async () => {
+    const [before] = await inbox(failedRequestId);
+    expect(before.status).toBe('FAILED');
+    const reservation = await hold('ana', 'C6');
+    expect((await checkout('ana', reservation)).statusCode).toBe(201);
+    const ana = await attemptOf('ana', 'C6');
+    pay('9999', ana.attemptId, 'approved');
+
+    const summary = await reconcile();
+
+    expect(summary.webhooksRetried).toBe(1);
+    expect(await inbox(failedRequestId)).toEqual([{ status: 'PROCESSED', outcome: 'CONFIRMED' }]);
+    expect(await statusOf('ana', reservation)).toBe('CONFIRMED');
+  });
+
+  it('is safe to run twice at once: one expiry, one audit entry', async () => {
+    const dani = (
+      await owner((c) =>
+        c.query<{ id: string }>(
+          `SELECT r.id FROM reservations r JOIN users u ON u.id = r.user_id
+           WHERE u.email = 'dani@checkout.test' AND r.status = 'HELD'`,
+        ),
+      )
+    ).rows[0].id;
+    expect((await checkout('dani', dani)).statusCode).toBe(201);
+    await setReservation(dani, minutesAgo(10));
+
+    await Promise.all([reconcile(), reconcile()]);
+
+    expect(await statusOf('dani', dani)).toBe('EXPIRED');
+    expect(await auditCount('reservation.expired', dani)).toBe(1);
+  });
+
+  it('lists payment incidents for organization admins only (P10)', async () => {
+    const res = await call('GET', '/payment-incidents', 'owner');
+    expect(res.statusCode).toBe(200);
+    const codes = res.json().map((i: { code: string }) => i.code);
+    expect(codes).toEqual(expect.arrayContaining(['LATE_PAYMENT_CONFLICT', 'AMOUNT_MISMATCH']));
+    expect((await call('GET', '/payment-incidents', 'ana')).statusCode).toBe(403);
   });
 });

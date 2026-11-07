@@ -100,12 +100,20 @@ export class MercadoPagoWebhooksService {
       } catch {
         return await this.finish(inboxId, 'FAILED', 'PROVIDER_ERROR');
       }
-      const outcome = await this.database.withTenant(tenantId, (tx) => this.apply(tx, payment));
+      const outcome = await this.applyPayment(tenantId, payment);
       await this.finish(inboxId, outcome === 'UNKNOWN_ATTEMPT' ? 'IGNORED' : 'PROCESSED', outcome);
     } catch (error) {
       this.logger.error(`Mercado Pago webhook ${inboxId} failed`, error instanceof Error ? error.stack : undefined);
       await this.finish(inboxId, 'FAILED', 'INTERNAL_ERROR').catch(() => undefined);
     }
+  }
+
+  /**
+   * Applies a payment read server-to-server (webhook or reconciliation) and returns the outcome
+   * (CONFIRMED, ALREADY_APPROVED, AMOUNT_MISMATCH, LATE_PAYMENT_CONFLICT, UNKNOWN_ATTEMPT, PAYMENT_<status>).
+   */
+  applyPayment(tenantId: string, payment: ProviderPayment): Promise<string> {
+    return this.database.withTenant(tenantId, (tx) => this.apply(tx, payment));
   }
 
   /** §6.7: match reference, amount and currency; confirm under lock; record every outcome. */

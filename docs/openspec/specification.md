@@ -200,7 +200,8 @@ Autenticación de panel `Authorization: Bearer <token>` (access token JWT, [ADR 
 | POST | /api/v1/reservations/:id/checkout | propietario de reserva | Crear checkout |
 | GET | /api/v1/reservations/:id | propietario/admin | Estado de reserva |
 | POST | /api/v1/reservations/:id/cancel | propietario/admin | Cancelar según política |
-| POST | /api/v1/webhooks/mercadopago | proveedor | Recibir eventos firmados |
+| POST | /api/v1/webhooks/mercadopago | proveedor | Recibir eventos firmados (`PAY-03`); 401 si la firma no verifica |
+| GET | /api/v1/payment-incidents | owner/admin | Incidencias de cobro para P10: `LATE_PAYMENT_CONFLICT`, `AMOUNT_MISMATCH` (`PAY-05`) |
 | GET | /api/v1/events/:id/metrics | operator | KPIs, incluido `occupancyBySector` ([ADR 0002](../adr/0002-sectores-por-evento.md)) (modelo de lectura: D2 de [`org-ui-shell`](changes/archive/2026-10-30-org-ui-shell/design.md)) |
 | GET | /api/v1/exhibitors | owner/admin/operator | Expositores del tenant con datos privados y estado de documentación (D4 de [`org-ui-shell`](changes/archive/2026-10-30-org-ui-shell/design.md)); nunca para vistas públicas |
 | GET | /api/v1/exhibitors/:id | owner/admin/operator | Ficha privada de un expositor |
@@ -458,7 +459,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `PAY-02` Preferencia Checkout Pro | `RES-01`, `PAY-01` | payment attempt idempotente y preferencia desde snapshot de precio — [detalle](#pay-02--preferencia-checkout-pro); falta la prueba en sandbox | `IN_PROGRESS` |
 | `PAY-03` Webhooks de pago | `PAY-02` | firma, inbox deduplicado, consulta server-to-server y confirmación — [detalle](#pay-03--webhooks-de-pago); falta la prueba con el simulador | `IN_PROGRESS` |
 | `PAY-04` Retorno de checkout (P19) | `PAY-02`, `PUB-UI-01..06` | pantallas aprobado/pendiente/rechazado sin confiar en query params | `PENDING` |
-| `PAY-05` Conciliación y pago tardío | `PAY-03` | job de reconciliación, `LATE_PAYMENT_CONFLICT`, P10 | `PENDING` |
+| `PAY-05` Conciliación y pago tardío | `PAY-03` | job de reconciliación, `LATE_PAYMENT_CONFLICT`, P10 — [detalle](#pay-05--conciliación-y-pago-tardío); falta la pantalla P10 y la prueba en sandbox | `IN_PROGRESS` |
 | `PAY-06` Reembolsos, cancelaciones y contracargos | `PAY-05` | refund total/parcial, cancelación de pendientes, chargebacks | `PENDING` |
 | `PAY-07` Configuración Mercado Pago (P12) | `PAY-01`, `CORE-03` | vincular cuenta vendedora del organizador sin secretos en claro | `PENDING` |
 | `SUB-01` Suscripción SaaS del organizador | `CORE-03`, `PAY-00` | planes (`preapproval_plan`) y suscripciones (`preapproval`); **fuera del MVP** | `PENDING` |
@@ -688,7 +689,7 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
   2. Pagable si es un `HELD` vigente o un `PAYMENT_PENDING` (que devuelve su checkout); si no → 409 `RESERVATION_NOT_PAYABLE`.
   3. Se reutiliza el attempt de la misma clave o, si no, el `PENDING` de la reserva; si no hay ninguno se crea uno con el monto y la moneda congelados en la reserva.
   4. La preferencia se crea **fuera de la transacción**. Se guarda una sola vez (`WHERE preference_id IS NULL`): si dos requests crearon preferencia, la segunda queda huérfana y expira (ADR 0006 §4). Recién entonces la reserva pasa `HELD → PAYMENT_PENDING` (auditado).
-  5. Un `PAYMENT_PENDING` **no se libera solo** al vencer el hold, porque puede haber un pago en vuelo (§6.6). Hasta `PAY-03`/`PAY-05` esa reserva sigue ocupando el stand. Hoy sólo pasa en sandbox, porque en producción los pagos están apagados hasta `PAY-07`.
+  5. Un `PAYMENT_PENDING` **no se libera solo** al vencer el hold, porque puede haber un pago en vuelo (§6.6). La resuelven el webhook (`PAY-03`) o la conciliación (`PAY-05`), que la vence si no hay pago pasados 5 min del hold.
 - [x] `items` con `title` (`Stand <código> — <evento>`), `quantity: 1`, `unit_price` y `currency_id` desde el snapshot; `external_reference` = id del payment attempt.
 - [x] `notification_url` = `MP_NOTIFICATION_URL` + `tenant=<id>` (para `PAY-03`; sin la variable rige la del panel), `back_urls` `<web>/feriante/reservas/:id/pago/{aprobado,pendiente,rechazado}` y `auto_return: "approved"`.
 - [x] `expires: true` con `expiration_date_to` = vencimiento del hold (ISO 8601 con offset).
@@ -739,13 +740,35 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 
 ##### PAY-05 — Conciliación y pago tardío
 
-- **Estado:** `PENDING`
+- **Estado:** `IN_PROGRESS` (API lista; falta la pantalla P10 en la web y la prueba en sandbox)
 - **Dependencias:** `PAY-03`
-- **Entrega:** job de conciliación de attempts pendientes y vista P10 de incidencias (§6.6, §6.8, INV-07).
+- **Entrega:** job de conciliación de attempts pendientes y vista P10 de incidencias (§6.6, §6.8, INV-07). `ReconciliationService.run(now)` y `GET /api/v1/payment-incidents` (OWNER/ADMIN).
 - **Aceptación:** el hold no se libera a ciegas si el proveedor no responde; un pago aprobado tras la adjudicación genera `LATE_PAYMENT_CONFLICT` sin doble adjudicación.
 - **Evidencia requerida:** tests de reloj controlado y escenarios de carrera.
-- [ ] Consultar el pago o la orden comercial por `external_reference` antes de expirar un hold.
-- [ ] Alertas y KPIs de conciliación pendiente y errores de webhook (§1.4).
+  - 2026-11-07: `test:int` → 153/153 (8 de conciliación en `test/checkout.int-spec.ts`, con `run(now)` como reloj controlado), repetido 3 veces sin fallos:
+    - Con un pago `in_process` se mantiene.
+    - Con un pago aprobado por otro monto se mantiene.
+    - Si el proveedor no responde no se libera (`unreachable: 1`).
+    - A 1 min del vencimiento sigue `PAYMENT_PENDING`; pasada la ventana pasa a `EXPIRED` (attempt `EXPIRED`) y otro feriante toma el stand.
+    - Un pago aprobado que nunca se notificó → `CONFIRMED`.
+    - Un webhook `FAILED` se reintenta y confirma.
+    - Dos corridas simultáneas → un solo vencimiento auditado.
+    - Las incidencias `LATE_PAYMENT_CONFLICT`/`AMOUNT_MISMATCH` sólo las ve el admin (feriante → 403).
+  - 2026-11-07: `npm test` 109/109 (incluye `findPayments`), `test:e2e` 7/7, `tsc` y `oxlint` OK.
+- **Reglas del job** (cada 60 s, en el proceso; apagado en `NODE_ENV=test`):
+  1. **Reintenta webhooks:** los `FAILED` y los `RECEIVED` de más de 1 min (perdidos por un reinicio), dentro de los últimos 4 días, que es cuando Mercado Pago deja de reintentar.
+  2. **Reservas `PAYMENT_PENDING` vencidas hace más de 5 min** (ventana de conciliación) con su attempt `PENDING`: busca los pagos por `external_reference` (`GET /v1/payments/search`).
+     - Aprobado con el monto del snapshot → se aplica como un webhook (`CONFIRMED`).
+     - Aprobado con otro monto → se mantiene y queda en el log: llegó plata y decide una persona.
+     - `pending`/`in_process`/`authorized`/`in_mediation` → se mantiene.
+     - Proveedor sin respuesta → se mantiene y se alerta en el log (`unreachable`).
+     - Sin pagos, o sólo rechazados/cancelados → `EXPIRED` (reserva y attempt, auditado) y el stand queda libre.
+  3. Cada cambio vuelve a verificar el estado bajo `FOR UPDATE`: si un webhook ganó mientras tanto, el job no hace nada. Por eso dos instancias a la vez son seguras.
+- **Incidencias (P10):** `GET /payment-incidents` lee la auditoría (`payment.late_conflict` → `LATE_PAYMENT_CONFLICT`, `payment.mismatch` → `AMOUNT_MISMATCH`), de la más nueva a la más vieja. La devolución que las resuelve es de `PAY-06`.
+- [x] Consultar el pago por `external_reference` antes de expirar un hold. La orden comercial no hace falta: los pagos de la preferencia llevan el `external_reference` del attempt.
+- [ ] Alertas y KPIs de conciliación pendiente y errores de webhook (§1.4): hoy sólo `warn` en el log; falta métrica/dashboard.
+- [ ] Pantalla P10 en la web.
+- [ ] Ponytail: el job corre en el proceso de la API. Pasarlo a un job repetible de BullMQ cuando la API escale a varias instancias (hoy es correcto, pero duplica las consultas al proveedor).
 
 ##### PAY-06 — Reembolsos, cancelaciones y contracargos
 

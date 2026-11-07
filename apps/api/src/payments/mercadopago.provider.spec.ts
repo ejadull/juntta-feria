@@ -218,4 +218,39 @@ describe('MercadoPagoProvider (PAY-01)', () => {
     });
     expect(sent[0].headers['X-Idempotency-Key']).toBe('key-cancel-1');
   });
+
+  it('finds the payments of an attempt by external_reference (PAY-05)', async () => {
+    respond({
+      status: 200,
+      body: {
+        results: [
+          {
+            id: 7,
+            status: 'rejected',
+            external_reference: checkout.externalReference,
+            transaction_amount: 45_000.5,
+            currency_id: 'ARS',
+            collector_id: '777',
+          },
+        ],
+      },
+    });
+
+    const found = await sandbox().findPayments(TENANT, checkout.externalReference);
+
+    expect(found).toEqual([
+      {
+        id: '7',
+        status: 'rejected',
+        statusDetail: null,
+        externalReference: checkout.externalReference,
+        amountCents: 4_500_050,
+        currency: 'ARS',
+        collectorId: '777',
+      },
+    ]);
+    const url = new URL(sent[0].url);
+    expect(url.pathname).toBe('/v1/payments/search');
+    expect(url.searchParams.get('external_reference')).toBe(checkout.externalReference);
+  });
 });
