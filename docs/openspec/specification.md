@@ -455,7 +455,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01`, `EXH-04`, `EXH-05` | holds, locking e idempotencia; sólo reserva un feriante con cuenta activa y confirmada, perfil completo y suscripción paga — [detalle](#res-01--reservas-concurrentes) | `VERIFIED` |
 | `PAY-00` Decisiones de integración Mercado Pago | ninguna | ADR: track Checkout Pro, credenciales por organizador y validación de firma — [ADR 0006](../adr/0006-integracion-mercado-pago.md) | `VERIFIED` |
 | `PAY-01` Proveedor de pagos y credenciales | `FND-04`, `PAY-00` | puerto `PaymentProvider`, adaptador SDK `mercadopago`, sandbox — [detalle](#pay-01--proveedor-de-pagos-y-credenciales); falta la prueba en sandbox | `IN_PROGRESS` |
-| `PAY-02` Preferencia Checkout Pro | `RES-01`, `PAY-01` | payment attempt idempotente y preferencia desde snapshot de precio | `PENDING` |
+| `PAY-02` Preferencia Checkout Pro | `RES-01`, `PAY-01` | payment attempt idempotente y preferencia desde snapshot de precio — [detalle](#pay-02--preferencia-checkout-pro); falta la prueba en sandbox | `IN_PROGRESS` |
 | `PAY-03` Webhooks de pago | `PAY-02` | firma, inbox deduplicado, consulta server-to-server y confirmación | `PENDING` |
 | `PAY-04` Retorno de checkout (P19) | `PAY-02`, `PUB-UI-01..06` | pantallas aprobado/pendiente/rechazado sin confiar en query params | `PENDING` |
 | `PAY-05` Conciliación y pago tardío | `PAY-03` | job de reconciliación, `LATE_PAYMENT_CONFLICT`, P10 | `PENDING` |
@@ -618,7 +618,7 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
      - suscripción `ACTIVE` con `current_period_end` futuro → si no, `SUBSCRIPTION_REQUIRED`.
   3. **Evento publicado o activo** dentro de la ventana de venta; si no → 422 `EVENT_SALES_CLOSED`.
   4. **El stand se bloquea** (`SELECT … FOR UPDATE`). Tiene que estar `AVAILABLE` y con precio; si no → 409 `STAND_UNAVAILABLE`.
-  5. **Un hold vencido se libera en el momento** (`EXPIRED`, auditado). Un HELD no tiene cobro en vuelo hasta `PAY-02`, así que no hace falta la ventana de conciliación de §6.6. Una reserva activa vigente → 409 `STAND_UNAVAILABLE`.
+  5. **Un hold vencido se libera en el momento** (`EXPIRED`, auditado). Un HELD no tiene cobro en vuelo: al abrir el checkout pasa a `PAYMENT_PENDING` (`PAY-02`), que no se libera solo, así que no hace falta la ventana de conciliación de §6.6. Una reserva activa vigente → 409 `STAND_UNAVAILABLE`.
   6. **Un hold vivo por expositor y evento** ("un stand por checkout", §1.5) → 409 `HOLD_LIMIT`.
   7. **Hold de 15 minutos** con reloj del servidor. Precio, moneda y versión de términos quedan congelados en la reserva (INV-05).
 - **Invariantes en la base:** índice único parcial de una reserva activa por stand (INV-01), FK compuestas `(tenant_id, event_stand_id)` y `(tenant_id, exhibitor_id)` (INV-02), `CHECK` de hold con vencimiento y RLS `ENABLE` + `FORCE`. `platform_subscriptions` es global por usuario (se paga a la plataforma), sin tenant ni RLS, como `users`.
@@ -669,15 +669,31 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 
 ##### PAY-02 — Preferencia Checkout Pro
 
-- **Estado:** `PENDING`
+- **Estado:** `IN_PROGRESS` (falta la prueba en sandbox hasta `init_point`)
 - **Dependencias:** `RES-01`, `PAY-01`
-- **Entrega:** `POST /api/v1/reservations/:id/checkout` crea un payment attempt idempotente y una preferencia por reserva (§6.5).
+- **Entrega:** `POST /api/v1/reservations/:id/checkout` crea un payment attempt idempotente y una preferencia por reserva (§6.5). Tabla `payment_attempts` (migración `0010_payment_attempts`).
 - **Aceptación:** el precio sale del snapshot del servidor, nunca del frontend; reintentar no crea una segunda preferencia; si el proveedor falla el hold se mantiene.
 - **Evidencia requerida:** tests de integración con proveedor falso y prueba en sandbox hasta `init_point`.
-- [ ] `items` con `title`, `quantity: 1`, `unit_price` y `currency_id: "ARS"` desde el snapshot; `external_reference` = id del payment attempt.
-- [ ] `notification_url` (prioridad sobre la configurada en el panel), `back_urls` `success`/`pending`/`failure` y `auto_return: "approved"`.
-- [ ] `expires: true` con `expiration_date_to` ≤ vencimiento del hold (ISO 8601 con offset).
-- [ ] Persistir `preference_id` e `init_point` (o `sandbox_init_point` en sandbox) y devolver sólo la URL de checkout.
+  - 2026-11-07: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 136/136 (11 de `test/checkout.int-spec.ts`), repetido 3 veces sin fallos:
+    - Checkout → 201 `{paymentAttemptId, checkoutUrl, status: "PENDING"}` con el monto congelado de la reserva, aunque el precio del stand cambie después (INV-05). `expiresAt` = vencimiento del hold, `back_urls` de la web y reserva en `PAYMENT_PENDING`.
+    - Reintento con la misma u otra clave → 200 con el mismo attempt y sin llamar de nuevo al proveedor.
+    - Si el proveedor falla → 502 y la reserva sigue `HELD`; el reintento completa el mismo attempt.
+    - Dos checkouts a la vez → un 201 y un 200, con el mismo cuerpo.
+    - Una reserva con checkout no se libera al vencer el hold: otro feriante recibe 409 `STAND_UNAVAILABLE`.
+    - Reserva cancelada o hold vencido → 409 `RESERVATION_NOT_PAYABLE`; otro feriante → 404, OWNER → 403; sin clave → 400.
+    - En la base: un segundo attempt `PENDING` por reserva → `23505`. El checkout queda auditado y fuera de un tenant se ven 0 filas.
+  - 2026-11-07: `npm test` 108/108, `test:e2e` 7/7, `tsc` y `oxlint` OK.
+- **Reglas:**
+  1. Sólo el dueño de la reserva (rol EXHIBITOR) y con `Idempotency-Key` UUID. La reserva se bloquea (`FOR UPDATE`), así que los checkouts concurrentes comparten un attempt.
+  2. Pagable si es un `HELD` vigente o un `PAYMENT_PENDING` (que devuelve su checkout); si no → 409 `RESERVATION_NOT_PAYABLE`.
+  3. Se reutiliza el attempt de la misma clave o, si no, el `PENDING` de la reserva; si no hay ninguno se crea uno con el monto y la moneda congelados en la reserva.
+  4. La preferencia se crea **fuera de la transacción**. Se guarda una sola vez (`WHERE preference_id IS NULL`): si dos requests crearon preferencia, la segunda queda huérfana y expira (ADR 0006 §4). Recién entonces la reserva pasa `HELD → PAYMENT_PENDING` (auditado).
+  5. Un `PAYMENT_PENDING` **no se libera solo** al vencer el hold, porque puede haber un pago en vuelo (§6.6). Hasta `PAY-03`/`PAY-05` esa reserva sigue ocupando el stand. Hoy sólo pasa en sandbox, porque en producción los pagos están apagados hasta `PAY-07`.
+- [x] `items` con `title` (`Stand <código> — <evento>`), `quantity: 1`, `unit_price` y `currency_id` desde el snapshot; `external_reference` = id del payment attempt.
+- [x] `notification_url` (si `MP_NOTIFICATION_URL` está definida; si no, rige la del panel), `back_urls` `<web>/feriante/reservas/:id/pago/{aprobado,pendiente,rechazado}` y `auto_return: "approved"`.
+- [x] `expires: true` con `expiration_date_to` = vencimiento del hold (ISO 8601 con offset).
+- [x] Persistir `preference_id` y `init_point` (o `sandbox_init_point` en sandbox) y devolver sólo la URL de checkout.
+- [ ] Prueba en sandbox hasta `init_point`. Riesgo a verificar: Mercado Pago podría rechazar `auto_return` con una `back_urls.success` que no sea https (en local es `http://localhost:4200`).
 
 ##### PAY-03 — Webhooks de pago
 

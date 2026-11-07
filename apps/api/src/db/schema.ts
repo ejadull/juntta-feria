@@ -605,3 +605,48 @@ export const reservations = pgTable(
     check('reservations_terms_check', sql`btrim(${t.termsVersion}) <> ''`),
   ],
 );
+
+export const PAYMENT_ATTEMPT_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED'] as const;
+export type PaymentAttemptStatus = (typeof PAYMENT_ATTEMPT_STATUSES)[number];
+
+/**
+ * One checkout of a reservation (PAY-02, ADR 0006 §4). Its id is the provider
+ * `external_reference`; the amount is the reservation snapshot (INV-05). At most one PENDING
+ * attempt per reservation, so retrying the checkout never opens a second preference.
+ */
+export const paymentAttempts = pgTable(
+  'payment_attempts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    reservationId: uuid('reservation_id').notNull(),
+    status: text('status').$type<PaymentAttemptStatus>().notNull().default('PENDING'),
+    amountCents: bigint('amount_cents', { mode: 'number' }).notNull(),
+    currency: char('currency', { length: 3 }).notNull(),
+    /** Set once, when the provider answers; null while the preference is not created. */
+    preferenceId: text('preference_id'),
+    checkoutUrl: text('checkout_url'),
+    expiresAt: instant('expires_at'),
+    idempotencyKey: uuid('idempotency_key').notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique('payment_attempts_tenant_id_unique').on(t.tenantId, t.id),
+    unique('payment_attempts_idempotency_unique').on(t.tenantId, t.reservationId, t.idempotencyKey),
+    uniqueIndex('payment_attempts_one_pending_per_reservation')
+      .on(t.reservationId)
+      .where(sql`${t.status} = 'PENDING'`),
+    foreignKey({
+      name: 'payment_attempts_reservation_fk',
+      columns: [t.tenantId, t.reservationId],
+      foreignColumns: [reservations.tenantId, reservations.id],
+    }).onDelete('restrict'),
+    check(
+      'payment_attempts_status_check',
+      sql`${t.status} IN ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED')`,
+    ),
+    check('payment_attempts_amount_check', sql`${t.amountCents} >= 0`),
+    check('payment_attempts_checkout_check', sql`(${t.preferenceId} IS NULL) = (${t.checkoutUrl} IS NULL)`),
+  ],
+);

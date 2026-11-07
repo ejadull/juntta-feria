@@ -20,6 +20,7 @@ import {
   TenantScoped,
   type TenantRequest,
 } from '../tenancy/tenant-scoped.decorator.js';
+import { CheckoutService, type CheckoutView } from './checkout.service.js';
 import { createReservationInput, listReservationsQuery } from './reservation.input.js';
 import { ReservationsService, type ReservationView } from './reservations.service.js';
 
@@ -32,10 +33,19 @@ function reservationId(id: string): string {
   return id;
 }
 
-/** RES-01 (§5): holds, reads and cancellation of reservations. */
+function idempotencyKey(request: TenantRequest): string {
+  const key = request.headers['idempotency-key'];
+  if (!isUuid(key)) throw new BadRequestException('An Idempotency-Key header with a UUID is required.');
+  return key;
+}
+
+/** RES-01 (§5): holds, reads and cancellation of reservations; PAY-02: their checkout. */
 @Controller('reservations')
 export class ReservationsController {
-  constructor(private readonly reservations: ReservationsService) {}
+  constructor(
+    private readonly reservations: ReservationsService,
+    private readonly checkouts: CheckoutService,
+  ) {}
 
   /** 201 for a new hold, 200 when the same Idempotency-Key is replayed (§5.1). */
   @Post()
@@ -45,8 +55,7 @@ export class ReservationsController {
     @Body() body: unknown,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<ReservationView> {
-    const key = request.headers['idempotency-key'];
-    if (!isUuid(key)) throw new BadRequestException('An Idempotency-Key header with a UUID is required.');
+    const key = idempotencyKey(request);
     const input = parseBody(createReservationInput, body, 'reservation');
     const { reservation, replayed } = await this.reservations.hold(
       request.tenant.id,
@@ -71,6 +80,25 @@ export class ReservationsController {
     const reservation = await this.reservations.get(request.tenant.id, reservationId(id), ownerScope(request));
     if (!reservation) throw new NotFoundException('Reservation not found.');
     return reservation;
+  }
+
+  /** PAY-02 (§5.2): 201 when this request opens the checkout, 200 when it returns the open one. */
+  @Post(':id/checkout')
+  @TenantScoped('EXHIBITOR')
+  async checkout(
+    @Req() request: TenantRequest,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<CheckoutView> {
+    const key = idempotencyKey(request);
+    const { checkout, created } = await this.checkouts.checkout(
+      request.tenant.id,
+      request.user.id,
+      reservationId(id),
+      key,
+    );
+    void reply.status(created ? HttpStatus.CREATED : HttpStatus.OK);
+    return checkout;
   }
 
   @Post(':id/cancel')

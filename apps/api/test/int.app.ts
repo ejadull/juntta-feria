@@ -33,6 +33,8 @@ class MemoryCounterStore implements CounterStore {
  */
 export async function startIntApp(
   controllers: Type[] = [],
+  /** Extra provider replacements, e.g. a fake PAYMENT_PROVIDER. */
+  overrides: readonly (readonly [token: unknown, value: unknown])[] = [],
 ): Promise<NestFastifyApplication> {
   const env = {
     NODE_ENV: 'test',
@@ -51,15 +53,17 @@ export async function startIntApp(
     AUTH_REFRESH_COOKIE_NAME: COOKIE,
   };
   for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
-  const moduleRef = await Test.createTestingModule({
+  let builder = Test.createTestingModule({
     imports: [AppModule],
     controllers,
   })
     .overrideProvider(READINESS_CHECKS)
     .useValue([])
     .overrideProvider(RedisCounterStore)
-    .useValue(new MemoryCounterStore())
-    .compile();
+    .useValue(new MemoryCounterStore());
+  for (const [token, value] of overrides)
+    builder = builder.overrideProvider(token).useValue(value);
+  const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(
     new FastifyAdapter(fastifyOptions()),
   );

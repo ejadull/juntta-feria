@@ -43,7 +43,7 @@ export interface ReservationView {
 }
 
 /** HttpException carrying the §5 machine-readable `code` (problem+json extension). */
-const fail = (
+export const fail = (
   Exception: new (body: object) => HttpException,
   code: string,
   message: string,
