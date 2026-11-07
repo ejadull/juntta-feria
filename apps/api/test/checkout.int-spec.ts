@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
@@ -6,7 +6,7 @@ import { hashPassword } from '../src/auth/password.js';
 import { DatabaseService } from '../src/db/database.service.js';
 import { PAYMENT_PROVIDER } from '../src/payments/payment-provider.js';
 import { FakePaymentProvider } from './fake-payment-provider.js';
-import { ORIGIN, startIntApp } from './int.app.js';
+import { NOTIFICATION_URL, ORIGIN, WEBHOOK_SECRET, startIntApp } from './int.app.js';
 import { ownerTestUrl } from './int.env.js';
 
 /**
@@ -202,6 +202,7 @@ describe('checkout (PAY-02)', () => {
       amountCents: PRICE,
       currency: 'ARS',
       expiresAt: new Date(reservation.holdExpiresAt),
+      notificationUrl: `${NOTIFICATION_URL}&tenant=${T}`,
       backUrls: {
         success: `${ORIGIN}/feriante/reservas/${anaReservation}/pago/aprobado`,
         pending: `${ORIGIN}/feriante/reservas/${anaReservation}/pago/pendiente`,
@@ -305,5 +306,191 @@ describe('checkout (PAY-02)', () => {
   it('keeps payment attempts invisible outside a tenant transaction (RLS)', async () => {
     const { rows } = await database.db.execute(sql`SELECT 1 FROM payment_attempts`);
     expect(rows).toEqual([]);
+  });
+});
+
+/** Signs like Mercado Pago: HMAC-SHA256 over `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`. */
+const sign = (dataId: string, requestId: string, secret = WEBHOOK_SECRET): string => {
+  const ts = Math.floor(Date.now() / 1000);
+  const hash = createHmac('sha256', secret).update(`id:${dataId};request-id:${requestId};ts:${ts};`).digest('hex');
+  return `ts=${ts},v1=${hash}`;
+};
+
+interface Notify {
+  requestId?: string;
+  tenant?: string | null;
+  topic?: string;
+  signature?: string | null;
+}
+
+const notify = (dataId: string, options: Notify = {}) => {
+  const { requestId = randomUUID(), tenant = T, topic = 'payment' } = options;
+  const signature = options.signature === undefined ? sign(dataId, requestId) : options.signature;
+  const query = new URLSearchParams({ 'data.id': dataId, type: topic, ...(tenant ? { tenant } : {}) });
+  return {
+    requestId,
+    response: app.inject({
+      method: 'POST',
+      url: `/api/v1/webhooks/mercadopago?${query}`,
+      headers: { 'x-request-id': requestId, ...(signature ? { 'x-signature': signature } : {}) },
+      payload: { type: topic, action: 'payment.updated', data: { id: dataId } },
+    }),
+  };
+};
+
+const inbox = async (requestId: string) =>
+  (
+    await owner((c) =>
+      c.query<{ status: string; outcome: string | null }>(
+        `SELECT status, outcome FROM payment_webhook_inbox WHERE request_id = $1`,
+        [requestId],
+      ),
+    )
+  ).rows;
+
+/** Waits for the in-process handling that runs after the 200. */
+const settled = (requestId: string) =>
+  vi.waitFor(
+    async () => {
+      const [row] = await inbox(requestId);
+      if (!row || row.status === 'RECEIVED') throw new Error('not processed yet');
+      return row;
+    },
+    { timeout: 5_000, interval: 50 },
+  );
+
+/** The attempt and reservation of an exhibitor's checkout on a stand. */
+const attemptOf = async (who: Who, code: string) =>
+  (
+    await owner((c) =>
+      c.query<{ attemptId: string; reservationId: string; amount: string }>(
+        `SELECT pa.id AS "attemptId", r.id AS "reservationId", pa.amount_cents AS amount
+         FROM payment_attempts pa
+         JOIN reservations r ON r.id = pa.reservation_id
+         JOIN users u ON u.id = r.user_id
+         JOIN event_stands s ON s.id = r.event_stand_id
+         WHERE u.email = $1 AND s.code = $2`,
+        [`${who}@checkout.test`, code],
+      ),
+    )
+  ).rows[0];
+
+const pay = (id: string, externalReference: string, status: string, amountCents = PRICE) =>
+  provider.payments.set(id, {
+    id,
+    status,
+    statusDetail: null,
+    externalReference,
+    amountCents,
+    currency: 'ARS',
+    collectorId: '1',
+  });
+
+const auditCount = async (action: string, entityId: string) =>
+  (
+    await owner((c) =>
+      c.query<{ n: number }>(`SELECT count(*)::int AS n FROM audit_logs WHERE action = $1 AND entity_id = $2`, [
+        action,
+        entityId,
+      ]),
+    )
+  ).rows[0].n;
+
+describe('Mercado Pago webhooks (PAY-03)', () => {
+  it('rejects a missing or invalid signature with 401 and stores nothing', async () => {
+    const forged = notify('9001', { signature: sign('9001', 'other', 'not-the-secret') });
+    expect((await forged.response).statusCode).toBe(401);
+    const unsigned = notify('9001', { signature: null });
+    expect((await unsigned.response).statusCode).toBe(401);
+    expect(await inbox(forged.requestId)).toEqual([]);
+    expect(await inbox(unsigned.requestId)).toEqual([]);
+  });
+
+  it('confirms the reservation and assigns the stand only after reading the payment', async () => {
+    const beto = await attemptOf('beto', 'C2');
+    pay('9100', beto.attemptId, 'approved');
+
+    const { requestId, response } = notify('9100');
+    expect((await response).statusCode).toBe(200);
+
+    expect(await settled(requestId)).toEqual({ status: 'PROCESSED', outcome: 'CONFIRMED' });
+    expect(provider.paymentReads.at(-1)).toEqual({ tenantId: T, paymentId: '9100' });
+    expect((await call('GET', `/reservations/${beto.reservationId}`, 'beto')).json().status).toBe('CONFIRMED');
+    const stand = (await call('GET', `/events/${eventId}/stands`, 'owner'))
+      .json()
+      .find((s: { code: string }) => s.code === 'C2');
+    expect(stand.status).toBe('ASSIGNED');
+  });
+
+  it('has a single effect for duplicated notifications (AC-07)', async () => {
+    const beto = await attemptOf('beto', 'C2');
+    const first = notify('9100');
+    await first.response;
+    await settled(first.requestId);
+    // Same x-request-id again: deduplicated by the inbox, never processed twice.
+    expect((await notify('9100', { requestId: first.requestId }).response).statusCode).toBe(200);
+    expect(await inbox(first.requestId)).toHaveLength(1);
+    // A new x-request-id for the same approved payment is processed, but changes nothing.
+    expect(await inbox(first.requestId)).toEqual([{ status: 'PROCESSED', outcome: 'ALREADY_APPROVED' }]);
+    expect(await auditCount('reservation.confirmed', beto.reservationId)).toBe(1);
+  });
+
+  it('never reverts an approved payment with an older event (monotonic)', async () => {
+    const beto = await attemptOf('beto', 'C2');
+    pay('9100', beto.attemptId, 'pending');
+    const { requestId, response } = notify('9100');
+    await response;
+    expect(await settled(requestId)).toMatchObject({ outcome: 'ALREADY_APPROVED' });
+    expect((await call('GET', `/reservations/${beto.reservationId}`, 'beto')).json().status).toBe('CONFIRMED');
+  });
+
+  it('records a pending payment without confirming anything', async () => {
+    const gabi = await attemptOf('gabi', 'C3');
+    pay('9200', gabi.attemptId, 'in_process');
+    const { requestId, response } = notify('9200');
+    await response;
+    expect(await settled(requestId)).toEqual({ status: 'PROCESSED', outcome: 'PAYMENT_IN_PROCESS' });
+    expect((await call('GET', `/reservations/${gabi.reservationId}`, 'gabi')).json().status).toBe('PAYMENT_PENDING');
+  });
+
+  it('never confirms a payment whose amount differs from the snapshot (§6.7)', async () => {
+    const gabi = await attemptOf('gabi', 'C3');
+    pay('9201', gabi.attemptId, 'approved', PRICE - 100);
+    const { requestId, response } = notify('9201');
+    await response;
+    expect(await settled(requestId)).toMatchObject({ outcome: 'AMOUNT_MISMATCH' });
+    expect((await call('GET', `/reservations/${gabi.reservationId}`, 'gabi')).json().status).toBe('PAYMENT_PENDING');
+    expect(await auditCount('payment.mismatch', gabi.attemptId)).toBe(1);
+  });
+
+  it('flags an approved payment of a cancelled reservation as LATE_PAYMENT_CONFLICT (INV-07)', async () => {
+    const ana = await attemptOf('ana', 'C1');
+    pay('9300', ana.attemptId, 'approved');
+    const { requestId, response } = notify('9300');
+    await response;
+    expect(await settled(requestId)).toMatchObject({ outcome: 'LATE_PAYMENT_CONFLICT' });
+    expect((await call('GET', `/reservations/${ana.reservationId}`, 'ana')).json().status).toBe('CANCELLED');
+    expect(await auditCount('payment.late_conflict', ana.reservationId)).toBe(1);
+  });
+
+  it('acknowledges but ignores other topics, a missing tenant and foreign references', async () => {
+    const order = notify('9400', { topic: 'merchant_order' });
+    expect((await order.response).statusCode).toBe(200);
+    expect(await inbox(order.requestId)).toEqual([{ status: 'IGNORED', outcome: 'UNSUPPORTED_TOPIC' }]);
+
+    const anonymous = notify('9401', { tenant: null });
+    expect((await anonymous.response).statusCode).toBe(200);
+    expect(await inbox(anonymous.requestId)).toEqual([{ status: 'IGNORED', outcome: 'MISSING_TENANT' }]);
+
+    pay('9402', randomUUID(), 'approved');
+    const foreign = notify('9402');
+    await foreign.response;
+    expect(await settled(foreign.requestId)).toEqual({ status: 'IGNORED', outcome: 'UNKNOWN_ATTEMPT' });
+  });
+
+  it('answers 200 and records FAILED when the payment cannot be read', async () => {
+    const { requestId, response } = notify('9999');
+    expect((await response).statusCode).toBe(200);
+    expect(await settled(requestId)).toEqual({ status: 'FAILED', outcome: 'PROVIDER_ERROR' });
   });
 });

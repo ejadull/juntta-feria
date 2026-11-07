@@ -626,6 +626,9 @@ export const paymentAttempts = pgTable(
     /** Set once, when the provider answers; null while the preference is not created. */
     preferenceId: text('preference_id'),
     checkoutUrl: text('checkout_url'),
+    /** Last payment the provider reported for this attempt (PAY-03); refunds need its id. */
+    paymentId: text('payment_id'),
+    paymentStatus: text('payment_status'),
     expiresAt: instant('expires_at'),
     idempotencyKey: uuid('idempotency_key').notNull(),
     createdAt: createdAt(),
@@ -648,5 +651,36 @@ export const paymentAttempts = pgTable(
     ),
     check('payment_attempts_amount_check', sql`${t.amountCents} >= 0`),
     check('payment_attempts_checkout_check', sql`(${t.preferenceId} IS NULL) = (${t.checkoutUrl} IS NULL)`),
+  ],
+);
+
+export const WEBHOOK_INBOX_STATUSES = ['RECEIVED', 'PROCESSED', 'IGNORED', 'FAILED'] as const;
+export type WebhookInboxStatus = (typeof WEBHOOK_INBOX_STATUSES)[number];
+
+/**
+ * Mercado Pago notifications as received (PAY-03, §6.7), deduplicated by `x-request-id`.
+ * Global like users: the tenant is only known once the payment is read. Nothing secret is kept,
+ * only identifiers; the payment itself is always re-read server-to-server.
+ */
+export const paymentWebhookInbox = pgTable(
+  'payment_webhook_inbox',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    requestId: text('request_id').notNull().unique(),
+    topic: text('topic').notNull(),
+    dataId: text('data_id').notNull(),
+    /** Untrusted hint from the notification URL: no FK, checked against the payment. */
+    tenantId: uuid('tenant_id'),
+    status: text('status').$type<WebhookInboxStatus>().notNull().default('RECEIVED'),
+    /** Why it ended as it did (e.g. CONFIRMED, AMOUNT_MISMATCH, LATE_PAYMENT_CONFLICT). */
+    outcome: text('outcome'),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      'payment_webhook_inbox_status_check',
+      sql`${t.status} IN ('RECEIVED', 'PROCESSED', 'IGNORED', 'FAILED')`,
+    ),
   ],
 );

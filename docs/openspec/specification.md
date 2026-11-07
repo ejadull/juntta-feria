@@ -456,7 +456,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `PAY-00` Decisiones de integración Mercado Pago | ninguna | ADR: track Checkout Pro, credenciales por organizador y validación de firma — [ADR 0006](../adr/0006-integracion-mercado-pago.md) | `VERIFIED` |
 | `PAY-01` Proveedor de pagos y credenciales | `FND-04`, `PAY-00` | puerto `PaymentProvider`, adaptador SDK `mercadopago`, sandbox — [detalle](#pay-01--proveedor-de-pagos-y-credenciales); falta la prueba en sandbox | `IN_PROGRESS` |
 | `PAY-02` Preferencia Checkout Pro | `RES-01`, `PAY-01` | payment attempt idempotente y preferencia desde snapshot de precio — [detalle](#pay-02--preferencia-checkout-pro); falta la prueba en sandbox | `IN_PROGRESS` |
-| `PAY-03` Webhooks de pago | `PAY-02` | firma, inbox deduplicado, consulta server-to-server y confirmación | `PENDING` |
+| `PAY-03` Webhooks de pago | `PAY-02` | firma, inbox deduplicado, consulta server-to-server y confirmación — [detalle](#pay-03--webhooks-de-pago); falta la prueba con el simulador | `IN_PROGRESS` |
 | `PAY-04` Retorno de checkout (P19) | `PAY-02`, `PUB-UI-01..06` | pantallas aprobado/pendiente/rechazado sin confiar en query params | `PENDING` |
 | `PAY-05` Conciliación y pago tardío | `PAY-03` | job de reconciliación, `LATE_PAYMENT_CONFLICT`, P10 | `PENDING` |
 | `PAY-06` Reembolsos, cancelaciones y contracargos | `PAY-05` | refund total/parcial, cancelación de pendientes, chargebacks | `PENDING` |
@@ -690,22 +690,42 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
   4. La preferencia se crea **fuera de la transacción**. Se guarda una sola vez (`WHERE preference_id IS NULL`): si dos requests crearon preferencia, la segunda queda huérfana y expira (ADR 0006 §4). Recién entonces la reserva pasa `HELD → PAYMENT_PENDING` (auditado).
   5. Un `PAYMENT_PENDING` **no se libera solo** al vencer el hold, porque puede haber un pago en vuelo (§6.6). Hasta `PAY-03`/`PAY-05` esa reserva sigue ocupando el stand. Hoy sólo pasa en sandbox, porque en producción los pagos están apagados hasta `PAY-07`.
 - [x] `items` con `title` (`Stand <código> — <evento>`), `quantity: 1`, `unit_price` y `currency_id` desde el snapshot; `external_reference` = id del payment attempt.
-- [x] `notification_url` (si `MP_NOTIFICATION_URL` está definida; si no, rige la del panel), `back_urls` `<web>/feriante/reservas/:id/pago/{aprobado,pendiente,rechazado}` y `auto_return: "approved"`.
+- [x] `notification_url` = `MP_NOTIFICATION_URL` + `tenant=<id>` (para `PAY-03`; sin la variable rige la del panel), `back_urls` `<web>/feriante/reservas/:id/pago/{aprobado,pendiente,rechazado}` y `auto_return: "approved"`.
 - [x] `expires: true` con `expiration_date_to` = vencimiento del hold (ISO 8601 con offset).
 - [x] Persistir `preference_id` y `init_point` (o `sandbox_init_point` en sandbox) y devolver sólo la URL de checkout.
 - [ ] Prueba en sandbox hasta `init_point`. Riesgo a verificar: Mercado Pago podría rechazar `auto_return` con una `back_urls.success` que no sea https (en local es `http://localhost:4200`).
 
 ##### PAY-03 — Webhooks de pago
 
-- **Estado:** `PENDING`
+- **Estado:** `IN_PROGRESS` (falta la prueba con el simulador del panel y webhooks reales en sandbox)
 - **Dependencias:** `PAY-02`
-- **Entrega:** `POST /api/v1/webhooks/mercadopago` con inbox (`payment_webhook_inbox`) y procesamiento asíncrono idempotente (§6.7).
+- **Entrega:** `POST /api/v1/webhooks/mercadopago` con inbox (`payment_webhook_inbox`) y procesamiento asíncrono idempotente (§6.7). Migración `0011_payment_webhooks`, que también suma `payment_id` y `payment_status` al attempt.
 - **Aceptación:** AC-07 (dos webhooks idénticos, un único efecto); firma inválida → 401 sin procesar; respuesta 200/201 en mucho menos de 22 s (Mercado Pago reintenta cada 15 min); la aprobación sólo ocurre tras `GET /v1/payments/{id}` y cotejo de `external_reference`, cobrador, monto y moneda.
 - **Evidencia requerida:** tests con webhooks duplicados, desordenados y con firma inválida; prueba con el simulador del panel.
-- [ ] Validar `x-signature` (`ts`, `v1`) con `x-request-id` y `data.id` de la query, según PAY-00.
-- [ ] Topics `payment` y órdenes comerciales (`merchant_order`); ignorar con 200 los no suscriptos.
-- [ ] Transiciones monotónicas: un evento viejo no revierte un estado más avanzado.
-- [ ] Mapear estados del pago (`approved`, `pending`, `in_process`, `rejected`, `cancelled`, `refunded`, `charged_back`) y `status_detail` **(verificar lista vigente)**.
+  - 2026-11-07: `test:int` → 145/145 (9 de webhooks en `test/checkout.int-spec.ts`, firmados con HMAC real), repetido 3 veces sin fallos:
+    - Firma falsa o ausente → 401 y nada en el inbox.
+    - Pago `approved` → 200, se lee el pago con el tenant de la URL, la reserva queda `CONFIRMED` y el stand `ASSIGNED`.
+    - El mismo `x-request-id` → una sola fila en el inbox; otra notificación del mismo pago → `ALREADY_APPROVED` y un solo `reservation.confirmed` auditado (AC-07).
+    - Un `pending` posterior no revierte la aprobación.
+    - `in_process` → se registra sin confirmar.
+    - Monto distinto → `AMOUNT_MISMATCH`, auditado y sin confirmar.
+    - Aprobado sobre una reserva cancelada → `LATE_PAYMENT_CONFLICT` auditado, sin adjudicar.
+    - `merchant_order`, una notificación sin tenant o una referencia ajena → 200 e `IGNORED`.
+    - Si el proveedor falla → 200 y `FAILED`.
+  - 2026-11-07: `npm test` 108/108, `test:e2e` 7/7, `tsc` y `oxlint` OK.
+- **Decisiones:**
+  - **Tenant en la `notification_url`** (`?tenant=<id>`, `PAY-02`): el webhook necesita el tenant para leer el pago con las credenciales del vendedor (`PAY-07`). Es un parámetro **sin firmar**, así que sólo es una pista: el pago se lee con ese tenant y se exige que su `external_reference` sea un attempt de ese tenant (RLS). Si no coincide → `UNKNOWN_ATTEMPT`. Requiere `MP_NOTIFICATION_URL`; la URL del panel, sin tenant, se ignora (`MISSING_TENANT`).
+  - **Inbox global** (sin RLS, como `users`), deduplicado por `x-request-id`. Guarda sólo identificadores; el `tenant_id` no tiene FK porque viene de un input no confiable. Cada fila termina `PROCESSED`/`IGNORED`/`FAILED` con un `outcome`.
+  - **Procesamiento en el mismo proceso** después del 200. Los `FAILED` (proveedor caído) y los `RECEIVED` que quedaron colgados por un reinicio los retoma la conciliación (`PAY-05`).
+  - **Efectos:** sólo `approved` cambia estado (attempt `APPROVED`, reserva `HELD`/`PAYMENT_PENDING` → `CONFIRMED`, stand `ASSIGNED`). `pending`/`in_process`/`rejected`/`cancelled` se registran en el attempt sin tocar la reserva, porque la preferencia sigue pagable hasta vencer y otro medio puede aprobarla. Un attempt aprobado no se toca más; `refunded`/`charged_back` quedan para `PAY-06`.
+  - **Pago aprobado de una reserva que ya no puede confirmarse** (vencida, cancelada o confirmada por otro attempt) → `payment.late_conflict` con `LATE_PAYMENT_CONFLICT` (INV-07); la devolución es de `PAY-05`.
+  - **Frescura de `ts`:** se registra la deriva en el log y todavía no se exige tolerancia (ADR 0006 §3).
+- [x] Validar `x-signature` (`ts`, `v1`) con `x-request-id` y `data.id` de la query, según PAY-00 (`WebhookSignatureValidator` del SDK).
+- [x] Topic `payment`; `merchant_order` y los no suscriptos se responden 200 y se ignoran (Checkout Pro manda ambos, y `payment` alcanza).
+- [x] Transiciones monotónicas: un evento viejo no revierte un estado más avanzado.
+- [ ] Cotejo del **cobrador**: llega con `PAY-07`, cuando el id del vendedor sale de la vinculación OAuth. Hoy en sandbox hay una sola cuenta.
+- [ ] Mapear `refunded`/`charged_back` (`PAY-06`) y verificar la lista vigente de `status`/`status_detail` en sandbox.
+- [ ] Prueba con el simulador del panel; confirmar que Mercado Pago conserva el query `tenant` de la `notification_url`.
 
 ##### PAY-04 — Retorno de checkout (P19)
 

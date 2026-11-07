@@ -75,7 +75,7 @@ export class CheckoutService {
       currency: attempt.currency,
       expiresAt: attempt.expiresAt,
       backUrls: this.backUrls(reservationId),
-      ...(this.notificationUrl ? { notificationUrl: this.notificationUrl } : {}),
+      ...(this.notificationUrl ? { notificationUrl: this.notificationFor(tenantId) } : {}),
     });
     return this.database.withTenant(tenantId, (tx) => this.saveCheckout(tx, userId, attempt, result));
   }
@@ -170,6 +170,16 @@ export class CheckoutService {
         after: { status: 'PAYMENT_PENDING', paymentAttemptId: attempt.id },
       });
     return { checkout: view(saved), created: true };
+  }
+
+  /**
+   * The webhook needs the tenant to read the payment with its seller credentials (PAY-03).
+   * The query is unsigned: the webhook trusts it only after the payment matches an attempt of it.
+   */
+  private notificationFor(tenantId: string): string {
+    const url = new URL(this.notificationUrl ?? '');
+    url.searchParams.set('tenant', tenantId);
+    return url.toString();
   }
 
   /** Return pages of PAY-04 (P19); the browser return never confirms anything (§5.2). */

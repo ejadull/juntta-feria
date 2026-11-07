@@ -27,8 +27,14 @@ export class FakePaymentProvider implements PaymentProvider {
     return Promise.resolve({ preferenceId, checkoutUrl: `https://sandbox.mp.test/checkout/${preferenceId}` });
   }
 
-  getPayment(): Promise<ProviderPayment> {
-    return Promise.reject(new Error('FakePaymentProvider.getPayment is not scripted'));
+  /** Payments the provider "has", by id; a missing one fails like the adapter (502). */
+  readonly payments = new Map<string, ProviderPayment>();
+  readonly paymentReads: { tenantId: string; paymentId: string }[] = [];
+
+  getPayment(tenantId: string, paymentId: string): Promise<ProviderPayment> {
+    this.paymentReads.push({ tenantId, paymentId });
+    const payment = this.payments.get(paymentId);
+    return payment ? Promise.resolve(payment) : Promise.reject(providerFailed());
   }
 
   refund(): Promise<{ id: string; status: string }> {
