@@ -42,19 +42,31 @@ describe('toProblem (RFC 9457)', () => {
   it('passes a 4xx `issues` list through as an extension member', () => {
     const issues = [{ code: 'STAND_OVERLAP', objectIds: ['a', 'b'] }];
     const problem = toProblem(
-      new UnprocessableEntityException({ message: 'Layout has 1 issue', issues }),
+      new UnprocessableEntityException({
+        message: 'Layout has 1 issue',
+        issues,
+      }),
       req,
     );
-    expect(problem).toMatchObject({ status: 422, detail: 'Layout has 1 issue', issues });
+    expect(problem).toMatchObject({
+      status: 422,
+      detail: 'Layout has 1 issue',
+      issues,
+    });
   });
 
   it('passes a 4xx machine-readable `code` through (§5 error format)', () => {
     const problem = toProblem(
-      new ConflictException({ message: 'The stand is not available.', code: 'STAND_UNAVAILABLE' }),
+      new ConflictException({
+        message: 'The stand is not available.',
+        code: 'STAND_UNAVAILABLE',
+      }),
       req,
     );
     expect(problem).toMatchObject({ status: 409, code: 'STAND_UNAVAILABLE' });
-    expect(toProblem(new NotFoundException('x'), req)).not.toHaveProperty('code');
+    expect(toProblem(new NotFoundException('x'), req)).not.toHaveProperty(
+      'code',
+    );
   });
 
   it('never exposes `issues` from a 5xx', () => {

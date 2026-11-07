@@ -4,10 +4,17 @@ import { z } from 'zod';
 import { DatabaseService } from '../db/database.service.js';
 import { auditLogs, users } from '../db/schema.js';
 import { parseBody } from '../http/parse-body.js';
-import { OWNERS, TenantScoped, type TenantRequest } from './tenant-scoped.decorator.js';
+import {
+  OWNERS,
+  TenantScoped,
+  type TenantRequest,
+} from './tenant-scoped.decorator.js';
 
 const auditQuery = z.strictObject({
-  entityType: z.string().regex(/^[a-z_]{1,40}$/).optional(),
+  entityType: z
+    .string()
+    .regex(/^[a-z_]{1,40}$/)
+    .optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
 
@@ -33,9 +40,14 @@ export class AuditLogsController {
 
   @Get()
   @TenantScoped(...OWNERS)
-  list(@Req() request: TenantRequest, @Query() query: unknown): Promise<AuditLogEntry[]> {
+  list(
+    @Req() request: TenantRequest,
+    @Query() query: unknown,
+  ): Promise<AuditLogEntry[]> {
     const { entityType, limit } = parseBody(auditQuery, query, 'audit query');
-    const filters: SQL[] = entityType ? [eq(auditLogs.entityType, entityType)] : [];
+    const filters: SQL[] = entityType
+      ? [eq(auditLogs.entityType, entityType)]
+      : [];
     return this.database.withTenant(request.tenant.id, (tx) =>
       tx
         .select({

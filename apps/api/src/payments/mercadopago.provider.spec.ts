@@ -1,4 +1,7 @@
-import { BadGatewayException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { MercadoPagoProvider } from './mercadopago.provider.js';
 import type { CheckoutRequest } from './payment-provider.js';
 
@@ -51,7 +54,8 @@ const checkout: CheckoutRequest = {
   notificationUrl: 'https://api.example.test/api/v1/webhooks/mercadopago',
 };
 
-const sandbox = () => new MercadoPagoProvider({ environment: 'sandbox', accessToken: TOKEN });
+const sandbox = () =>
+  new MercadoPagoProvider({ environment: 'sandbox', accessToken: TOKEN });
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -61,18 +65,34 @@ describe('MercadoPagoProvider (PAY-01)', () => {
   it('creates a Checkout Pro preference from the server amount (PAY-02, ADR 0006)', async () => {
     respond({
       status: 201,
-      body: { id: 'pref-1', init_point: 'https://mp.test/live', sandbox_init_point: 'https://mp.test/sandbox' },
+      body: {
+        id: 'pref-1',
+        init_point: 'https://mp.test/live',
+        sandbox_init_point: 'https://mp.test/sandbox',
+      },
     });
 
     const result = await sandbox().createCheckout(checkout);
 
-    expect(result).toEqual({ preferenceId: 'pref-1', checkoutUrl: 'https://mp.test/sandbox' });
+    expect(result).toEqual({
+      preferenceId: 'pref-1',
+      checkoutUrl: 'https://mp.test/sandbox',
+    });
     const [request] = sent;
-    expect(request.url).toMatch(/^https:\/\/api\.mercadopago\.com\/checkout\/preferences\/?$/);
+    expect(request.url).toMatch(
+      /^https:\/\/api\.mercadopago\.com\/checkout\/preferences\/?$/,
+    );
     expect(request.method).toBe('POST');
     expect(request.headers.Authorization).toBe(`Bearer ${TOKEN}`);
     expect(request.body).toMatchObject({
-      items: [{ title: checkout.title, quantity: 1, unit_price: 45_000.5, currency_id: 'ARS' }],
+      items: [
+        {
+          title: checkout.title,
+          quantity: 1,
+          unit_price: 45_000.5,
+          currency_id: 'ARS',
+        },
+      ],
       external_reference: checkout.externalReference,
       notification_url: checkout.notificationUrl,
       back_urls: checkout.backUrls,
@@ -84,32 +104,52 @@ describe('MercadoPagoProvider (PAY-01)', () => {
   });
 
   it('never retries a preference creation: Preferences has no idempotency key (ADR 0006 §4)', async () => {
-    respond({ status: 503 }, { status: 201, body: { id: 'pref-2', sandbox_init_point: 'x' } });
-    await expect(sandbox().createCheckout(checkout)).rejects.toBeInstanceOf(BadGatewayException);
+    respond(
+      { status: 503 },
+      { status: 201, body: { id: 'pref-2', sandbox_init_point: 'x' } },
+    );
+    await expect(sandbox().createCheckout(checkout)).rejects.toBeInstanceOf(
+      BadGatewayException,
+    );
     expect(sent).toHaveLength(1);
   });
 
   it('refuses the platform token in production until PAY-07 links the organizer account', async () => {
     respond();
-    const provider = new MercadoPagoProvider({ environment: 'production', accessToken: TOKEN });
-    await expect(provider.createCheckout(checkout)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    const provider = new MercadoPagoProvider({
+      environment: 'production',
+      accessToken: TOKEN,
+    });
+    await expect(provider.createCheckout(checkout)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
     expect(sent).toHaveLength(0);
   });
 
   it('fails explicitly without credentials and never calls the provider (§13.1)', async () => {
     respond();
-    const provider = new MercadoPagoProvider({ environment: 'sandbox', accessToken: undefined });
-    await expect(provider.createCheckout(checkout)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    const provider = new MercadoPagoProvider({
+      environment: 'sandbox',
+      accessToken: undefined,
+    });
+    await expect(provider.createCheckout(checkout)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
     expect(sent).toHaveLength(0);
   });
 
   it('hides the provider error body behind a 502', async () => {
-    respond({ status: 400, body: { message: `invalid token ${TOKEN}`, cause: [{ code: 'x' }] } });
+    respond({
+      status: 400,
+      body: { message: `invalid token ${TOKEN}`, cause: [{ code: 'x' }] },
+    });
     const error: unknown = await sandbox()
       .createCheckout(checkout)
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(BadGatewayException);
-    expect(JSON.stringify((error as BadGatewayException).getResponse())).not.toContain(TOKEN);
+    expect(
+      JSON.stringify((error as BadGatewayException).getResponse()),
+    ).not.toContain(TOKEN);
   });
 
   it('reads a payment server-to-server in cents (PAY-03)', async () => {
@@ -135,16 +175,26 @@ describe('MercadoPagoProvider (PAY-01)', () => {
       currency: 'ARS',
       collectorId: '777',
     });
-    expect(sent[0]).toMatchObject({ url: 'https://api.mercadopago.com/v1/payments/123', method: 'GET' });
+    expect(sent[0]).toMatchObject({
+      url: 'https://api.mercadopago.com/v1/payments/123',
+      method: 'GET',
+    });
   });
 
   it('refunds with our own stable idempotency key (ADR 0006 §4, R-MP-5)', async () => {
     respond({ status: 201, body: { id: 55, status: 'approved' } });
 
-    const refund = await sandbox().refund(TENANT, '123', 'key-refund-1', 1_000_00);
+    const refund = await sandbox().refund(
+      TENANT,
+      '123',
+      'key-refund-1',
+      1_000_00,
+    );
 
     expect(refund).toEqual({ id: '55', status: 'approved' });
-    expect(sent[0].url).toBe('https://api.mercadopago.com/v1/payments/123/refunds');
+    expect(sent[0].url).toBe(
+      'https://api.mercadopago.com/v1/payments/123/refunds',
+    );
     expect(sent[0].headers['X-Idempotency-Key']).toBe('key-refund-1');
     expect(sent[0].body).toEqual({ amount: 1000 });
   });
@@ -158,7 +208,9 @@ describe('MercadoPagoProvider (PAY-01)', () => {
   it('cancels a pending payment with our idempotency key (PAY-06)', async () => {
     respond({ status: 200, body: { id: 123, status: 'cancelled' } });
 
-    expect(await sandbox().cancel(TENANT, '123', 'key-cancel-1')).toEqual({ status: 'cancelled' });
+    expect(await sandbox().cancel(TENANT, '123', 'key-cancel-1')).toEqual({
+      status: 'cancelled',
+    });
     expect(sent[0]).toMatchObject({
       url: 'https://api.mercadopago.com/v1/payments/123',
       method: 'PUT',
