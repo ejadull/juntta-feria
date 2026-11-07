@@ -454,7 +454,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `EXH-05` Suscripción del feriante | `EXH-04`, `PAY-01` | suscripción **a la plataforma** (decisión 2026-11-06): el feriante le paga a Juntta en la cuenta de Mercado Pago de la plataforma (`preapproval`, no OAuth del organizador) y queda habilitado a reservar en cualquier organización; estado global por usuario. Riesgo: implicancias fiscales de que la plataforma cobre (validar con asesoría, §1.6/R1). **Hecho en RES-01:** tabla `platform_subscriptions` (estado + `current_period_end`) que RES-01 exige; se activa a mano hasta el webhook (ver RES-01). **Pendiente:** cobro con `preapproval` y webhook | `IN_PROGRESS` |
 | `RES-01` Reservas concurrentes | `EVT-01`, `EXH-01`, `EXH-04`, `EXH-05` | holds, locking e idempotencia; sólo reserva un feriante con cuenta activa y confirmada, perfil completo y suscripción paga — [detalle](#res-01--reservas-concurrentes) | `VERIFIED` |
 | `PAY-00` Decisiones de integración Mercado Pago | ninguna | ADR: track Checkout Pro, credenciales por organizador y validación de firma — [ADR 0006](../adr/0006-integracion-mercado-pago.md) | `VERIFIED` |
-| `PAY-01` Proveedor de pagos y credenciales | `FND-04`, `PAY-00` | puerto `PaymentProvider`, adaptador SDK `mercadopago`, sandbox | `PENDING` |
+| `PAY-01` Proveedor de pagos y credenciales | `FND-04`, `PAY-00` | puerto `PaymentProvider`, adaptador SDK `mercadopago`, sandbox — [detalle](#pay-01--proveedor-de-pagos-y-credenciales); falta la prueba en sandbox | `IN_PROGRESS` |
 | `PAY-02` Preferencia Checkout Pro | `RES-01`, `PAY-01` | payment attempt idempotente y preferencia desde snapshot de precio | `PENDING` |
 | `PAY-03` Webhooks de pago | `PAY-02` | firma, inbox deduplicado, consulta server-to-server y confirmación | `PENDING` |
 | `PAY-04` Retorno de checkout (P19) | `PAY-02`, `PUB-UI-01..06` | pantallas aprobado/pendiente/rechazado sin confiar en query params | `PENDING` |
@@ -651,14 +651,21 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 
 ##### PAY-01 — Proveedor de pagos y credenciales
 
-- **Estado:** `PENDING`
+- **Estado:** `IN_PROGRESS` (falta la prueba en sandbox con usuarios de prueba)
 - **Dependencias:** `FND-04`, `PAY-00`
 - **Entrega:** puerto `PaymentProvider` (crear preferencia, obtener pago, reembolsar, cancelar) y adaptador con el SDK oficial `mercadopago`; adaptador falso para tests.
 - **Aceptación:** sin credenciales, las operaciones de pago fallan con error explícito y el resto de la API arranca (§13.1); el Access Token nunca llega al frontend ni a logs; sólo la Public Key es pública.
 - **Evidencia requerida:** tests unitarios del adaptador contra dobles HTTP y prueba en sandbox con usuarios de prueba.
-- [ ] Validar `MP_ENVIRONMENT`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` (y Public Key si se usa SDK de frontend) en el esquema de entorno.
-- [ ] Cliente con timeouts, reintentos acotados sólo en operaciones idempotentes y errores mapeados a problem+json sin filtrar datos del proveedor.
-- [ ] Credenciales de prueba del usuario productivo y usuarios de prueba comprador/vendedor documentados (sin valores) en el README.
+  - 2026-11-07: `src/payments/mercadopago.provider.spec.ts` (9 tests, `fetch` global reemplazado): preferencia con monto del servidor en unidades, `external_reference`, `back_urls`, `auto_return`, `binary_mode: false`, `expires` y `expiration_date_to` con offset; la creación de preferencia no se reintenta; sin token o en producción → 503 sin llamar al proveedor; error del proveedor → 502 sin su cuerpo; pago leído en centavos; reembolso total/parcial y cancelación con `X-Idempotency-Key` propio. `npm test` 108/108, `tsc` y `oxlint` OK.
+- **Decisiones:**
+  - SDK `mercadopago` fijado en `3.6.1` (ADR 0006, R-MP-8).
+  - **Un `MercadoPagoConfig` nuevo por llamada:** el SDK mezcla `requestOptions` dentro del config compartido, así que reusarlo arrastraría la idempotency key o `maxRetries: 0` a la llamada siguiente.
+  - Reintentos: crear preferencia **0** (Preferences no tiene clave idempotente); `GET`, reembolso y cancelación **2**, con clave propia. Timeout 10 s.
+  - **Credenciales interinas:** `MP_ACCESS_TOKEN` de plataforma para todos los tenants y **sólo en `sandbox`**. Con `MP_ENVIRONMENT=production` los pagos responden 503 hasta que `PAY-07` vincule la cuenta vendedora de cada organizador (OAuth, ADR 0006 §2); así nunca se cobra a nombre de la plataforma por error.
+- [x] Validar `MP_ENVIRONMENT` (`sandbox`|`production`, por defecto `sandbox`), `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` y `MP_NOTIFICATION_URL` (https) en el esquema de entorno. Sin Public Key: no hay SDK de frontend.
+- [x] Cliente con timeouts, reintentos acotados sólo en operaciones idempotentes y errores mapeados a problem+json (503/502) sin filtrar datos del proveedor; el log registra sólo operación, status y tenant.
+- [x] Credenciales de prueba y usuarios de prueba comprador/vendedor documentados (sin valores) en el README.
+- [ ] Prueba en sandbox con usuarios de prueba hasta `init_point` (requiere credenciales `TEST-` cargadas a mano).
 
 ##### PAY-02 — Preferencia Checkout Pro
 
@@ -770,7 +777,7 @@ Estructura `apps/api` (NestJS), `apps/web` (Angular), `docker-compose.yml`, `.en
 | `APP_DB_PASSWORD`, `DATABASE_MIGRATION_URL` | `CORE-01`: contraseña del rol `juntta_app` (generada por `scripts/init-local-env.mjs`) y conexión del rol dueño, usada **sólo** por `npm run db:setup` / el servicio `db-migrate`. La API nunca recibe la URL ni la contraseña del dueño (Compose las vacía en el servicio `api`). |
 | `REDIS_URL` | Redis local para BullMQ, jobs y cache. |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE` | LocalStack emula S3 en desarrollo con credenciales públicas de simulación; en producción se requiere un proveedor S3 y credenciales de mínimo privilegio administradas fuera de Git. |
-| `MP_ENVIRONMENT`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | Mercado Pago usa `sandbox` localmente. Las credenciales pueden quedar vacías para flujos que no son de pago; pagos deben fallar con error explícito y configurable hasta configurarlas. |
+| `MP_ENVIRONMENT`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `MP_NOTIFICATION_URL` | Mercado Pago usa `sandbox` localmente (valor por defecto). Las credenciales pueden quedar vacías para flujos que no son de pago; los pagos responden 503 hasta configurarlas, y en `production` hasta que `PAY-07` vincule la cuenta del organizador. `MP_NOTIFICATION_URL` (https, opcional) es la URL pública del webhook; sin ella rige la configurada en el panel de Mercado Pago. |
 | `AUTH_ACCESS_TOKEN_SECRET`, `AUTH_REFRESH_TOKEN_SECRET`, `AUTH_ACCESS_TOKEN_TTL_SECONDS`, `AUTH_REFRESH_TOKEN_TTL_SECONDS`, `AUTH_REFRESH_COOKIE_NAME`, `AUTH_COOKIE_SECURE`, `AUTH_COOKIE_SAME_SITE` | `CORE-02` ([ADR 0004](../adr/0004-contrato-de-entorno-y-autenticacion.md)): secretos de ≥ 32 caracteres y distintos entre sí (generados por `scripts/init-local-env.mjs`); TTL por defecto 900 s / 14 días; cookie `juntta_rt`, `Secure` y `SameSite=Strict` por defecto. En producción `AUTH_COOKIE_SECURE=false` se rechaza. |
 | `SENTRY_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT` | Integraciones opcionales de observabilidad; pueden quedar vacías localmente. |
 

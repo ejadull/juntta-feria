@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Environment contract (ADR 0004, FND-02). Parsed once at startup.
  * Errors name the variable and the rule, never the received value (AGENT.md §5/§6).
- * Reserved variables (RESERVATION_*, MP_*) are ignored until their task consumes them.
+ * Reserved variables (RESERVATION_*) are ignored until their task consumes them.
  */
 
 const LOG_LEVELS = [
@@ -15,6 +15,7 @@ const LOG_LEVELS = [
   'trace',
 ] as const;
 const NODE_ENVS = ['development', 'test', 'production'] as const;
+const MP_ENVIRONMENTS = ['sandbox', 'production'] as const;
 
 export type AppEnvironment = Readonly<{
   nodeEnv: (typeof NODE_ENVS)[number];
@@ -45,6 +46,14 @@ export type AppEnvironment = Readonly<{
     refreshCookieName: string;
     cookieSecure: boolean;
     cookieSameSite: 'strict' | 'lax';
+  }>;
+  /** PAY-01 (ADR 0006). Credentials may be empty: payments then fail with 503, the API still runs (§13.1). */
+  mercadoPago: Readonly<{
+    environment: (typeof MP_ENVIRONMENTS)[number];
+    accessToken: string | undefined;
+    webhookSecret: string | undefined;
+    /** Public HTTPS webhook URL; when unset, the one configured in the Mercado Pago panel applies. */
+    notificationUrl: string | undefined;
   }>;
 }>;
 
@@ -194,6 +203,21 @@ const schema = z
         .enum(['strict', 'lax'], { error: 'must be strict or lax' })
         .default('strict'),
     ),
+    MP_ENVIRONMENT: z.preprocess(
+      blankAsUndefined,
+      z
+        .enum(MP_ENVIRONMENTS, { error: `must be one of ${MP_ENVIRONMENTS.join(', ')}` })
+        .default('sandbox'),
+    ),
+    MP_ACCESS_TOKEN: z.preprocess(blankAsUndefined, z.string().trim().optional()),
+    MP_WEBHOOK_SECRET: z.preprocess(blankAsUndefined, z.string().trim().optional()),
+    MP_NOTIFICATION_URL: z.preprocess(
+      blankAsUndefined,
+      z
+        .string()
+        .refine((v) => hasProtocol(v, ['https:']), { error: 'must be an https URL' })
+        .optional(),
+    ),
   })
   .superRefine((env, ctx) => {
     if (env.AUTH_ACCESS_TOKEN_SECRET === env.AUTH_REFRESH_TOKEN_SECRET)
@@ -260,6 +284,12 @@ export function parseEnvironment(input: NodeJS.ProcessEnv): AppEnvironment {
       refreshCookieName: e.AUTH_REFRESH_COOKIE_NAME,
       cookieSecure: e.AUTH_COOKIE_SECURE,
       cookieSameSite: e.AUTH_COOKIE_SAME_SITE,
+    },
+    mercadoPago: {
+      environment: e.MP_ENVIRONMENT,
+      accessToken: e.MP_ACCESS_TOKEN,
+      webhookSecret: e.MP_WEBHOOK_SECRET,
+      notificationUrl: e.MP_NOTIFICATION_URL,
     },
   };
 }

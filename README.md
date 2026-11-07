@@ -58,6 +58,16 @@ node scripts/init-local-env.mjs
 
 El script completa los marcadores `GENERATE_LOCAL_HEX_64` con valores aleatorios, conserva lo que ya tenga `.env`, deja vacías las credenciales de Mercado Pago y sólo informa **nombres** de variables, nunca valores. Las credenciales sandbox de Mercado Pago se cargan a mano recién cuando se trabaje en pagos. `.env` no se versiona.
 
+#### Mercado Pago sandbox (`PAY-01`)
+
+Sin credenciales, la API arranca igual y los pagos responden 503. Para probar el checkout:
+
+1. En [Tus integraciones](https://www.mercadopago.com.ar/developers/panel/app) creá una aplicación de Checkout Pro y copiá las **credenciales de prueba** (Access Token `TEST-…`) en `MP_ACCESS_TOKEN`, con `MP_ENVIRONMENT=sandbox`.
+2. En *Cuentas de prueba* creá un usuario **vendedor** y uno **comprador**. Pagá siempre logueado con el comprador de prueba, nunca con tu cuenta real.
+3. La firma secreta de webhooks va en `MP_WEBHOOK_SECRET`. `MP_NOTIFICATION_URL` es la URL pública https del webhook; en local, un túnel (por ejemplo `cloudflared`) a `/api/v1/webhooks/mercadopago`.
+
+Los valores nunca se versionan ni se pegan en issues: sólo los nombres de las variables. Con `MP_ENVIRONMENT=production` los pagos quedan apagados hasta `PAY-07` (cada organizador vincula su propia cuenta).
+
 ### 2. Con Docker Compose (recomendado)
 
 ```bash

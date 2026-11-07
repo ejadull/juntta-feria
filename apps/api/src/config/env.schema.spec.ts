@@ -65,7 +65,36 @@ describe('parseEnvironment (FND-02)', () => {
         cookieSecure: true,
         cookieSameSite: 'strict',
       },
+      mercadoPago: {
+        environment: 'sandbox',
+        accessToken: undefined,
+        webhookSecret: undefined,
+        notificationUrl: undefined,
+      },
     });
+  });
+
+  it('reads the Mercado Pago settings (PAY-01)', () => {
+    const env = parseEnvironment({
+      ...valid(),
+      MP_ENVIRONMENT: 'production',
+      MP_ACCESS_TOKEN: 'fake-mp-token',
+      MP_WEBHOOK_SECRET: 'fake-mp-webhook-secret',
+      MP_NOTIFICATION_URL: 'https://api.example.test/api/v1/webhooks/mercadopago',
+    });
+    expect(env.mercadoPago).toEqual({
+      environment: 'production',
+      accessToken: 'fake-mp-token',
+      webhookSecret: 'fake-mp-webhook-secret',
+      notificationUrl: 'https://api.example.test/api/v1/webhooks/mercadopago',
+    });
+  });
+
+  it.each([
+    ['MP_ENVIRONMENT', 'live'],
+    ['MP_NOTIFICATION_URL', 'http://api.example.test/hook'],
+  ])('rejects an invalid %s', (key, value) => {
+    expect(failure({ ...valid(), [key]: value })).toContain(key);
   });
 
   it('reads the auth settings (CORE-02, ADR 0004)', () => {
