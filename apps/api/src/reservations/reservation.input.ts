@@ -8,6 +8,13 @@ export const createReservationInput = z.strictObject({
   exhibitorId: z.uuid().optional(),
 });
 
-export const listReservationsQuery = z.strictObject({ eventId: z.uuid().optional() });
+export const listReservationsQuery = z.strictObject({
+  eventId: z.uuid().optional(),
+});
 
 export type CreateReservationInput = z.infer<typeof createReservationInput>;
+
+/** PAY-06 body: no amount refunds every payment in full; an amount refunds part of one payment. */
+export const refundInput = z.strictObject({
+  amountCents: z.number().int().positive().optional(),
+});

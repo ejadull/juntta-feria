@@ -1,8 +1,23 @@
-import { Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { InvalidWebhookSignatureError, WebhookSignatureValidator } from 'mercadopago';
-import { configuration, type AppConfiguration } from '../config/configuration.js';
-import { DatabaseService, isUuid, type Transaction } from '../db/database.service.js';
+import {
+  InvalidWebhookSignatureError,
+  WebhookSignatureValidator,
+} from 'mercadopago';
+import {
+  configuration,
+  type AppConfiguration,
+} from '../config/configuration.js';
+import {
+  DatabaseService,
+  isUuid,
+  type Transaction,
+} from '../db/database.service.js';
 import {
   eventStands,
   paymentAttempts,
@@ -29,6 +44,8 @@ export interface Notification {
 
 /** States that still own the stand and can be confirmed (§4.5). */
 const CONFIRMABLE: readonly string[] = ['HELD', 'PAYMENT_PENDING'];
+/** Statuses an approved payment can still move to (PAY-06). */
+const REVERSED: readonly string[] = ['refunded', 'charged_back'];
 
 /**
  * Mercado Pago webhooks (PAY-03, §6.7, ADR 0006 §3). `receive` authenticates and stores the
@@ -53,18 +70,31 @@ export class MercadoPagoWebhooksService {
   async receive(notification: Notification): Promise<string | null> {
     if (!this.secret) throw paymentsUnavailable();
     const { signature, requestId, dataId, topic, tenant } = notification;
-    if (!requestId) throw new UnauthorizedException('Invalid webhook signature.');
+    if (!requestId)
+      throw new UnauthorizedException('Invalid webhook signature.');
     try {
-      WebhookSignatureValidator.validate({ xSignature: signature, xRequestId: requestId, dataId, secret: this.secret });
+      WebhookSignatureValidator.validate({
+        xSignature: signature,
+        xRequestId: requestId,
+        dataId,
+        secret: this.secret,
+      });
     } catch (error) {
       if (!(error instanceof InvalidWebhookSignatureError)) throw error;
-      this.logger.warn(`Rejected Mercado Pago webhook ${requestId}: ${error.reason}`);
+      this.logger.warn(
+        `Rejected Mercado Pago webhook ${requestId}: ${error.reason}`,
+      );
       throw new UnauthorizedException('Invalid webhook signature.');
     }
     this.logDrift(requestId, signature);
 
     const tenantId = isUuid(tenant) ? tenant : null;
-    const ignored = topic !== 'payment' ? 'UNSUPPORTED_TOPIC' : tenantId ? null : 'MISSING_TENANT';
+    const ignored =
+      topic !== 'payment'
+        ? 'UNSUPPORTED_TOPIC'
+        : tenantId
+          ? null
+          : 'MISSING_TENANT';
     const [row] = await this.database.db
       .insert(paymentWebhookInbox)
       .values({
@@ -101,10 +131,19 @@ export class MercadoPagoWebhooksService {
         return await this.finish(inboxId, 'FAILED', 'PROVIDER_ERROR');
       }
       const outcome = await this.applyPayment(tenantId, payment);
-      await this.finish(inboxId, outcome === 'UNKNOWN_ATTEMPT' ? 'IGNORED' : 'PROCESSED', outcome);
+      await this.finish(
+        inboxId,
+        outcome === 'UNKNOWN_ATTEMPT' ? 'IGNORED' : 'PROCESSED',
+        outcome,
+      );
     } catch (error) {
-      this.logger.error(`Mercado Pago webhook ${inboxId} failed`, error instanceof Error ? error.stack : undefined);
-      await this.finish(inboxId, 'FAILED', 'INTERNAL_ERROR').catch(() => undefined);
+      this.logger.error(
+        `Mercado Pago webhook ${inboxId} failed`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      await this.finish(inboxId, 'FAILED', 'INTERNAL_ERROR').catch(
+        () => undefined,
+      );
     }
   }
 
@@ -117,7 +156,10 @@ export class MercadoPagoWebhooksService {
   }
 
   /** §6.7: match reference, amount and currency; confirm under lock; record every outcome. */
-  private async apply(tx: Transaction, payment: ProviderPayment): Promise<string> {
+  private async apply(
+    tx: Transaction,
+    payment: ProviderPayment,
+  ): Promise<string> {
     if (!isUuid(payment.externalReference)) return 'UNKNOWN_ATTEMPT';
     const [attempt] = await tx
       .select()
@@ -126,19 +168,29 @@ export class MercadoPagoWebhooksService {
       .for('update');
     if (!attempt) return 'UNKNOWN_ATTEMPT';
     // ponytail: the collector check arrives with PAY-07, where the seller id comes from the OAuth link.
-    if (payment.amountCents !== attempt.amountCents || payment.currency !== attempt.currency) {
-      this.logger.warn(`Payment ${payment.id} does not match attempt ${attempt.id}`);
+    if (
+      payment.amountCents !== attempt.amountCents ||
+      payment.currency !== attempt.currency
+    ) {
+      this.logger.warn(
+        `Payment ${payment.id} does not match attempt ${attempt.id}`,
+      );
       await this.audit.record(tx, {
         actorId: null,
         action: 'payment.mismatch',
         entityType: 'payment_attempt',
         entityId: attempt.id,
-        after: { paymentId: payment.id, amountCents: payment.amountCents, currency: payment.currency },
+        after: {
+          paymentId: payment.id,
+          amountCents: payment.amountCents,
+          currency: payment.currency,
+        },
       });
       return 'AMOUNT_MISMATCH';
     }
-    // Monotonic: refunds and chargebacks of an approved attempt belong to PAY-06.
-    if (attempt.status === 'APPROVED') return 'ALREADY_APPROVED';
+    // Monotonic: an approved attempt only records reversals (PAY-06); older events change nothing.
+    if (attempt.status === 'APPROVED')
+      return this.reverse(tx, attempt, payment);
 
     const approved = payment.status === 'approved';
     await tx
@@ -155,20 +207,66 @@ export class MercadoPagoWebhooksService {
     return this.confirm(tx, attempt.reservationId, payment.id);
   }
 
-  private async confirm(tx: Transaction, reservationId: string, paymentId: string): Promise<string> {
+  /**
+   * PAY-06: `refunded` (ours or from the seller panel) is only recorded; `charged_back` is an
+   * incident for a human (CHARGEBACK), since the buyer's bank took the money back.
+   * ponytail: the `chargebacks` topic (GET /v1/chargebacks/{id}) is not subscribed; the payment
+   * topic already reports the status change. Subscribe it when dispute details are needed.
+   */
+  private async reverse(
+    tx: Transaction,
+    attempt: typeof paymentAttempts.$inferSelect,
+    payment: ProviderPayment,
+  ): Promise<string> {
+    const seen =
+      payment.id === attempt.paymentId &&
+      payment.status === attempt.paymentStatus;
+    if (!REVERSED.includes(payment.status) || seen) return 'ALREADY_APPROVED';
+    if (payment.id === attempt.paymentId)
+      await tx
+        .update(paymentAttempts)
+        .set({ paymentStatus: payment.status, updatedAt: new Date() })
+        .where(eq(paymentAttempts.id, attempt.id));
+    if (payment.status === 'charged_back')
+      await this.audit.record(tx, {
+        actorId: null,
+        action: 'payment.charged_back',
+        entityType: 'reservation',
+        entityId: attempt.reservationId,
+        after: {
+          code: 'CHARGEBACK',
+          paymentId: payment.id,
+          statusDetail: payment.statusDetail,
+        },
+      });
+    return `PAYMENT_${payment.status.toUpperCase()}`;
+  }
+
+  private async confirm(
+    tx: Transaction,
+    reservationId: string,
+    paymentId: string,
+  ): Promise<string> {
     const [reservation] = await tx
-      .select({ status: reservations.status, eventStandId: reservations.eventStandId })
+      .select({
+        status: reservations.status,
+        eventStandId: reservations.eventStandId,
+      })
       .from(reservations)
       .where(eq(reservations.id, reservationId))
       .for('update');
     if (!reservation || !CONFIRMABLE.includes(reservation.status)) {
-      // INV-07: the money is kept on record; the refund is handled by reconciliation (PAY-05).
+      // INV-07: the money is kept on record; an admin refunds it (POST /reservations/:id/refunds).
       await this.audit.record(tx, {
         actorId: null,
         action: 'payment.late_conflict',
         entityType: 'reservation',
         entityId: reservationId,
-        after: { code: 'LATE_PAYMENT_CONFLICT', paymentId, reservationStatus: reservation?.status ?? null },
+        after: {
+          code: 'LATE_PAYMENT_CONFLICT',
+          paymentId,
+          reservationStatus: reservation?.status ?? null,
+        },
       });
       return 'LATE_PAYMENT_CONFLICT';
     }
@@ -192,7 +290,11 @@ export class MercadoPagoWebhooksService {
     return 'CONFIRMED';
   }
 
-  private async finish(inboxId: string, status: WebhookInboxStatus, outcome: string): Promise<void> {
+  private async finish(
+    inboxId: string,
+    status: WebhookInboxStatus,
+    outcome: string,
+  ): Promise<void> {
     await this.database.db
       .update(paymentWebhookInbox)
       .set({ status, outcome, processedAt: new Date() })
@@ -203,6 +305,8 @@ export class MercadoPagoWebhooksService {
   private logDrift(requestId: string, signature: string | undefined): void {
     const ts = Number(/(?:^|,)\s*ts=(\d+)/.exec(signature ?? '')?.[1]);
     if (Number.isFinite(ts))
-      this.logger.log(`Mercado Pago webhook ${requestId} ts drift ${Math.round(Date.now() / 1000 - ts)}s`);
+      this.logger.log(
+        `Mercado Pago webhook ${requestId} ts drift ${Math.round(Date.now() / 1000 - ts)}s`,
+      );
   }
 }

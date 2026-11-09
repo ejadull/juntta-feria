@@ -1,4 +1,7 @@
-import { BadGatewayException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadGatewayException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 /** Checkout for one payment attempt; the amount is the server snapshot (INV-05). */
 export interface CheckoutRequest {
@@ -10,7 +13,11 @@ export interface CheckoutRequest {
   readonly currency: string;
   /** ≤ the hold expiry (PAY-02). */
   readonly expiresAt: Date;
-  readonly backUrls: { readonly success: string; readonly pending: string; readonly failure: string };
+  readonly backUrls: {
+    readonly success: string;
+    readonly pending: string;
+    readonly failure: string;
+  };
   readonly notificationUrl?: string;
 }
 
@@ -28,6 +35,8 @@ export interface ProviderPayment {
   readonly amountCents: number;
   readonly currency: string;
   readonly collectorId: string | null;
+  /** Starts the 180-day refund window (PAY-06). */
+  readonly approvedAt: Date | null;
 }
 
 /**
@@ -38,14 +47,21 @@ export interface PaymentProvider {
   createCheckout(request: CheckoutRequest): Promise<Checkout>;
   getPayment(tenantId: string, paymentId: string): Promise<ProviderPayment>;
   /** Every payment made against one attempt (PAY-05), whether or not it was ever notified. */
-  findPayments(tenantId: string, externalReference: string): Promise<ProviderPayment[]>;
+  findPayments(
+    tenantId: string,
+    externalReference: string,
+  ): Promise<ProviderPayment[]>;
   refund(
     tenantId: string,
     paymentId: string,
     idempotencyKey: string,
     amountCents?: number,
   ): Promise<{ readonly id: string; readonly status: string }>;
-  cancel(tenantId: string, paymentId: string, idempotencyKey: string): Promise<{ readonly status: string }>;
+  cancel(
+    tenantId: string,
+    paymentId: string,
+    idempotencyKey: string,
+  ): Promise<{ readonly status: string }>;
 }
 
 export const PAYMENT_PROVIDER = Symbol('PaymentProvider');

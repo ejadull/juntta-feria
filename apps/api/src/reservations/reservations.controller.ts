@@ -17,12 +17,21 @@ import { isUuid } from '../db/database.service.js';
 import { parseBody } from '../http/parse-body.js';
 import {
   MANAGERS,
+  OWNERS,
   TenantScoped,
   type TenantRequest,
 } from '../tenancy/tenant-scoped.decorator.js';
 import { CheckoutService, type CheckoutView } from './checkout.service.js';
-import { createReservationInput, listReservationsQuery } from './reservation.input.js';
-import { ReservationsService, type ReservationView } from './reservations.service.js';
+import {
+  createReservationInput,
+  listReservationsQuery,
+  refundInput,
+} from './reservation.input.js';
+import { RefundsService, type RefundResult } from './refunds.service.js';
+import {
+  ReservationsService,
+  type ReservationView,
+} from './reservations.service.js';
 
 /** Exhibitors only see their own reservations; managers see the organization's. */
 const ownerScope = (request: TenantRequest): string | null =>
@@ -35,7 +44,10 @@ function reservationId(id: string): string {
 
 function idempotencyKey(request: TenantRequest): string {
   const key = request.headers['idempotency-key'];
-  if (!isUuid(key)) throw new BadRequestException('An Idempotency-Key header with a UUID is required.');
+  if (!isUuid(key))
+    throw new BadRequestException(
+      'An Idempotency-Key header with a UUID is required.',
+    );
   return key;
 }
 
@@ -45,6 +57,7 @@ export class ReservationsController {
   constructor(
     private readonly reservations: ReservationsService,
     private readonly checkouts: CheckoutService,
+    private readonly refunds: RefundsService,
   ) {}
 
   /** 201 for a new hold, 200 when the same Idempotency-Key is replayed (§5.1). */
@@ -69,15 +82,33 @@ export class ReservationsController {
 
   @Get()
   @TenantScoped(...MANAGERS, 'EXHIBITOR')
-  list(@Req() request: TenantRequest, @Query() query: unknown): Promise<ReservationView[]> {
-    const { eventId } = parseBody(listReservationsQuery, query, 'reservations query');
-    return this.reservations.list(request.tenant.id, ownerScope(request), eventId);
+  list(
+    @Req() request: TenantRequest,
+    @Query() query: unknown,
+  ): Promise<ReservationView[]> {
+    const { eventId } = parseBody(
+      listReservationsQuery,
+      query,
+      'reservations query',
+    );
+    return this.reservations.list(
+      request.tenant.id,
+      ownerScope(request),
+      eventId,
+    );
   }
 
   @Get(':id')
   @TenantScoped(...MANAGERS, 'EXHIBITOR')
-  async get(@Req() request: TenantRequest, @Param('id') id: string): Promise<ReservationView> {
-    const reservation = await this.reservations.get(request.tenant.id, reservationId(id), ownerScope(request));
+  async get(
+    @Req() request: TenantRequest,
+    @Param('id') id: string,
+  ): Promise<ReservationView> {
+    const reservation = await this.reservations.get(
+      request.tenant.id,
+      reservationId(id),
+      ownerScope(request),
+    );
     if (!reservation) throw new NotFoundException('Reservation not found.');
     return reservation;
   }
@@ -104,7 +135,37 @@ export class ReservationsController {
   @Post(':id/cancel')
   @HttpCode(HttpStatus.OK)
   @TenantScoped(...MANAGERS, 'EXHIBITOR')
-  cancel(@Req() request: TenantRequest, @Param('id') id: string): Promise<ReservationView> {
-    return this.reservations.cancel(request.tenant.id, request.user.id, reservationId(id), ownerScope(request));
+  cancel(
+    @Req() request: TenantRequest,
+    @Param('id') id: string,
+  ): Promise<ReservationView> {
+    return this.reservations.cancel(
+      request.tenant.id,
+      request.user.id,
+      reservationId(id),
+      ownerScope(request),
+    );
+  }
+
+  /** PAY-06: refunds approved payments and cancels pending ones; 201 new, 200 replay. */
+  @Post(':id/refunds')
+  @TenantScoped(...OWNERS)
+  async refund(
+    @Req() request: TenantRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<RefundResult> {
+    const key = idempotencyKey(request);
+    const { amountCents } = parseBody(refundInput, body ?? {}, 'refund');
+    const { result, created } = await this.refunds.refund(
+      request.tenant.id,
+      request.user.id,
+      reservationId(id),
+      key,
+      amountCents,
+    );
+    void reply.status(created ? HttpStatus.CREATED : HttpStatus.OK);
+    return result;
   }
 }

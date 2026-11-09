@@ -163,6 +163,7 @@ describe('MercadoPagoProvider (PAY-01)', () => {
         transaction_amount: 45_000.5,
         currency_id: 'ARS',
         collector_id: 777,
+        date_approved: '2026-11-01T10:00:00.000-03:00',
       },
     });
 
@@ -174,6 +175,7 @@ describe('MercadoPagoProvider (PAY-01)', () => {
       amountCents: 4_500_050,
       currency: 'ARS',
       collectorId: '777',
+      approvedAt: new Date('2026-11-01T13:00:00.000Z'),
     });
     expect(sent[0]).toMatchObject({
       url: 'https://api.mercadopago.com/v1/payments/123',
@@ -236,7 +238,10 @@ describe('MercadoPagoProvider (PAY-01)', () => {
       },
     });
 
-    const found = await sandbox().findPayments(TENANT, checkout.externalReference);
+    const found = await sandbox().findPayments(
+      TENANT,
+      checkout.externalReference,
+    );
 
     expect(found).toEqual([
       {
@@ -247,10 +252,13 @@ describe('MercadoPagoProvider (PAY-01)', () => {
         amountCents: 4_500_050,
         currency: 'ARS',
         collectorId: '777',
+        approvedAt: null,
       },
     ]);
     const url = new URL(sent[0].url);
     expect(url.pathname).toBe('/v1/payments/search');
-    expect(url.searchParams.get('external_reference')).toBe(checkout.externalReference);
+    expect(url.searchParams.get('external_reference')).toBe(
+      checkout.externalReference,
+    );
   });
 });

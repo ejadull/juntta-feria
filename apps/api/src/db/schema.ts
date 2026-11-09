@@ -183,13 +183,18 @@ export const venues = pgTable(
     widthM: meters('width_m'),
     heightM: meters('height_m'),
     createdAt: createdAt(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     // Target of composite FKs (tenant_id, venue_id) from layouts and events (INV-02).
     unique('venues_tenant_id_unique').on(t.tenantId, t.id),
     // "Predio Norte" and " predio norte" are the same venue.
-    uniqueIndex('venues_tenant_name_unique').on(t.tenantId, sql`lower(btrim(${t.name}))`),
+    uniqueIndex('venues_tenant_name_unique').on(
+      t.tenantId,
+      sql`lower(btrim(${t.name}))`,
+    ),
     check('venues_type_check', sql`${t.type} IN ('FIXED', 'TEMPORARY')`),
     check('venues_name_check', sql`btrim(${t.name}) <> ''`),
     check('venues_size_check', sql`${t.widthM} > 0 AND ${t.heightM} > 0`),
@@ -222,7 +227,11 @@ export const layoutTemplates = pgTable(
   ],
 );
 
-export const LAYOUT_VERSION_STATUSES = ['DRAFT', 'PUBLISHED', 'ARCHIVED'] as const;
+export const LAYOUT_VERSION_STATUSES = [
+  'DRAFT',
+  'PUBLISHED',
+  'ARCHIVED',
+] as const;
 export type LayoutVersionStatus = (typeof LAYOUT_VERSION_STATUSES)[number];
 
 /**
@@ -238,14 +247,22 @@ export const layoutVersions = pgTable(
     version: integer('version').notNull(),
     widthM: meters('width_m'),
     heightM: meters('height_m'),
-    status: text('status').$type<LayoutVersionStatus>().notNull().default('DRAFT'),
+    status: text('status')
+      .$type<LayoutVersionStatus>()
+      .notNull()
+      .default('DRAFT'),
     publishedAt: timestamp('published_at', { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
     unique('layout_versions_tenant_id_unique').on(t.tenantId, t.id),
-    unique('layout_versions_template_version_unique').on(t.templateId, t.version),
-    uniqueIndex('layout_versions_one_draft').on(t.templateId).where(sql`${t.status} = 'DRAFT'`),
+    unique('layout_versions_template_version_unique').on(
+      t.templateId,
+      t.version,
+    ),
+    uniqueIndex('layout_versions_one_draft')
+      .on(t.templateId)
+      .where(sql`${t.status} = 'DRAFT'`),
     uniqueIndex('layout_versions_one_published')
       .on(t.templateId)
       .where(sql`${t.status} = 'PUBLISHED'`),
@@ -254,13 +271,19 @@ export const layoutVersions = pgTable(
       columns: [t.tenantId, t.templateId],
       foreignColumns: [layoutTemplates.tenantId, layoutTemplates.id],
     }).onDelete('cascade'),
-    check('layout_versions_status_check', sql`${t.status} IN ('DRAFT', 'PUBLISHED', 'ARCHIVED')`),
+    check(
+      'layout_versions_status_check',
+      sql`${t.status} IN ('DRAFT', 'PUBLISHED', 'ARCHIVED')`,
+    ),
     check(
       'layout_versions_published_at_check',
       sql`(${t.status} = 'DRAFT') = (${t.publishedAt} IS NULL)`,
     ),
     check('layout_versions_version_check', sql`${t.version} > 0`),
-    check('layout_versions_size_check', sql`${t.widthM} > 0 AND ${t.heightM} > 0`),
+    check(
+      'layout_versions_size_check',
+      sql`${t.widthM} > 0 AND ${t.heightM} > 0`,
+    ),
   ],
 );
 
@@ -293,12 +316,22 @@ export const layoutObjects = pgTable(
     kind: text('kind').$type<LayoutObjectKind>().notNull(),
     code: text('code'),
     geometry: polygon('geometry').notNull(),
-    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    metadata: jsonb('metadata')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
   },
   (t) => [
-    primaryKey({ name: 'layout_objects_pk', columns: [t.layoutVersionId, t.id] }),
+    primaryKey({
+      name: 'layout_objects_pk',
+      columns: [t.layoutVersionId, t.id],
+    }),
     // Target of event_stands (tenant, version, object) composite FK (INV-03).
-    unique('layout_objects_tenant_version_id_unique').on(t.tenantId, t.layoutVersionId, t.id),
+    unique('layout_objects_tenant_version_id_unique').on(
+      t.tenantId,
+      t.layoutVersionId,
+      t.id,
+    ),
     foreignKey({
       name: 'layout_objects_version_fk',
       columns: [t.tenantId, t.layoutVersionId],
@@ -308,14 +341,24 @@ export const layoutObjects = pgTable(
       'layout_objects_kind_check',
       sql`${t.kind} IN ('STAND', 'AISLE', 'ENTRY', 'EXIT', 'UTILITY', 'OBSTACLE', 'EMERGENCY')`,
     ),
-    check('layout_objects_metadata_check', sql`jsonb_typeof(${t.metadata}) = 'object'`),
+    check(
+      'layout_objects_metadata_check',
+      sql`jsonb_typeof(${t.metadata}) = 'object'`,
+    ),
   ],
 );
 
-export const EVENT_STATUSES = ['DRAFT', 'PUBLISHED', 'ACTIVE', 'CLOSED', 'CANCELLED'] as const;
+export const EVENT_STATUSES = [
+  'DRAFT',
+  'PUBLISHED',
+  'ACTIVE',
+  'CLOSED',
+  'CANCELLED',
+] as const;
 export type EventStatus = (typeof EVENT_STATUSES)[number];
 
-const instant = (name: string) => timestamp(name, { withTimezone: true }).notNull();
+const instant = (name: string) =>
+  timestamp(name, { withTimezone: true }).notNull();
 
 /**
  * Event on a published, immutable layout version (EVT-01, INV-03). The slug is global because
@@ -337,12 +380,18 @@ export const events = pgTable(
     status: text('status').$type<EventStatus>().notNull().default('DRAFT'),
     publishedAt: timestamp('published_at', { withTimezone: true }),
     createdAt: createdAt(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     unique('events_tenant_id_unique').on(t.tenantId, t.id),
     // Target of event_stands (tenant, event, layout version): a stand comes from the event's layout.
-    unique('events_tenant_id_layout_unique').on(t.tenantId, t.id, t.layoutVersionId),
+    unique('events_tenant_id_layout_unique').on(
+      t.tenantId,
+      t.id,
+      t.layoutVersionId,
+    ),
     foreignKey({
       name: 'events_venue_fk',
       columns: [t.tenantId, t.venueId],
@@ -383,9 +432,17 @@ export const eventSectors = pgTable(
   },
   (t) => [
     // Target of the INV-09 composite FK from event_stands.
-    unique('event_sectors_tenant_event_id_unique').on(t.tenantId, t.eventId, t.id),
+    unique('event_sectors_tenant_event_id_unique').on(
+      t.tenantId,
+      t.eventId,
+      t.id,
+    ),
     // "Diseño" and "diseño " are the same sector.
-    uniqueIndex('event_sectors_name_unique').on(t.tenantId, t.eventId, sql`lower(btrim(${t.name}))`),
+    uniqueIndex('event_sectors_name_unique').on(
+      t.tenantId,
+      t.eventId,
+      sql`lower(btrim(${t.name}))`,
+    ),
     foreignKey({
       name: 'event_sectors_event_fk',
       columns: [t.tenantId, t.eventId],
@@ -395,7 +452,12 @@ export const eventSectors = pgTable(
   ],
 );
 
-export const EVENT_STAND_STATUSES = ['AVAILABLE', 'BLOCKED', 'ASSIGNED', 'DISABLED'] as const;
+export const EVENT_STAND_STATUSES = [
+  'AVAILABLE',
+  'BLOCKED',
+  'ASSIGNED',
+  'DISABLED',
+] as const;
 export type EventStandStatus = (typeof EVENT_STAND_STATUSES)[number];
 
 /**
@@ -412,10 +474,15 @@ export const eventStands = pgTable(
     layoutObjectId: uuid('layout_object_id').notNull(),
     sectorId: uuid('sector_id'),
     code: text('code').notNull(),
-    status: text('status').$type<EventStandStatus>().notNull().default('AVAILABLE'),
+    status: text('status')
+      .$type<EventStandStatus>()
+      .notNull()
+      .default('AVAILABLE'),
     priceCents: bigint('price_cents', { mode: 'number' }),
     currency: char('currency', { length: 3 }).notNull().default('ARS'),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     unique('event_stands_tenant_id_unique').on(t.tenantId, t.id),
@@ -429,20 +496,31 @@ export const eventStands = pgTable(
     foreignKey({
       name: 'event_stands_layout_object_fk',
       columns: [t.tenantId, t.layoutVersionId, t.layoutObjectId],
-      foreignColumns: [layoutObjects.tenantId, layoutObjects.layoutVersionId, layoutObjects.id],
+      foreignColumns: [
+        layoutObjects.tenantId,
+        layoutObjects.layoutVersionId,
+        layoutObjects.id,
+      ],
     }).onDelete('restrict'),
     // INV-09. The migration turns ON DELETE into SET NULL (sector_id) (PostgreSQL >= 15).
     foreignKey({
       name: 'event_stands_sector_fk',
       columns: [t.tenantId, t.eventId, t.sectorId],
-      foreignColumns: [eventSectors.tenantId, eventSectors.eventId, eventSectors.id],
+      foreignColumns: [
+        eventSectors.tenantId,
+        eventSectors.eventId,
+        eventSectors.id,
+      ],
     }),
     index('event_stands_event_idx').on(t.eventId),
     check(
       'event_stands_status_check',
       sql`${t.status} IN ('AVAILABLE', 'BLOCKED', 'ASSIGNED', 'DISABLED')`,
     ),
-    check('event_stands_price_check', sql`${t.priceCents} IS NULL OR ${t.priceCents} >= 0`),
+    check(
+      'event_stands_price_check',
+      sql`${t.priceCents} IS NULL OR ${t.priceCents} >= 0`,
+    ),
     check('event_stands_currency_check', sql`${t.currency} = 'ARS'`),
   ],
 );
@@ -466,18 +544,28 @@ export const exhibitors = pgTable(
     category: text('category').notNull(),
     description: text('description').notNull().default(''),
     logoKey: text('logo_key'),
-    publicContactOptIn: boolean('public_contact_opt_in').notNull().default(false),
+    publicContactOptIn: boolean('public_contact_opt_in')
+      .notNull()
+      .default(false),
     publicConsentAt: timestamp('public_consent_at', { withTimezone: true }),
     createdAt: createdAt(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     // Target of the reservations (tenant, exhibitor) composite FK (INV-02).
     unique('exhibitors_tenant_id_unique').on(t.tenantId, t.id),
     unique('exhibitors_tenant_user_unique').on(t.tenantId, t.userId),
-    check('exhibitors_names_check', sql`btrim(${t.legalName}) <> '' AND btrim(${t.tradeName}) <> ''`),
+    check(
+      'exhibitors_names_check',
+      sql`btrim(${t.legalName}) <> '' AND btrim(${t.tradeName}) <> ''`,
+    ),
     check('exhibitors_category_check', sql`btrim(${t.category}) <> ''`),
-    check('exhibitors_tax_id_check', sql`${t.taxId} IS NULL OR ${t.taxId} ~ '^[0-9]{11}$'`),
+    check(
+      'exhibitors_tax_id_check',
+      sql`${t.taxId} IS NULL OR ${t.taxId} ~ '^[0-9]{11}$'`,
+    ),
     check(
       'exhibitors_consent_check',
       sql`${t.publicContactOptIn} = (${t.publicConsentAt} IS NOT NULL)`,
@@ -504,12 +592,17 @@ export const exhibitorInvitations = pgTable(
       .references(() => users.id, { onDelete: 'restrict' }),
     expiresAt: instant('expires_at'),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
-    acceptedUserId: uuid('accepted_user_id').references(() => users.id, { onDelete: 'set null' }),
+    acceptedUserId: uuid('accepted_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [
-    index('exhibitor_invitations_tenant_created_idx').on(t.tenantId, t.createdAt),
+    index('exhibitor_invitations_tenant_created_idx').on(
+      t.tenantId,
+      t.createdAt,
+    ),
     check(
       'exhibitor_invitations_final_state_check',
       sql`${t.acceptedAt} IS NULL OR ${t.revokedAt} IS NULL`,
@@ -517,7 +610,11 @@ export const exhibitorInvitations = pgTable(
   ],
 );
 
-export const SUBSCRIPTION_STATUSES = ['ACTIVE', 'PAST_DUE', 'CANCELLED'] as const;
+export const SUBSCRIPTION_STATUSES = [
+  'ACTIVE',
+  'PAST_DUE',
+  'CANCELLED',
+] as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 
 /**
@@ -534,10 +631,15 @@ export const platformSubscriptions = pgTable(
     status: text('status').$type<SubscriptionStatus>().notNull(),
     currentPeriodEnd: instant('current_period_end'),
     providerSubscriptionId: text('provider_subscription_id'),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
-    check('platform_subscriptions_status_check', sql`${t.status} IN ('ACTIVE', 'PAST_DUE', 'CANCELLED')`),
+    check(
+      'platform_subscriptions_status_check',
+      sql`${t.status} IN ('ACTIVE', 'PAST_DUE', 'CANCELLED')`,
+    ),
   ],
 );
 
@@ -553,7 +655,12 @@ export const RESERVATION_STATUSES = [
 export type ReservationStatus = (typeof RESERVATION_STATUSES)[number];
 
 /** Statuses that own the stand (INV-01): at most one per event stand. */
-export const ACTIVE_RESERVATION_STATUSES = ['HELD', 'PAYMENT_PENDING', 'CONFIRMED', 'REFUND_PENDING'] as const;
+export const ACTIVE_RESERVATION_STATUSES = [
+  'HELD',
+  'PAYMENT_PENDING',
+  'CONFIRMED',
+  'REFUND_PENDING',
+] as const;
 
 /**
  * Reservation of an event stand by an exhibitor (RES-01, §6). Price and terms are a snapshot
@@ -576,15 +683,23 @@ export const reservations = pgTable(
     termsVersion: text('terms_version').notNull(),
     idempotencyKey: uuid('idempotency_key').notNull(),
     createdAt: createdAt(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     unique('reservations_tenant_id_unique').on(t.tenantId, t.id),
-    unique('reservations_idempotency_unique').on(t.tenantId, t.userId, t.idempotencyKey),
+    unique('reservations_idempotency_unique').on(
+      t.tenantId,
+      t.userId,
+      t.idempotencyKey,
+    ),
     // INV-01: one active reservation per event stand, whatever the application does.
     uniqueIndex('reservations_one_active_per_stand')
       .on(t.eventStandId)
-      .where(sql`${t.status} IN ('HELD', 'PAYMENT_PENDING', 'CONFIRMED', 'REFUND_PENDING')`),
+      .where(
+        sql`${t.status} IN ('HELD', 'PAYMENT_PENDING', 'CONFIRMED', 'REFUND_PENDING')`,
+      ),
     index('reservations_exhibitor_idx').on(t.exhibitorId),
     foreignKey({
       name: 'reservations_event_stand_fk',
@@ -600,13 +715,22 @@ export const reservations = pgTable(
       'reservations_status_check',
       sql`${t.status} IN ('HELD', 'PAYMENT_PENDING', 'CONFIRMED', 'EXPIRED', 'CANCELLED', 'REFUND_PENDING', 'REFUNDED')`,
     ),
-    check('reservations_hold_check', sql`${t.status} <> 'HELD' OR ${t.holdExpiresAt} IS NOT NULL`),
+    check(
+      'reservations_hold_check',
+      sql`${t.status} <> 'HELD' OR ${t.holdExpiresAt} IS NOT NULL`,
+    ),
     check('reservations_price_check', sql`${t.priceCents} >= 0`),
     check('reservations_terms_check', sql`btrim(${t.termsVersion}) <> ''`),
   ],
 );
 
-export const PAYMENT_ATTEMPT_STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED'] as const;
+export const PAYMENT_ATTEMPT_STATUSES = [
+  'PENDING',
+  'APPROVED',
+  'REJECTED',
+  'CANCELLED',
+  'EXPIRED',
+] as const;
 export type PaymentAttemptStatus = (typeof PAYMENT_ATTEMPT_STATUSES)[number];
 
 /**
@@ -620,7 +744,10 @@ export const paymentAttempts = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     tenantId: tenantId(),
     reservationId: uuid('reservation_id').notNull(),
-    status: text('status').$type<PaymentAttemptStatus>().notNull().default('PENDING'),
+    status: text('status')
+      .$type<PaymentAttemptStatus>()
+      .notNull()
+      .default('PENDING'),
     amountCents: bigint('amount_cents', { mode: 'number' }).notNull(),
     currency: char('currency', { length: 3 }).notNull(),
     /** Set once, when the provider answers; null while the preference is not created. */
@@ -632,11 +759,17 @@ export const paymentAttempts = pgTable(
     expiresAt: instant('expires_at'),
     idempotencyKey: uuid('idempotency_key').notNull(),
     createdAt: createdAt(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     unique('payment_attempts_tenant_id_unique').on(t.tenantId, t.id),
-    unique('payment_attempts_idempotency_unique').on(t.tenantId, t.reservationId, t.idempotencyKey),
+    unique('payment_attempts_idempotency_unique').on(
+      t.tenantId,
+      t.reservationId,
+      t.idempotencyKey,
+    ),
     uniqueIndex('payment_attempts_one_pending_per_reservation')
       .on(t.reservationId)
       .where(sql`${t.status} = 'PENDING'`),
@@ -650,11 +783,84 @@ export const paymentAttempts = pgTable(
       sql`${t.status} IN ('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED')`,
     ),
     check('payment_attempts_amount_check', sql`${t.amountCents} >= 0`),
-    check('payment_attempts_checkout_check', sql`(${t.preferenceId} IS NULL) = (${t.checkoutUrl} IS NULL)`),
+    check(
+      'payment_attempts_checkout_check',
+      sql`(${t.preferenceId} IS NULL) = (${t.checkoutUrl} IS NULL)`,
+    ),
   ],
 );
 
-export const WEBHOOK_INBOX_STATUSES = ['RECEIVED', 'PROCESSED', 'IGNORED', 'FAILED'] as const;
+export const PAYMENT_REFUND_KINDS = ['REFUND', 'CANCEL'] as const;
+export type PaymentRefundKind = (typeof PAYMENT_REFUND_KINDS)[number];
+export const PAYMENT_REFUND_STATUSES = ['PENDING', 'SUCCEEDED'] as const;
+export type PaymentRefundStatus = (typeof PAYMENT_REFUND_STATUSES)[number];
+
+/**
+ * One reversal sent to the provider (PAY-06): a refund of an approved payment or the
+ * cancellation of a pending one, one row per `payment_id`. The row id is the provider
+ * idempotency key, so a retry of a PENDING row can never refund twice.
+ */
+export const paymentRefunds = pgTable(
+  'payment_refunds',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    reservationId: uuid('reservation_id').notNull(),
+    attemptId: uuid('attempt_id').notNull(),
+    paymentId: text('payment_id').notNull(),
+    kind: text('kind').$type<PaymentRefundKind>().notNull(),
+    /** Null refunds whatever is left of the payment. */
+    amountCents: bigint('amount_cents', { mode: 'number' }),
+    status: text('status')
+      .$type<PaymentRefundStatus>()
+      .notNull()
+      .default('PENDING'),
+    providerRefundId: text('provider_refund_id'),
+    idempotencyKey: uuid('idempotency_key').notNull(),
+    actorId: uuid('actor_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique('payment_refunds_idempotency_unique').on(
+      t.tenantId,
+      t.reservationId,
+      t.idempotencyKey,
+      t.paymentId,
+    ),
+    index('payment_refunds_reservation_idx').on(t.reservationId),
+    foreignKey({
+      name: 'payment_refunds_reservation_fk',
+      columns: [t.tenantId, t.reservationId],
+      foreignColumns: [reservations.tenantId, reservations.id],
+    }).onDelete('restrict'),
+    foreignKey({
+      name: 'payment_refunds_attempt_fk',
+      columns: [t.tenantId, t.attemptId],
+      foreignColumns: [paymentAttempts.tenantId, paymentAttempts.id],
+    }).onDelete('restrict'),
+    check('payment_refunds_kind_check', sql`${t.kind} IN ('REFUND', 'CANCEL')`),
+    check(
+      'payment_refunds_status_check',
+      sql`${t.status} IN ('PENDING', 'SUCCEEDED')`,
+    ),
+    check(
+      'payment_refunds_amount_check',
+      sql`${t.amountCents} IS NULL OR (${t.kind} = 'REFUND' AND ${t.amountCents} > 0)`,
+    ),
+  ],
+);
+
+export const WEBHOOK_INBOX_STATUSES = [
+  'RECEIVED',
+  'PROCESSED',
+  'IGNORED',
+  'FAILED',
+] as const;
 export type WebhookInboxStatus = (typeof WEBHOOK_INBOX_STATUSES)[number];
 
 /**
@@ -671,10 +877,15 @@ export const paymentWebhookInbox = pgTable(
     dataId: text('data_id').notNull(),
     /** Untrusted hint from the notification URL: no FK, checked against the payment. */
     tenantId: uuid('tenant_id'),
-    status: text('status').$type<WebhookInboxStatus>().notNull().default('RECEIVED'),
+    status: text('status')
+      .$type<WebhookInboxStatus>()
+      .notNull()
+      .default('RECEIVED'),
     /** Why it ended as it did (e.g. CONFIRMED, AMOUNT_MISMATCH, LATE_PAYMENT_CONFLICT). */
     outcome: text('outcome'),
-    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    receivedAt: timestamp('received_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     processedAt: timestamp('processed_at', { withTimezone: true }),
   },
   (t) => [

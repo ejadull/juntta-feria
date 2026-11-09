@@ -7,7 +7,12 @@ import { DatabaseService } from '../src/db/database.service.js';
 import { PAYMENT_PROVIDER } from '../src/payments/payment-provider.js';
 import { ReconciliationService } from '../src/payments/reconciliation.service.js';
 import { FakePaymentProvider } from './fake-payment-provider.js';
-import { NOTIFICATION_URL, ORIGIN, WEBHOOK_SECRET, startIntApp } from './int.app.js';
+import {
+  NOTIFICATION_URL,
+  ORIGIN,
+  WEBHOOK_SECRET,
+  startIntApp,
+} from './int.app.js';
 import { ownerTestUrl } from './int.env.js';
 
 /**
@@ -46,7 +51,10 @@ async function owner<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
 async function seed(): Promise<void> {
   await owner(async (c) => {
     const hash = await hashPassword(PASSWORD);
-    await c.query(`INSERT INTO tenants (id, slug, name) VALUES ($1, 'checkout-a', 'Checkout A')`, [T]);
+    await c.query(
+      `INSERT INTO tenants (id, slug, name) VALUES ($1, 'checkout-a', 'Checkout A')`,
+      [T],
+    );
     await c.query(
       `INSERT INTO venues (id, tenant_id, type, name, timezone, width_m, height_m)
        VALUES ($1, $2, 'FIXED', 'Predio checkout', 'America/Argentina/Buenos_Aires', 30, 20)`,
@@ -58,11 +66,10 @@ async function seed(): Promise<void> {
         [`${who}@checkout.test`, hash],
       );
       const id = user.rows[0].id;
-      await c.query(`INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, $3)`, [
-        T,
-        id,
-        who === 'owner' ? 'OWNER' : 'EXHIBITOR',
-      ]);
+      await c.query(
+        `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, $3)`,
+        [T, id, who === 'owner' ? 'OWNER' : 'EXHIBITOR'],
+      );
       if (who === 'owner') continue;
       await c.query(
         `INSERT INTO exhibitors (tenant_id, user_id, legal_name, trade_name, tax_id, category)
@@ -96,7 +103,11 @@ const call = (
   app.inject({
     method,
     url: `/api/v1${url}`,
-    headers: { authorization: `Bearer ${tokens[who]}`, 'x-tenant-id': T, ...headers },
+    headers: {
+      authorization: `Bearer ${tokens[who]}`,
+      'x-tenant-id': T,
+      ...headers,
+    },
     ...(payload ? { payload } : {}),
   });
 
@@ -125,11 +136,19 @@ const hold = async (who: Who, code: string): Promise<string> => {
   return res.json().id as string;
 };
 
-const checkout = (who: Who, reservationId: string, key: string = randomUUID()) =>
-  call('POST', `/reservations/${reservationId}/checkout`, who, undefined, { 'idempotency-key': key });
+const checkout = (
+  who: Who,
+  reservationId: string,
+  key: string = randomUUID(),
+) =>
+  call('POST', `/reservations/${reservationId}/checkout`, who, undefined, {
+    'idempotency-key': key,
+  });
 
 const setReservation = (reservationId: string, change: string) =>
-  owner((c) => c.query(`UPDATE reservations SET ${change} WHERE id = $1`, [reservationId]));
+  owner((c) =>
+    c.query(`UPDATE reservations SET ${change} WHERE id = $1`, [reservationId]),
+  );
 
 beforeAll(async () => {
   await seed();
@@ -137,7 +156,10 @@ beforeAll(async () => {
   database = app.get(DatabaseService);
   for (const who of PEOPLE) tokens[who] = await login(who);
 
-  const template = await call('POST', '/layout-templates', 'owner', { name: 'Plano checkout', venueId: VENUE });
+  const template = await call('POST', '/layout-templates', 'owner', {
+    name: 'Plano checkout',
+    venueId: VENUE,
+  });
   const version = template.json().id;
   await call('PUT', `/layout-versions/${version}/objects`, 'owner', {
     objects: ['C1', 'C2', 'C3', 'C4', 'C5', 'C6'].map((code, i) => ({
@@ -148,7 +170,10 @@ beforeAll(async () => {
       metadata: {},
     })),
   });
-  expect((await call('POST', `/layout-versions/${version}/publish`, 'owner')).statusCode).toBe(200);
+  expect(
+    (await call('POST', `/layout-versions/${version}/publish`, 'owner'))
+      .statusCode,
+  ).toBe(200);
   const now = Date.now();
   const created = await call('POST', '/events', 'owner', {
     venueId: VENUE,
@@ -161,10 +186,17 @@ beforeAll(async () => {
     endsAt: new Date(now + 7 * DAY).toISOString(),
   });
   eventId = created.json().id;
-  const list: { id: string; code: string }[] = (await call('GET', `/events/${eventId}/stands`, 'owner')).json();
+  const list: { id: string; code: string }[] = (
+    await call('GET', `/events/${eventId}/stands`, 'owner')
+  ).json();
   stands = Object.fromEntries(list.map((s) => [s.code, s.id]));
-  await call('PATCH', `/events/${eventId}/stands`, 'owner', { standIds: Object.values(stands), priceCents: PRICE });
-  expect((await call('POST', `/events/${eventId}/publish`, 'owner')).statusCode).toBe(200);
+  await call('PATCH', `/events/${eventId}/stands`, 'owner', {
+    standIds: Object.values(stands),
+    priceCents: PRICE,
+  });
+  expect(
+    (await call('POST', `/events/${eventId}/publish`, 'owner')).statusCode,
+  ).toBe(200);
 }, 120_000);
 
 afterAll(async () => {
@@ -181,7 +213,10 @@ describe('checkout (PAY-02)', () => {
   it('creates a payment attempt and a preference from the reservation snapshot (201)', async () => {
     anaReservation = await hold('ana', 'C1');
     // The stand price changes after the hold: the checkout keeps the frozen one (INV-05).
-    await call('PATCH', `/events/${eventId}/stands`, 'owner', { standIds: [stands.C1], priceCents: 1 });
+    await call('PATCH', `/events/${eventId}/stands`, 'owner', {
+      standIds: [stands.C1],
+      priceCents: 1,
+    });
     anaKey = randomUUID();
 
     const res = await checkout('ana', anaReservation, anaKey);
@@ -190,14 +225,18 @@ describe('checkout (PAY-02)', () => {
     const body = res.json();
     expect(body).toEqual({
       paymentAttemptId: expect.any(String),
-      checkoutUrl: expect.stringMatching(/^https:\/\/sandbox\.mp\.test\/checkout\//),
+      checkoutUrl: expect.stringMatching(
+        /^https:\/\/sandbox\.mp\.test\/checkout\//,
+      ),
       status: 'PENDING',
     });
     anaAttempt = body.paymentAttemptId;
     anaUrl = body.checkoutUrl;
 
     const [sent] = provider.checkouts.slice(-1);
-    const reservation = (await call('GET', `/reservations/${anaReservation}`, 'ana')).json();
+    const reservation = (
+      await call('GET', `/reservations/${anaReservation}`, 'ana')
+    ).json();
     expect(sent).toMatchObject({
       tenantId: T,
       externalReference: anaAttempt,
@@ -220,7 +259,11 @@ describe('checkout (PAY-02)', () => {
     for (const key of [anaKey, randomUUID()]) {
       const res = await checkout('ana', anaReservation, key);
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ paymentAttemptId: anaAttempt, checkoutUrl: anaUrl, status: 'PENDING' });
+      expect(res.json()).toEqual({
+        paymentAttemptId: anaAttempt,
+        checkoutUrl: anaUrl,
+        status: 'PENDING',
+      });
     }
     expect(provider.checkouts).toHaveLength(calls);
   });
@@ -231,25 +274,40 @@ describe('checkout (PAY-02)', () => {
 
     const failed = await checkout('beto', reservation);
     expect(failed.statusCode).toBe(502);
-    expect((await call('GET', `/reservations/${reservation}`, 'beto')).json().status).toBe('HELD');
+    expect(
+      (await call('GET', `/reservations/${reservation}`, 'beto')).json().status,
+    ).toBe('HELD');
 
     const retried = await checkout('beto', reservation);
     expect(retried.statusCode).toBe(201);
-    const attempts = provider.checkouts.slice(-2).map((c) => c.externalReference);
+    const attempts = provider.checkouts
+      .slice(-2)
+      .map((c) => c.externalReference);
     expect(attempts[0]).toBe(attempts[1]);
     expect(retried.json().paymentAttemptId).toBe(attempts[0]);
   });
 
   it('answers two concurrent checkouts with one attempt and one checkout URL', async () => {
     const reservation = await hold('gabi', 'C3');
-    const [a, b] = await Promise.all([checkout('gabi', reservation), checkout('gabi', reservation)]);
-    expect([a.statusCode, b.statusCode].sort((x, y) => x - y)).toEqual([200, 201]);
+    const [a, b] = await Promise.all([
+      checkout('gabi', reservation),
+      checkout('gabi', reservation),
+    ]);
+    expect([a.statusCode, b.statusCode].sort((x, y) => x - y)).toEqual([
+      200, 201,
+    ]);
     expect(a.json()).toEqual(b.json());
   });
 
   it('never releases a reservation with a checkout when its hold expires (§6.6)', async () => {
-    await setReservation(anaReservation, `hold_expires_at = now() - interval '1 second'`);
-    expect((await call('GET', `/reservations/${anaReservation}`, 'ana')).json().status).toBe('PAYMENT_PENDING');
+    await setReservation(
+      anaReservation,
+      `hold_expires_at = now() - interval '1 second'`,
+    );
+    expect(
+      (await call('GET', `/reservations/${anaReservation}`, 'ana')).json()
+        .status,
+    ).toBe('PAYMENT_PENDING');
     const other = await call(
       'POST',
       '/reservations',
@@ -268,7 +326,10 @@ describe('checkout (PAY-02)', () => {
     expect(cancelled.json().code).toBe('RESERVATION_NOT_PAYABLE');
 
     const expired = await hold('ana', 'C4');
-    await setReservation(expired, `hold_expires_at = now() - interval '1 second'`);
+    await setReservation(
+      expired,
+      `hold_expires_at = now() - interval '1 second'`,
+    );
     const res = await checkout('ana', expired);
     expect(res.statusCode).toBe(409);
     expect(res.json().code).toBe('RESERVATION_NOT_PAYABLE');
@@ -281,7 +342,11 @@ describe('checkout (PAY-02)', () => {
   });
 
   it('requires a UUID Idempotency-Key', async () => {
-    const res = await call('POST', `/reservations/${anaReservation}/checkout`, 'ana');
+    const res = await call(
+      'POST',
+      `/reservations/${anaReservation}/checkout`,
+      'ana',
+    );
     expect(res.statusCode).toBe(400);
   });
 
@@ -300,21 +365,31 @@ describe('checkout (PAY-02)', () => {
 
   it('audits the checkout', async () => {
     const { rows } = await database.withTenant(T, (tx) =>
-      tx.execute(sql`SELECT action FROM audit_logs WHERE entity_type = 'payment_attempt'`),
+      tx.execute(
+        sql`SELECT action FROM audit_logs WHERE entity_type = 'payment_attempt'`,
+      ),
     );
     expect(rows.map((r) => r.action)).toContain('payment_attempt.created');
   });
 
   it('keeps payment attempts invisible outside a tenant transaction (RLS)', async () => {
-    const { rows } = await database.db.execute(sql`SELECT 1 FROM payment_attempts`);
+    const { rows } = await database.db.execute(
+      sql`SELECT 1 FROM payment_attempts`,
+    );
     expect(rows).toEqual([]);
   });
 });
 
 /** Signs like Mercado Pago: HMAC-SHA256 over `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`. */
-const sign = (dataId: string, requestId: string, secret = WEBHOOK_SECRET): string => {
+const sign = (
+  dataId: string,
+  requestId: string,
+  secret = WEBHOOK_SECRET,
+): string => {
   const ts = Math.floor(Date.now() / 1000);
-  const hash = createHmac('sha256', secret).update(`id:${dataId};request-id:${requestId};ts:${ts};`).digest('hex');
+  const hash = createHmac('sha256', secret)
+    .update(`id:${dataId};request-id:${requestId};ts:${ts};`)
+    .digest('hex');
   return `ts=${ts},v1=${hash}`;
 };
 
@@ -327,14 +402,24 @@ interface Notify {
 
 const notify = (dataId: string, options: Notify = {}) => {
   const { requestId = randomUUID(), tenant = T, topic = 'payment' } = options;
-  const signature = options.signature === undefined ? sign(dataId, requestId) : options.signature;
-  const query = new URLSearchParams({ 'data.id': dataId, type: topic, ...(tenant ? { tenant } : {}) });
+  const signature =
+    options.signature === undefined
+      ? sign(dataId, requestId)
+      : options.signature;
+  const query = new URLSearchParams({
+    'data.id': dataId,
+    type: topic,
+    ...(tenant ? { tenant } : {}),
+  });
   return {
     requestId,
     response: app.inject({
       method: 'POST',
       url: `/api/v1/webhooks/mercadopago?${query}`,
-      headers: { 'x-request-id': requestId, ...(signature ? { 'x-signature': signature } : {}) },
+      headers: {
+        'x-request-id': requestId,
+        ...(signature ? { 'x-signature': signature } : {}),
+      },
       payload: { type: topic, action: 'payment.updated', data: { id: dataId } },
     }),
   };
@@ -355,7 +440,8 @@ const settled = (requestId: string) =>
   vi.waitFor(
     async () => {
       const [row] = await inbox(requestId);
-      if (!row || row.status === 'RECEIVED') throw new Error('not processed yet');
+      if (!row || row.status === 'RECEIVED')
+        throw new Error('not processed yet');
       return row;
     },
     { timeout: 5_000, interval: 50 },
@@ -377,7 +463,13 @@ const attemptOf = async (who: Who, code: string) =>
     )
   ).rows[0];
 
-const pay = (id: string, externalReference: string, status: string, amountCents = PRICE) =>
+const pay = (
+  id: string,
+  externalReference: string,
+  status: string,
+  amountCents = PRICE,
+  approvedAt: Date | null = status === 'approved' ? new Date() : null,
+) =>
   provider.payments.set(id, {
     id,
     status,
@@ -386,15 +478,16 @@ const pay = (id: string, externalReference: string, status: string, amountCents 
     amountCents,
     currency: 'ARS',
     collectorId: '1',
+    approvedAt,
   });
 
 const auditCount = async (action: string, entityId: string) =>
   (
     await owner((c) =>
-      c.query<{ n: number }>(`SELECT count(*)::int AS n FROM audit_logs WHERE action = $1 AND entity_id = $2`, [
-        action,
-        entityId,
-      ]),
+      c.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM audit_logs WHERE action = $1 AND entity_id = $2`,
+        [action, entityId],
+      ),
     )
   ).rows[0].n;
 
@@ -403,7 +496,9 @@ let failedRequestId = '';
 
 describe('Mercado Pago webhooks (PAY-03)', () => {
   it('rejects a missing or invalid signature with 401 and stores nothing', async () => {
-    const forged = notify('9001', { signature: sign('9001', 'other', 'not-the-secret') });
+    const forged = notify('9001', {
+      signature: sign('9001', 'other', 'not-the-secret'),
+    });
     expect((await forged.response).statusCode).toBe(401);
     const unsigned = notify('9001', { signature: null });
     expect((await unsigned.response).statusCode).toBe(401);
@@ -418,9 +513,18 @@ describe('Mercado Pago webhooks (PAY-03)', () => {
     const { requestId, response } = notify('9100');
     expect((await response).statusCode).toBe(200);
 
-    expect(await settled(requestId)).toEqual({ status: 'PROCESSED', outcome: 'CONFIRMED' });
-    expect(provider.paymentReads.at(-1)).toEqual({ tenantId: T, paymentId: '9100' });
-    expect((await call('GET', `/reservations/${beto.reservationId}`, 'beto')).json().status).toBe('CONFIRMED');
+    expect(await settled(requestId)).toEqual({
+      status: 'PROCESSED',
+      outcome: 'CONFIRMED',
+    });
+    expect(provider.paymentReads.at(-1)).toEqual({
+      tenantId: T,
+      paymentId: '9100',
+    });
+    expect(
+      (await call('GET', `/reservations/${beto.reservationId}`, 'beto')).json()
+        .status,
+    ).toBe('CONFIRMED');
     const stand = (await call('GET', `/events/${eventId}/stands`, 'owner'))
       .json()
       .find((s: { code: string }) => s.code === 'C2');
@@ -433,11 +537,18 @@ describe('Mercado Pago webhooks (PAY-03)', () => {
     await first.response;
     await settled(first.requestId);
     // Same x-request-id again: deduplicated by the inbox, never processed twice.
-    expect((await notify('9100', { requestId: first.requestId }).response).statusCode).toBe(200);
+    expect(
+      (await notify('9100', { requestId: first.requestId }).response)
+        .statusCode,
+    ).toBe(200);
     expect(await inbox(first.requestId)).toHaveLength(1);
     // A new x-request-id for the same approved payment is processed, but changes nothing.
-    expect(await inbox(first.requestId)).toEqual([{ status: 'PROCESSED', outcome: 'ALREADY_APPROVED' }]);
-    expect(await auditCount('reservation.confirmed', beto.reservationId)).toBe(1);
+    expect(await inbox(first.requestId)).toEqual([
+      { status: 'PROCESSED', outcome: 'ALREADY_APPROVED' },
+    ]);
+    expect(await auditCount('reservation.confirmed', beto.reservationId)).toBe(
+      1,
+    );
   });
 
   it('never reverts an approved payment with an older event (monotonic)', async () => {
@@ -445,8 +556,13 @@ describe('Mercado Pago webhooks (PAY-03)', () => {
     pay('9100', beto.attemptId, 'pending');
     const { requestId, response } = notify('9100');
     await response;
-    expect(await settled(requestId)).toMatchObject({ outcome: 'ALREADY_APPROVED' });
-    expect((await call('GET', `/reservations/${beto.reservationId}`, 'beto')).json().status).toBe('CONFIRMED');
+    expect(await settled(requestId)).toMatchObject({
+      outcome: 'ALREADY_APPROVED',
+    });
+    expect(
+      (await call('GET', `/reservations/${beto.reservationId}`, 'beto')).json()
+        .status,
+    ).toBe('CONFIRMED');
   });
 
   it('records a pending payment without confirming anything', async () => {
@@ -454,8 +570,14 @@ describe('Mercado Pago webhooks (PAY-03)', () => {
     pay('9200', gabi.attemptId, 'in_process');
     const { requestId, response } = notify('9200');
     await response;
-    expect(await settled(requestId)).toEqual({ status: 'PROCESSED', outcome: 'PAYMENT_IN_PROCESS' });
-    expect((await call('GET', `/reservations/${gabi.reservationId}`, 'gabi')).json().status).toBe('PAYMENT_PENDING');
+    expect(await settled(requestId)).toEqual({
+      status: 'PROCESSED',
+      outcome: 'PAYMENT_IN_PROCESS',
+    });
+    expect(
+      (await call('GET', `/reservations/${gabi.reservationId}`, 'gabi')).json()
+        .status,
+    ).toBe('PAYMENT_PENDING');
   });
 
   it('never confirms a payment whose amount differs from the snapshot (§6.7)', async () => {
@@ -463,8 +585,13 @@ describe('Mercado Pago webhooks (PAY-03)', () => {
     pay('9201', gabi.attemptId, 'approved', PRICE - 100);
     const { requestId, response } = notify('9201');
     await response;
-    expect(await settled(requestId)).toMatchObject({ outcome: 'AMOUNT_MISMATCH' });
-    expect((await call('GET', `/reservations/${gabi.reservationId}`, 'gabi')).json().status).toBe('PAYMENT_PENDING');
+    expect(await settled(requestId)).toMatchObject({
+      outcome: 'AMOUNT_MISMATCH',
+    });
+    expect(
+      (await call('GET', `/reservations/${gabi.reservationId}`, 'gabi')).json()
+        .status,
+    ).toBe('PAYMENT_PENDING');
     expect(await auditCount('payment.mismatch', gabi.attemptId)).toBe(1);
   });
 
@@ -473,38 +600,57 @@ describe('Mercado Pago webhooks (PAY-03)', () => {
     pay('9300', ana.attemptId, 'approved');
     const { requestId, response } = notify('9300');
     await response;
-    expect(await settled(requestId)).toMatchObject({ outcome: 'LATE_PAYMENT_CONFLICT' });
-    expect((await call('GET', `/reservations/${ana.reservationId}`, 'ana')).json().status).toBe('CANCELLED');
-    expect(await auditCount('payment.late_conflict', ana.reservationId)).toBe(1);
+    expect(await settled(requestId)).toMatchObject({
+      outcome: 'LATE_PAYMENT_CONFLICT',
+    });
+    expect(
+      (await call('GET', `/reservations/${ana.reservationId}`, 'ana')).json()
+        .status,
+    ).toBe('CANCELLED');
+    expect(await auditCount('payment.late_conflict', ana.reservationId)).toBe(
+      1,
+    );
   });
 
   it('acknowledges but ignores other topics, a missing tenant and foreign references', async () => {
     const order = notify('9400', { topic: 'merchant_order' });
     expect((await order.response).statusCode).toBe(200);
-    expect(await inbox(order.requestId)).toEqual([{ status: 'IGNORED', outcome: 'UNSUPPORTED_TOPIC' }]);
+    expect(await inbox(order.requestId)).toEqual([
+      { status: 'IGNORED', outcome: 'UNSUPPORTED_TOPIC' },
+    ]);
 
     const anonymous = notify('9401', { tenant: null });
     expect((await anonymous.response).statusCode).toBe(200);
-    expect(await inbox(anonymous.requestId)).toEqual([{ status: 'IGNORED', outcome: 'MISSING_TENANT' }]);
+    expect(await inbox(anonymous.requestId)).toEqual([
+      { status: 'IGNORED', outcome: 'MISSING_TENANT' },
+    ]);
 
     pay('9402', randomUUID(), 'approved');
     const foreign = notify('9402');
     await foreign.response;
-    expect(await settled(foreign.requestId)).toEqual({ status: 'IGNORED', outcome: 'UNKNOWN_ATTEMPT' });
+    expect(await settled(foreign.requestId)).toEqual({
+      status: 'IGNORED',
+      outcome: 'UNKNOWN_ATTEMPT',
+    });
   });
 
   it('answers 200 and records FAILED when the payment cannot be read', async () => {
     const { requestId, response } = notify('9999');
     failedRequestId = requestId;
     expect((await response).statusCode).toBe(200);
-    expect(await settled(requestId)).toEqual({ status: 'FAILED', outcome: 'PROVIDER_ERROR' });
+    expect(await settled(requestId)).toEqual({
+      status: 'FAILED',
+      outcome: 'PROVIDER_ERROR',
+    });
   });
 });
 
 const statusOf = async (who: Who, reservationId: string): Promise<string> =>
-  (await call('GET', `/reservations/${reservationId}`, who)).json().status as string;
+  (await call('GET', `/reservations/${reservationId}`, who)).json()
+    .status as string;
 
-const minutesAgo = (minutes: number) => `hold_expires_at = now() - interval '${minutes} minutes'`;
+const minutesAgo = (minutes: number) =>
+  `hold_expires_at = now() - interval '${minutes} minutes'`;
 
 describe('reconciliation (PAY-05)', () => {
   const reconcile = (now?: Date) => app.get(ReconciliationService).run(now);
@@ -547,7 +693,11 @@ describe('reconciliation (PAY-05)', () => {
     await reconcile(new Date(Date.now() + 10 * 60_000)); // controlled clock: past the window
     expect(await statusOf('gabi', gabi.reservationId)).toBe('EXPIRED');
     const [attempt] = (
-      await owner((c) => c.query(`SELECT status FROM payment_attempts WHERE id = $1`, [gabi.attemptId]))
+      await owner((c) =>
+        c.query(`SELECT status FROM payment_attempts WHERE id = $1`, [
+          gabi.attemptId,
+        ]),
+      )
     ).rows;
     expect(attempt.status).toBe('EXPIRED');
     expect(await hold('dani', 'C3')).toBeTruthy(); // the stand is free again
@@ -577,7 +727,9 @@ describe('reconciliation (PAY-05)', () => {
     const summary = await reconcile();
 
     expect(summary.webhooksRetried).toBe(1);
-    expect(await inbox(failedRequestId)).toEqual([{ status: 'PROCESSED', outcome: 'CONFIRMED' }]);
+    expect(await inbox(failedRequestId)).toEqual([
+      { status: 'PROCESSED', outcome: 'CONFIRMED' },
+    ]);
     expect(await statusOf('ana', reservation)).toBe('CONFIRMED');
   });
 
@@ -603,7 +755,205 @@ describe('reconciliation (PAY-05)', () => {
     const res = await call('GET', '/payment-incidents', 'owner');
     expect(res.statusCode).toBe(200);
     const codes = res.json().map((i: { code: string }) => i.code);
-    expect(codes).toEqual(expect.arrayContaining(['LATE_PAYMENT_CONFLICT', 'AMOUNT_MISMATCH']));
-    expect((await call('GET', '/payment-incidents', 'ana')).statusCode).toBe(403);
+    expect(codes).toEqual(
+      expect.arrayContaining(['LATE_PAYMENT_CONFLICT', 'AMOUNT_MISMATCH']),
+    );
+    expect((await call('GET', '/payment-incidents', 'ana')).statusCode).toBe(
+      403,
+    );
+  });
+});
+
+const refund = (
+  reservationId: string,
+  key: string = randomUUID(),
+  who: Who = 'owner',
+  payload?: object,
+) =>
+  call('POST', `/reservations/${reservationId}/refunds`, who, payload, {
+    'idempotency-key': key,
+  });
+
+const standStatus = async (code: string): Promise<string> =>
+  (await call('GET', `/events/${eventId}/stands`, 'owner'))
+    .json()
+    .find((s: { code: string }) => s.code === code).status as string;
+
+describe('refunds, cancellations and chargebacks (PAY-06)', () => {
+  it('refunds a confirmed reservation in full and frees the stand; a replay changes nothing', async () => {
+    const eli = await attemptOf('eli', 'C5');
+    const key = randomUUID();
+    const sent = provider.reversals.length;
+
+    const res = await refund(eli.reservationId, key);
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({
+      reservationStatus: 'REFUNDED',
+      refunds: [
+        {
+          paymentId: '9500',
+          kind: 'REFUND',
+          amountCents: null,
+          status: 'SUCCEEDED',
+        },
+      ],
+    });
+    expect(provider.reversals.slice(sent)).toEqual([
+      { kind: 'refund', paymentId: '9500', key: res.json().refunds[0].id },
+    ]);
+    expect(await standStatus('C5')).toBe('AVAILABLE');
+
+    const replay = await refund(eli.reservationId, key);
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toEqual(res.json());
+    expect(provider.reversals).toHaveLength(sent + 1);
+    expect(await auditCount('reservation.refunded', eli.reservationId)).toBe(1);
+  });
+
+  it('answers 409 NOTHING_TO_REFUND when every payment was already reverted', async () => {
+    const eli = await attemptOf('eli', 'C5');
+    const res = await refund(eli.reservationId);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('NOTHING_TO_REFUND');
+  });
+
+  it('resolves a LATE_PAYMENT_CONFLICT by refunding without touching the reservation', async () => {
+    const ana = await attemptOf('ana', 'C1');
+    const res = await refund(ana.reservationId);
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({
+      reservationStatus: 'CANCELLED',
+      refunds: [{ paymentId: '9300' }],
+    });
+  });
+
+  it('reverts a payment made with two means once per payment_id, resuming after a provider failure', async () => {
+    const ana = await attemptOf('ana', 'C6');
+    pay('9998', ana.attemptId, 'approved', 1000);
+    const key = randomUUID();
+    provider.failNextReversal();
+
+    const failed = await refund(ana.reservationId, key);
+    expect(failed.statusCode).toBe(502);
+    expect(await statusOf('ana', ana.reservationId)).toBe('REFUND_PENDING');
+    expect(await standStatus('C6')).toBe('ASSIGNED');
+
+    const retried = await refund(ana.reservationId, key);
+    expect(retried.statusCode).toBe(200);
+    expect(retried.json().reservationStatus).toBe('REFUNDED');
+    expect(
+      retried
+        .json()
+        .refunds.map((r: { paymentId: string }) => r.paymentId)
+        .sort(),
+    ).toEqual(['9998', '9999']);
+    expect(
+      retried
+        .json()
+        .refunds.every((r: { status: string }) => r.status === 'SUCCEEDED'),
+    ).toBe(true);
+  });
+
+  it('refuses a refund after 180 days from the approval', async () => {
+    const beto = await attemptOf('beto', 'C2');
+    pay(
+      '9100',
+      beto.attemptId,
+      'approved',
+      PRICE,
+      new Date(Date.now() - 181 * DAY),
+    );
+    const res = await refund(beto.reservationId);
+    expect(res.statusCode).toBe(422);
+    expect(res.json().code).toBe('REFUND_WINDOW_CLOSED');
+    expect(await statusOf('beto', beto.reservationId)).toBe('CONFIRMED');
+  });
+
+  it('refunds part of a payment and keeps the reservation confirmed', async () => {
+    const beto = await attemptOf('beto', 'C2');
+    pay('9100', beto.attemptId, 'approved');
+
+    const tooMuch = await refund(beto.reservationId, randomUUID(), 'owner', {
+      amountCents: PRICE + 1,
+    });
+    expect(tooMuch.statusCode).toBe(422);
+    expect(tooMuch.json().code).toBe('REFUND_AMOUNT_INVALID');
+
+    const res = await refund(beto.reservationId, randomUUID(), 'owner', {
+      amountCents: 1000,
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({
+      reservationStatus: 'CONFIRMED',
+      refunds: [{ amountCents: 1000 }],
+    });
+    expect(provider.reversals.at(-1)).toMatchObject({
+      kind: 'refund',
+      paymentId: '9100',
+      amountCents: 1000,
+    });
+  });
+
+  it('cancels a pending payment and the reservation waiting for it', async () => {
+    const reservation = await hold('eli', 'C4');
+    expect((await checkout('eli', reservation)).statusCode).toBe(201);
+    const eli = await attemptOf('eli', 'C4');
+    pay('9600', eli.attemptId, 'pending');
+
+    const res = await refund(reservation);
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({
+      reservationStatus: 'CANCELLED',
+      refunds: [{ paymentId: '9600', kind: 'CANCEL' }],
+    });
+    expect(provider.reversals.at(-1)).toMatchObject({
+      kind: 'cancel',
+      paymentId: '9600',
+    });
+    const [attempt] = (
+      await owner((c) =>
+        c.query(`SELECT status FROM payment_attempts WHERE id = $1`, [
+          eli.attemptId,
+        ]),
+      )
+    ).rows;
+    expect(attempt.status).toBe('CANCELLED');
+  });
+
+  it('only lets organization admins refund, with a UUID Idempotency-Key', async () => {
+    const beto = await attemptOf('beto', 'C2');
+    expect(
+      (await refund(beto.reservationId, randomUUID(), 'beto')).statusCode,
+    ).toBe(403);
+    const keyless = await call(
+      'POST',
+      `/reservations/${beto.reservationId}/refunds`,
+      'owner',
+    );
+    expect(keyless.statusCode).toBe(400);
+  });
+
+  it('records a chargeback as an incident without changing the reservation', async () => {
+    const beto = await attemptOf('beto', 'C2');
+    pay('9100', beto.attemptId, 'charged_back');
+    const { requestId, response } = notify('9100');
+    await response;
+    expect(await settled(requestId)).toEqual({
+      status: 'PROCESSED',
+      outcome: 'PAYMENT_CHARGED_BACK',
+    });
+    expect(await statusOf('beto', beto.reservationId)).toBe('CONFIRMED');
+
+    const incidents = (await call('GET', '/payment-incidents', 'owner')).json();
+    expect(incidents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'CHARGEBACK',
+          reservationId: beto.reservationId,
+        }),
+      ]),
+    );
   });
 });

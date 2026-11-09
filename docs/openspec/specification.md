@@ -201,7 +201,8 @@ Autenticación de panel `Authorization: Bearer <token>` (access token JWT, [ADR 
 | GET | /api/v1/reservations/:id | propietario/admin | Estado de reserva |
 | POST | /api/v1/reservations/:id/cancel | propietario/admin | Cancelar según política |
 | POST | /api/v1/webhooks/mercadopago | proveedor | Recibir eventos firmados (`PAY-03`); 401 si la firma no verifica |
-| GET | /api/v1/payment-incidents | owner/admin | Incidencias de cobro para P10: `LATE_PAYMENT_CONFLICT`, `AMOUNT_MISMATCH` (`PAY-05`) |
+| GET | /api/v1/payment-incidents | owner/admin | Incidencias de cobro para P10: `LATE_PAYMENT_CONFLICT`, `AMOUNT_MISMATCH` (`PAY-05`), `CHARGEBACK` (`PAY-06`); cada una trae el `reservationId` a devolver |
+| POST | /api/v1/reservations/{id}/refunds | owner/admin | Con `Idempotency-Key`. Reembolsa los pagos aprobados y cancela los pendientes; `{ "amountCents" }` opcional para un reembolso parcial (`PAY-06`). 201 nuevo, 200 replay |
 | GET | /api/v1/events/:id/metrics | operator | KPIs, incluido `occupancyBySector` ([ADR 0002](../adr/0002-sectores-por-evento.md)) (modelo de lectura: D2 de [`org-ui-shell`](changes/archive/2026-10-30-org-ui-shell/design.md)) |
 | GET | /api/v1/exhibitors | owner/admin/operator | Expositores del tenant con datos privados y estado de documentación (D4 de [`org-ui-shell`](changes/archive/2026-10-30-org-ui-shell/design.md)); nunca para vistas públicas |
 | GET | /api/v1/exhibitors/:id | owner/admin/operator | Ficha privada de un expositor |
@@ -460,7 +461,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `PAY-03` Webhooks de pago | `PAY-02` | firma, inbox deduplicado, consulta server-to-server y confirmación — [detalle](#pay-03--webhooks-de-pago); falta la prueba con el simulador | `IN_PROGRESS` |
 | `PAY-04` Retorno de checkout (P19) | `PAY-02`, `PUB-UI-01..06` | pantallas aprobado/pendiente/rechazado sin confiar en query params | `PENDING` |
 | `PAY-05` Conciliación y pago tardío | `PAY-03` | job de reconciliación, `LATE_PAYMENT_CONFLICT`, P10 — [detalle](#pay-05--conciliación-y-pago-tardío); falta la pantalla P10 y la prueba en sandbox | `IN_PROGRESS` |
-| `PAY-06` Reembolsos, cancelaciones y contracargos | `PAY-05` | refund total/parcial, cancelación de pendientes, chargebacks | `PENDING` |
+| `PAY-06` Reembolsos, cancelaciones y contracargos | `PAY-05` | refund total/parcial, cancelación de pendientes, chargebacks | `IN_PROGRESS` |
 | `PAY-07` Configuración Mercado Pago (P12) | `PAY-01`, `CORE-03` | vincular cuenta vendedora del organizador sin secretos en claro | `PENDING` |
 | `SUB-01` Suscripción SaaS del organizador | `CORE-03`, `PAY-00` | planes (`preapproval_plan`) y suscripciones (`preapproval`); **fuera del MVP** | `PENDING` |
 | `PUB-01` Portal público | `EVT-01`, `EXH-01`, `RES-01` | catálogo, mapa, disponibilidad y accesibilidad | `PENDING` |
@@ -718,14 +719,15 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
   - **Tenant en la `notification_url`** (`?tenant=<id>`, `PAY-02`): el webhook necesita el tenant para leer el pago con las credenciales del vendedor (`PAY-07`). Es un parámetro **sin firmar**, así que sólo es una pista: el pago se lee con ese tenant y se exige que su `external_reference` sea un attempt de ese tenant (RLS). Si no coincide → `UNKNOWN_ATTEMPT`. Requiere `MP_NOTIFICATION_URL`; la URL del panel, sin tenant, se ignora (`MISSING_TENANT`).
   - **Inbox global** (sin RLS, como `users`), deduplicado por `x-request-id`. Guarda sólo identificadores; el `tenant_id` no tiene FK porque viene de un input no confiable. Cada fila termina `PROCESSED`/`IGNORED`/`FAILED` con un `outcome`.
   - **Procesamiento en el mismo proceso** después del 200. Los `FAILED` (proveedor caído) y los `RECEIVED` que quedaron colgados por un reinicio los retoma la conciliación (`PAY-05`).
-  - **Efectos:** sólo `approved` cambia estado (attempt `APPROVED`, reserva `HELD`/`PAYMENT_PENDING` → `CONFIRMED`, stand `ASSIGNED`). `pending`/`in_process`/`rejected`/`cancelled` se registran en el attempt sin tocar la reserva, porque la preferencia sigue pagable hasta vencer y otro medio puede aprobarla. Un attempt aprobado no se toca más; `refunded`/`charged_back` quedan para `PAY-06`.
-  - **Pago aprobado de una reserva que ya no puede confirmarse** (vencida, cancelada o confirmada por otro attempt) → `payment.late_conflict` con `LATE_PAYMENT_CONFLICT` (INV-07); la devolución es de `PAY-05`.
+  - **Efectos:** sólo `approved` cambia estado (attempt `APPROVED`, reserva `HELD`/`PAYMENT_PENDING` → `CONFIRMED`, stand `ASSIGNED`). `pending`/`in_process`/`rejected`/`cancelled` se registran en el attempt sin tocar la reserva, porque la preferencia sigue pagable hasta vencer y otro medio puede aprobarla. Un attempt aprobado no se toca más, salvo para registrar `refunded`/`charged_back` (`PAY-06`).
+  - **Pago aprobado de una reserva que ya no puede confirmarse** (vencida, cancelada o confirmada por otro attempt) → `payment.late_conflict` con `LATE_PAYMENT_CONFLICT` (INV-07); la devolución es de `PAY-06`.
   - **Frescura de `ts`:** se registra la deriva en el log y todavía no se exige tolerancia (ADR 0006 §3).
 - [x] Validar `x-signature` (`ts`, `v1`) con `x-request-id` y `data.id` de la query, según PAY-00 (`WebhookSignatureValidator` del SDK).
 - [x] Topic `payment`; `merchant_order` y los no suscriptos se responden 200 y se ignoran (Checkout Pro manda ambos, y `payment` alcanza).
 - [x] Transiciones monotónicas: un evento viejo no revierte un estado más avanzado.
 - [ ] Cotejo del **cobrador**: llega con `PAY-07`, cuando el id del vendedor sale de la vinculación OAuth. Hoy en sandbox hay una sola cuenta.
-- [ ] Mapear `refunded`/`charged_back` (`PAY-06`) y verificar la lista vigente de `status`/`status_detail` en sandbox.
+- [x] Mapear `refunded`/`charged_back` (`PAY-06`).
+- [ ] Verificar la lista vigente de `status`/`status_detail` en sandbox.
 - [ ] Prueba con el simulador del panel; confirmar que Mercado Pago conserva el query `tenant` de la `notification_url`.
 
 ##### PAY-04 — Retorno de checkout (P19)
@@ -764,7 +766,7 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
      - Proveedor sin respuesta → se mantiene y se alerta en el log (`unreachable`).
      - Sin pagos, o sólo rechazados/cancelados → `EXPIRED` (reserva y attempt, auditado) y el stand queda libre.
   3. Cada cambio vuelve a verificar el estado bajo `FOR UPDATE`: si un webhook ganó mientras tanto, el job no hace nada. Por eso dos instancias a la vez son seguras.
-- **Incidencias (P10):** `GET /payment-incidents` lee la auditoría (`payment.late_conflict` → `LATE_PAYMENT_CONFLICT`, `payment.mismatch` → `AMOUNT_MISMATCH`), de la más nueva a la más vieja. La devolución que las resuelve es de `PAY-06`.
+- **Incidencias (P10):** `GET /payment-incidents` lee la auditoría (`payment.late_conflict` → `LATE_PAYMENT_CONFLICT`, `payment.mismatch` → `AMOUNT_MISMATCH`), de la más nueva a la más vieja. Se resuelven con `POST /reservations/{id}/refunds` (`PAY-06`).
 - [x] Consultar el pago por `external_reference` antes de expirar un hold. La orden comercial no hace falta: los pagos de la preferencia llevan el `external_reference` del attempt.
 - [ ] Alertas y KPIs de conciliación pendiente y errores de webhook (§1.4): hoy sólo `warn` en el log; falta métrica/dashboard.
 - [ ] Pantalla P10 en la web.
@@ -772,12 +774,33 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 
 ##### PAY-06 — Reembolsos, cancelaciones y contracargos
 
-- **Estado:** `PENDING`
+- **Estado:** `IN_PROGRESS` (API lista; falta la prueba en sandbox y la acción en P10)
 - **Dependencias:** `PAY-05`
-- **Entrega:** reembolso total o parcial (`POST /v1/payments/{id}/refunds`; total con cuerpo vacío, parcial con monto **(verificar nombre del campo)**), cancelación de pagos pendientes y registro de contracargos.
+- **Entrega:** `POST /api/v1/reservations/:id/refunds` (OWNER/ADMIN, `Idempotency-Key`): reembolso total o parcial (`POST /v1/payments/{id}/refunds`, parcial con `amount`), cancelación de pagos pendientes (`PUT /v1/payments/{id}` → `cancelled`) y registro de contracargos. Tabla `payment_refunds` (migración `0012_payment_refunds`), una fila por `payment_id`.
 - **Aceptación:** reembolsos idempotentes y auditados; dentro de los 180 días desde la aprobación; un pago con dos medios se revierte por cada `payment_id`.
 - **Evidencia requerida:** tests con proveedor falso y prueba en sandbox.
-- [ ] Topic de contracargos (`GET /v1/chargebacks/{id}`) e incidencia asociada.
+  - 2026-11-09: `test:int` → 162/162 (9 de `PAY-06` en `test/checkout.int-spec.ts`), repetido 3 veces sin fallos:
+    - Reembolso total de una reserva `CONFIRMED` → `REFUNDED` y stand `AVAILABLE`; el replay con la misma clave → 200, misma respuesta, sin otra llamada al proveedor y un solo `reservation.refunded`.
+    - Sin nada para devolver → 409 `NOTHING_TO_REFUND`.
+    - `LATE_PAYMENT_CONFLICT` → se reembolsa sin tocar la reserva (`CANCELLED`).
+    - Pago con dos medios → un reembolso por `payment_id`; si el proveedor falla → 502 y la reserva queda `REFUND_PENDING` (stand todavía `ASSIGNED`); el reintento con la misma clave completa → `REFUNDED`.
+    - Aprobado hace más de 180 días → 422 `REFUND_WINDOW_CLOSED`.
+    - Parcial: monto mayor al pago → 422 `REFUND_AMOUNT_INVALID`; válido → la reserva sigue `CONFIRMED`.
+    - Pago `pending` de una reserva `PAYMENT_PENDING` → se cancela; reserva y attempt `CANCELLED`.
+    - Feriante → 403; sin `Idempotency-Key` → 400.
+    - Webhook `charged_back` → `PAYMENT_CHARGED_BACK`, incidencia `CHARGEBACK` con `reservationId`, la reserva no cambia.
+  - 2026-11-09: `npm test` 109/109 (incluye `date_approved` → `approvedAt`), `test:e2e` 7/7, `tsc` y `oxlint` OK.
+- **Reglas:**
+  1. Se leen del proveedor todos los pagos de los attempts de la reserva (`external_reference`): `approved` → `REFUND`, `pending`/`in_process`/`authorized` → `CANCEL`. Los ya revertidos por completo se saltean.
+  2. Parcial (`amountCents`) sólo con exactamente un pago aprobado y hasta su monto (si no → 422 `PARTIAL_REFUND_AMBIGUOUS` / `REFUND_AMOUNT_INVALID`).
+  3. Tres pasos, como el checkout: se registran las filas `PENDING` bajo lock de la reserva; se llama al proveedor fuera de la transacción con el **id de la fila como `X-Idempotency-Key`**; se cierra bajo lock. Una falla deja la fila `PENDING` (502) y el replay con la misma clave la retoma; otra clave mientras tanto → 409 `REFUND_IN_PROGRESS`.
+  4. Efecto en la reserva, sólo si es total: `CONFIRMED` → `REFUND_PENDING` → `REFUNDED` (stand `ASSIGNED` → `AVAILABLE`); `PAYMENT_PENDING` → `CANCELLED` (attempt `CANCELLED`). En cualquier otro estado (conflicto tardío, monto distinto) o si es parcial, la reserva no cambia.
+  5. Webhook sobre un attempt aprobado: `refunded` sólo se registra en el attempt; `charged_back` audita `payment.charged_back` → incidencia `CHARGEBACK` (decide una persona).
+- [x] Nombre del campo del parcial: `amount` (en unidades; el adapter convierte desde centavos).
+- [ ] Prueba en sandbox de reembolso total, parcial y cancelación de un pago offline.
+- [ ] Botón "Devolver" en P10 (web).
+- [ ] Ponytail: una fila que quedó `PENDING` por una falla del proveedor se retoma sólo cuando el admin reintenta con la misma clave. Sumarla al job de conciliación si pasa seguido.
+- [ ] Ponytail: no se suscribe el topic `chargebacks` (`GET /v1/chargebacks/{id}`); el topic `payment` ya informa `charged_back`. Sumarlo cuando haga falta el detalle de la disputa.
 
 ##### PAY-07 — Configuración Mercado Pago (P12)
 

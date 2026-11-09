@@ -25,7 +25,8 @@ const TIMEOUT_MS = 10_000;
 const RETRIES = 2;
 
 const toUnits = (cents: number): number => cents / 100;
-const toCents = (units: number | undefined): number => Math.round((units ?? 0) * 100);
+const toCents = (units: number | undefined): number =>
+  Math.round((units ?? 0) * 100);
 /** Fields shared by `GET /v1/payments/{id}` and the search results. */
 interface RawPayment {
   readonly id?: string | number;
@@ -35,6 +36,7 @@ interface RawPayment {
   readonly transaction_amount?: number;
   readonly currency_id?: string;
   readonly collector_id?: string | number;
+  readonly date_approved?: string;
 }
 
 const toPayment = (p: RawPayment): ProviderPayment => ({
@@ -45,10 +47,12 @@ const toPayment = (p: RawPayment): ProviderPayment => ({
   amountCents: toCents(p.transaction_amount),
   currency: p.currency_id ?? '',
   collectorId: p.collector_id === undefined ? null : String(p.collector_id),
+  approvedAt: p.date_approved ? new Date(p.date_approved) : null,
 });
 
 /** Mercado Pago wants ISO 8601 with an explicit offset. */
-const withOffset = (date: Date): string => date.toISOString().replace('Z', '+00:00');
+const withOffset = (date: Date): string =>
+  date.toISOString().replace('Z', '+00:00');
 
 /**
  * Mercado Pago adapter (PAY-01, ADR 0006) over the official SDK.
@@ -74,7 +78,9 @@ export class MercadoPagoProvider implements PaymentProvider {
             },
           ],
           external_reference: request.externalReference,
-          ...(request.notificationUrl ? { notification_url: request.notificationUrl } : {}),
+          ...(request.notificationUrl
+            ? { notification_url: request.notificationUrl }
+            : {}),
           back_urls: request.backUrls,
           auto_return: 'approved',
           binary_mode: false,
@@ -85,7 +91,9 @@ export class MercadoPagoProvider implements PaymentProvider {
         requestOptions: { maxRetries: 0 },
       });
       const checkoutUrl =
-        this.settings.environment === 'sandbox' ? preference.sandbox_init_point : preference.init_point;
+        this.settings.environment === 'sandbox'
+          ? preference.sandbox_init_point
+          : preference.init_point;
       if (!preference.id || !checkoutUrl) throw providerFailed();
       return { preferenceId: preference.id, checkoutUrl };
     });
@@ -93,12 +101,18 @@ export class MercadoPagoProvider implements PaymentProvider {
 
   getPayment(tenantId: string, paymentId: string): Promise<ProviderPayment> {
     return this.call('getPayment', tenantId, async (config) => {
-      const p = await new Payment(config).get({ id: paymentId, requestOptions: { maxRetries: RETRIES } });
+      const p = await new Payment(config).get({
+        id: paymentId,
+        requestOptions: { maxRetries: RETRIES },
+      });
       return toPayment(p);
     });
   }
 
-  findPayments(tenantId: string, externalReference: string): Promise<ProviderPayment[]> {
+  findPayments(
+    tenantId: string,
+    externalReference: string,
+  ): Promise<ProviderPayment[]> {
     return this.call('findPayments', tenantId, async (config) => {
       const found = await new Payment(config).search({
         options: { external_reference: externalReference },
@@ -117,14 +131,20 @@ export class MercadoPagoProvider implements PaymentProvider {
     return this.call('refund', tenantId, async (config) => {
       const refund = await new PaymentRefund(config).create({
         payment_id: paymentId,
-        ...(amountCents === undefined ? {} : { body: { amount: toUnits(amountCents) } }),
+        ...(amountCents === undefined
+          ? {}
+          : { body: { amount: toUnits(amountCents) } }),
         requestOptions: { idempotencyKey, maxRetries: RETRIES },
       });
       return { id: String(refund.id), status: refund.status ?? 'unknown' };
     });
   }
 
-  cancel(tenantId: string, paymentId: string, idempotencyKey: string): Promise<{ status: string }> {
+  cancel(
+    tenantId: string,
+    paymentId: string,
+    idempotencyKey: string,
+  ): Promise<{ status: string }> {
     return this.call('cancel', tenantId, async (config) => {
       const payment = await new Payment(config).cancel({
         id: paymentId,
@@ -146,8 +166,11 @@ export class MercadoPagoProvider implements PaymentProvider {
     } catch (error) {
       if (error instanceof HttpException) throw error;
       // Only the operation and status: the provider body may echo request data.
-      const status = error instanceof MercadoPagoError ? error.status : 'network';
-      this.logger.warn(`Mercado Pago ${operation} failed (${status}) for tenant ${tenantId}`);
+      const status =
+        error instanceof MercadoPagoError ? error.status : 'network';
+      this.logger.warn(
+        `Mercado Pago ${operation} failed (${status}) for tenant ${tenantId}`,
+      );
       throw providerFailed();
     }
   }
@@ -159,6 +182,9 @@ export class MercadoPagoProvider implements PaymentProvider {
   private configFor(_tenantId: string): MercadoPagoConfig {
     const { accessToken, environment } = this.settings;
     if (!accessToken || environment !== 'sandbox') throw paymentsUnavailable();
-    return new MercadoPagoConfig({ accessToken, options: { timeout: TIMEOUT_MS } });
+    return new MercadoPagoConfig({
+      accessToken,
+      options: { timeout: TIMEOUT_MS },
+    });
   }
 }
