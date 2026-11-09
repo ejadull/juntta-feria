@@ -1,6 +1,14 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
-import { configuration, type AppConfiguration } from '../config/configuration.js';
+import {
+  configuration,
+  type AppConfiguration,
+} from '../config/configuration.js';
 import { DatabaseService, type Transaction } from '../db/database.service.js';
 import {
   events,
@@ -27,7 +35,11 @@ export interface CheckoutView {
 type Attempt = typeof paymentAttempts.$inferSelect;
 
 const notPayable = () =>
-  fail(ConflictException, 'RESERVATION_NOT_PAYABLE', 'Only a live hold can be paid.');
+  fail(
+    ConflictException,
+    'RESERVATION_NOT_PAYABLE',
+    'Only a live hold can be paid.',
+  );
 
 const view = (attempt: Attempt): CheckoutView => ({
   paymentAttemptId: attempt.id,
@@ -75,9 +87,13 @@ export class CheckoutService {
       currency: attempt.currency,
       expiresAt: attempt.expiresAt,
       backUrls: this.backUrls(reservationId),
-      ...(this.notificationUrl ? { notificationUrl: this.notificationFor(tenantId) } : {}),
+      ...(this.notificationUrl
+        ? { notificationUrl: this.notificationFor(tenantId) }
+        : {}),
     });
-    return this.database.withTenant(tenantId, (tx) => this.saveCheckout(tx, userId, attempt, result));
+    return this.database.withTenant(tenantId, (tx) =>
+      this.saveCheckout(tx, userId, attempt, result),
+    );
   }
 
   /** Locks the reservation, so concurrent checkouts of it share one attempt. */
@@ -99,13 +115,22 @@ export class CheckoutService {
       .from(reservations)
       .innerJoin(eventStands, eq(eventStands.id, reservations.eventStandId))
       .innerJoin(events, eq(events.id, eventStands.eventId))
-      .where(and(eq(reservations.id, reservationId), eq(reservations.userId, userId)))
+      .where(
+        and(
+          eq(reservations.id, reservationId),
+          eq(reservations.userId, userId),
+        ),
+      )
       .for('update', { of: reservations });
     if (!reservation) throw new NotFoundException('Reservation not found.');
     const title = `Stand ${reservation.standCode} — ${reservation.eventName}`;
     const holdExpiresAt = reservation.holdExpiresAt;
-    const liveHold = reservation.status === 'HELD' && !!holdExpiresAt && holdExpiresAt > new Date();
-    if (!liveHold && reservation.status !== 'PAYMENT_PENDING') throw notPayable();
+    const liveHold =
+      reservation.status === 'HELD' &&
+      !!holdExpiresAt &&
+      holdExpiresAt > new Date();
+    if (!liveHold && reservation.status !== 'PAYMENT_PENDING')
+      throw notPayable();
 
     // Same key → its attempt; otherwise the open one: never a second preference per reservation.
     const attempts = await tx
@@ -113,7 +138,8 @@ export class CheckoutService {
       .from(paymentAttempts)
       .where(eq(paymentAttempts.reservationId, reservationId));
     const reused =
-      attempts.find((a) => a.idempotencyKey === idempotencyKey) ?? attempts.find((a) => a.status === 'PENDING');
+      attempts.find((a) => a.idempotencyKey === idempotencyKey) ??
+      attempts.find((a) => a.status === 'PENDING');
     if (reused) return { attempt: reused, title };
     if (!liveHold || !holdExpiresAt) throw notPayable();
 
@@ -133,7 +159,11 @@ export class CheckoutService {
       action: 'payment_attempt.created',
       entityType: 'payment_attempt',
       entityId: attempt.id,
-      after: { reservationId, amountCents: attempt.amountCents, currency: attempt.currency },
+      after: {
+        reservationId,
+        amountCents: attempt.amountCents,
+        currency: attempt.currency,
+      },
     });
     return { attempt, title };
   }
@@ -147,18 +177,35 @@ export class CheckoutService {
   ): Promise<{ checkout: CheckoutView; created: boolean }> {
     const [saved] = await tx
       .update(paymentAttempts)
-      .set({ preferenceId: result.preferenceId, checkoutUrl: result.checkoutUrl, updatedAt: new Date() })
-      .where(and(eq(paymentAttempts.id, attempt.id), isNull(paymentAttempts.preferenceId)))
+      .set({
+        preferenceId: result.preferenceId,
+        checkoutUrl: result.checkoutUrl,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(paymentAttempts.id, attempt.id),
+          isNull(paymentAttempts.preferenceId),
+        ),
+      )
       .returning();
     if (!saved) {
-      const [current] = await tx.select().from(paymentAttempts).where(eq(paymentAttempts.id, attempt.id));
+      const [current] = await tx
+        .select()
+        .from(paymentAttempts)
+        .where(eq(paymentAttempts.id, attempt.id));
       return { checkout: view(current), created: false };
     }
     // HELD → PAYMENT_PENDING (§4.5): from now on the hold is not released blindly (§6.6, PAY-05).
     const moved = await tx
       .update(reservations)
       .set({ status: 'PAYMENT_PENDING', updatedAt: new Date() })
-      .where(and(eq(reservations.id, attempt.reservationId), eq(reservations.status, 'HELD')))
+      .where(
+        and(
+          eq(reservations.id, attempt.reservationId),
+          eq(reservations.status, 'HELD'),
+        ),
+      )
       .returning({ id: reservations.id });
     if (moved.length > 0)
       await this.audit.record(tx, {
@@ -185,6 +232,10 @@ export class CheckoutService {
   /** Return pages of PAY-04 (P19); the browser return never confirms anything (§5.2). */
   private backUrls(reservationId: string) {
     const base = `${this.webOrigin}/feriante/reservas/${reservationId}/pago`;
-    return { success: `${base}/aprobado`, pending: `${base}/pendiente`, failure: `${base}/rechazado` };
+    return {
+      success: `${base}/aprobado`,
+      pending: `${base}/pendiente`,
+      failure: `${base}/rechazado`,
+    };
   }
 }

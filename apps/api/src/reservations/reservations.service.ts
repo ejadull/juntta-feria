@@ -35,7 +35,11 @@ export interface ReservationView {
   readonly status: ReservationStatus;
   readonly holdExpiresAt: Date | null;
   readonly amount: { readonly currency: string; readonly valueCents: number };
-  readonly stand: { readonly id: string; readonly code: string; readonly areaM2: number };
+  readonly stand: {
+    readonly id: string;
+    readonly code: string;
+    readonly areaM2: number;
+  };
   readonly eventId: string;
   readonly exhibitorId: string;
   readonly termsVersion: string;
@@ -80,18 +84,30 @@ export class ReservationsService {
         this.byIdempotencyKey(tx, userId, idempotencyKey),
       );
       if (replay) return { reservation: replay, replayed: true };
-      throw fail(ConflictException, 'STAND_UNAVAILABLE', 'The stand is no longer available.');
+      throw fail(
+        ConflictException,
+        'STAND_UNAVAILABLE',
+        'The stand is no longer available.',
+      );
     }
   }
 
-  list(tenantId: string, ownerId: string | null, eventId?: string): Promise<ReservationView[]> {
+  list(
+    tenantId: string,
+    ownerId: string | null,
+    eventId?: string,
+  ): Promise<ReservationView[]> {
     const filters: SQL[] = [];
     if (ownerId) filters.push(eq(reservations.userId, ownerId));
     if (eventId) filters.push(eq(eventStands.eventId, eventId));
     return this.database.withTenant(tenantId, (tx) => this.select(tx, filters));
   }
 
-  async get(tenantId: string, id: string, ownerId: string | null): Promise<ReservationView | null> {
+  async get(
+    tenantId: string,
+    id: string,
+    ownerId: string | null,
+  ): Promise<ReservationView | null> {
     const [reservation] = await this.database.withTenant(tenantId, (tx) =>
       this.select(tx, this.scope(id, ownerId)),
     );
@@ -99,16 +115,31 @@ export class ReservationsService {
   }
 
   /** Releases a live hold. Paid states go through refunds (PAY-06), not through this. */
-  cancel(tenantId: string, actorId: string, id: string, ownerId: string | null): Promise<ReservationView> {
+  cancel(
+    tenantId: string,
+    actorId: string,
+    id: string,
+    ownerId: string | null,
+  ): Promise<ReservationView> {
     return this.database.withTenant(tenantId, async (tx) => {
       const [row] = await tx
-        .select({ status: reservations.status, holdExpiresAt: reservations.holdExpiresAt })
+        .select({
+          status: reservations.status,
+          holdExpiresAt: reservations.holdExpiresAt,
+        })
         .from(reservations)
         .where(and(...this.scope(id, ownerId)))
         .for('update');
       if (!row) throw new NotFoundException('Reservation not found.');
-      if (row.status !== 'HELD' || isExpiredHold(row.status, row.holdExpiresAt, new Date()))
-        throw fail(ConflictException, 'RESERVATION_NOT_CANCELLABLE', 'Only a live hold can be cancelled.');
+      if (
+        row.status !== 'HELD' ||
+        isExpiredHold(row.status, row.holdExpiresAt, new Date())
+      )
+        throw fail(
+          ConflictException,
+          'RESERVATION_NOT_CANCELLABLE',
+          'Only a live hold can be cancelled.',
+        );
       await tx
         .update(reservations)
         .set({ status: 'CANCELLED', updatedAt: new Date() })
@@ -135,12 +166,21 @@ export class ReservationsService {
     const previous = await this.byIdempotencyKey(tx, userId, idempotencyKey);
     if (previous) {
       if (previous.stand.id !== input.eventStandId)
-        throw fail(UnprocessableEntityException, 'IDEMPOTENCY_KEY_REUSED', 'The Idempotency-Key was used for another request.');
+        throw fail(
+          UnprocessableEntityException,
+          'IDEMPOTENCY_KEY_REUSED',
+          'The Idempotency-Key was used for another request.',
+        );
       return { reservation: previous, replayed: true };
     }
 
     const now = new Date();
-    const exhibitorId = await this.eligibleExhibitor(tx, userId, input.exhibitorId, now);
+    const exhibitorId = await this.eligibleExhibitor(
+      tx,
+      userId,
+      input.exhibitorId,
+      now,
+    );
 
     const [stand] = await tx
       .select({
@@ -158,10 +198,22 @@ export class ReservationsService {
       .where(eq(eventStands.id, input.eventStandId))
       .for('update', { of: eventStands });
     if (!stand) throw new NotFoundException('Stand not found.');
-    if (!SELLING.includes(stand.eventStatus) || now < stand.salesOpenAt || now > stand.salesCloseAt)
-      throw fail(UnprocessableEntityException, 'EVENT_SALES_CLOSED', 'Sales for this event are closed.');
+    if (
+      !SELLING.includes(stand.eventStatus) ||
+      now < stand.salesOpenAt ||
+      now > stand.salesCloseAt
+    )
+      throw fail(
+        UnprocessableEntityException,
+        'EVENT_SALES_CLOSED',
+        'Sales for this event are closed.',
+      );
     if (stand.status !== 'AVAILABLE' || stand.priceCents === null)
-      throw fail(ConflictException, 'STAND_UNAVAILABLE', 'The stand is not available.');
+      throw fail(
+        ConflictException,
+        'STAND_UNAVAILABLE',
+        'The stand is not available.',
+      );
 
     await this.releaseOrRefuse(tx, stand.id, now);
     await this.checkHoldLimit(tx, exhibitorId, stand.eventId, now);
@@ -185,9 +237,16 @@ export class ReservationsService {
       action: 'reservation.held',
       entityType: 'reservation',
       entityId: created.id,
-      after: { eventStandId: stand.id, exhibitorId, priceCents: stand.priceCents, currency: stand.currency },
+      after: {
+        eventStandId: stand.id,
+        exhibitorId,
+        priceCents: stand.priceCents,
+        currency: stand.currency,
+      },
     });
-    const [reservation] = await this.select(tx, [eq(reservations.id, created.id)]);
+    const [reservation] = await this.select(tx, [
+      eq(reservations.id, created.id),
+    ]);
     return { reservation, replayed: false };
   }
 
@@ -198,38 +257,75 @@ export class ReservationsService {
     requestedExhibitorId: string | undefined,
     now: Date,
   ): Promise<string> {
-    const [user] = await tx.select({ confirmedAt: users.confirmedAt }).from(users).where(eq(users.id, userId));
+    const [user] = await tx
+      .select({ confirmedAt: users.confirmedAt })
+      .from(users)
+      .where(eq(users.id, userId));
     if (!user?.confirmedAt)
-      throw fail(ForbiddenException, 'ACCOUNT_NOT_CONFIRMED', 'Confirm your account before reserving.');
+      throw fail(
+        ForbiddenException,
+        'ACCOUNT_NOT_CONFIRMED',
+        'Confirm your account before reserving.',
+      );
     const [profile] = await tx
       .select({ id: exhibitors.id, taxId: exhibitors.taxId })
       .from(exhibitors)
       .where(eq(exhibitors.userId, userId));
     if (!profile?.taxId)
-      throw fail(ForbiddenException, 'PROFILE_INCOMPLETE', 'Complete your exhibitor profile, including your CUIT.');
+      throw fail(
+        ForbiddenException,
+        'PROFILE_INCOMPLETE',
+        'Complete your exhibitor profile, including your CUIT.',
+      );
     if (requestedExhibitorId && requestedExhibitorId !== profile.id)
-      throw fail(ForbiddenException, 'EXHIBITOR_NOT_AUTHORIZED', 'You can only reserve for your own exhibitor profile.');
+      throw fail(
+        ForbiddenException,
+        'EXHIBITOR_NOT_AUTHORIZED',
+        'You can only reserve for your own exhibitor profile.',
+      );
     const [subscription] = await tx
-      .select({ status: platformSubscriptions.status, end: platformSubscriptions.currentPeriodEnd })
+      .select({
+        status: platformSubscriptions.status,
+        end: platformSubscriptions.currentPeriodEnd,
+      })
       .from(platformSubscriptions)
       .where(eq(platformSubscriptions.userId, userId));
     if (subscription?.status !== 'ACTIVE' || subscription.end <= now)
-      throw fail(ForbiddenException, 'SUBSCRIPTION_REQUIRED', 'An active subscription is required to reserve.');
+      throw fail(
+        ForbiddenException,
+        'SUBSCRIPTION_REQUIRED',
+        'An active subscription is required to reserve.',
+      );
     return profile.id;
   }
 
   /** §6.3: an expired hold is released on the spot (no payment can be in flight for a HELD one). */
-  private async releaseOrRefuse(tx: Transaction, standId: string, now: Date): Promise<void> {
+  private async releaseOrRefuse(
+    tx: Transaction,
+    standId: string,
+    now: Date,
+  ): Promise<void> {
     const [active] = await tx
-      .select({ id: reservations.id, status: reservations.status, holdExpiresAt: reservations.holdExpiresAt })
+      .select({
+        id: reservations.id,
+        status: reservations.status,
+        holdExpiresAt: reservations.holdExpiresAt,
+      })
       .from(reservations)
       .where(
-        and(eq(reservations.eventStandId, standId), inArray(reservations.status, [...ACTIVE_RESERVATION_STATUSES])),
+        and(
+          eq(reservations.eventStandId, standId),
+          inArray(reservations.status, [...ACTIVE_RESERVATION_STATUSES]),
+        ),
       )
       .for('update');
     if (!active) return;
     if (!isExpiredHold(active.status, active.holdExpiresAt, now))
-      throw fail(ConflictException, 'STAND_UNAVAILABLE', 'The stand is not available.');
+      throw fail(
+        ConflictException,
+        'STAND_UNAVAILABLE',
+        'The stand is not available.',
+      );
     await tx
       .update(reservations)
       .set({ status: 'EXPIRED', updatedAt: now })
@@ -245,7 +341,12 @@ export class ReservationsService {
   }
 
   /** "Un stand por checkout" (§1.5): one live reservation per exhibitor and event. */
-  private async checkHoldLimit(tx: Transaction, exhibitorId: string, eventId: string, now: Date): Promise<void> {
+  private async checkHoldLimit(
+    tx: Transaction,
+    exhibitorId: string,
+    eventId: string,
+    now: Date,
+  ): Promise<void> {
     const [{ live }] = await tx
       .select({ live: sql<number>`count(*)::int` })
       .from(reservations)
@@ -259,10 +360,18 @@ export class ReservationsService {
         ),
       );
     if (live > 0)
-      throw fail(ConflictException, 'HOLD_LIMIT', 'You already have a reservation in this event.');
+      throw fail(
+        ConflictException,
+        'HOLD_LIMIT',
+        'You already have a reservation in this event.',
+      );
   }
 
-  private async byIdempotencyKey(tx: Transaction, userId: string, key: string): Promise<ReservationView | null> {
+  private async byIdempotencyKey(
+    tx: Transaction,
+    userId: string,
+    key: string,
+  ): Promise<ReservationView | null> {
     const [reservation] = await this.select(tx, [
       eq(reservations.userId, userId),
       eq(reservations.idempotencyKey, key),
@@ -271,11 +380,16 @@ export class ReservationsService {
   }
 
   private scope(id: string, ownerId: string | null): SQL[] {
-    return ownerId ? [eq(reservations.id, id), eq(reservations.userId, ownerId)] : [eq(reservations.id, id)];
+    return ownerId
+      ? [eq(reservations.id, id), eq(reservations.userId, ownerId)]
+      : [eq(reservations.id, id)];
   }
 
   /** Read model; a HELD reservation past its expiry reads as EXPIRED before anyone writes it. */
-  private async select(tx: Transaction, filters: SQL[]): Promise<ReservationView[]> {
+  private async select(
+    tx: Transaction,
+    filters: SQL[],
+  ): Promise<ReservationView[]> {
     const rows = await tx
       .select({
         id: reservations.id,
@@ -289,7 +403,10 @@ export class ReservationsService {
         standId: eventStands.id,
         standCode: eventStands.code,
         eventId: eventStands.eventId,
-        areaM2: sql<number>`round(ST_Area(${layoutObjects.geometry})::numeric, 2)`.mapWith(Number),
+        areaM2:
+          sql<number>`round(ST_Area(${layoutObjects.geometry})::numeric, 2)`.mapWith(
+            Number,
+          ),
       })
       .from(reservations)
       .innerJoin(eventStands, eq(eventStands.id, reservations.eventStandId))
@@ -305,7 +422,9 @@ export class ReservationsService {
     const now = new Date();
     return rows.map((r) => ({
       id: r.id,
-      status: isExpiredHold(r.status, r.holdExpiresAt, now) ? 'EXPIRED' : r.status,
+      status: isExpiredHold(r.status, r.holdExpiresAt, now)
+        ? 'EXPIRED'
+        : r.status,
       holdExpiresAt: r.holdExpiresAt,
       amount: { currency: r.currency, valueCents: r.priceCents },
       stand: { id: r.standId, code: r.standCode, areaM2: r.areaM2 },

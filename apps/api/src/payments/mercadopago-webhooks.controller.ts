@@ -1,4 +1,11 @@
-import { BadRequestException, Controller, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+} from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { MercadoPagoWebhooksService } from './mercadopago-webhooks.service.js';
 
@@ -29,7 +36,8 @@ export class MercadoPagoWebhooksController {
       signature: text(request.headers['x-signature']),
       requestId: text(request.headers['x-request-id']),
       dataId,
-      topic: text(query.type) ?? text(query.topic) ?? text(body.type) ?? 'unknown',
+      topic:
+        text(query.type) ?? text(query.topic) ?? text(body.type) ?? 'unknown',
       tenant: text(query.tenant),
     });
     if (inboxId) void this.webhooks.process(inboxId);
