@@ -19,6 +19,7 @@ import {
 } from '../tenancy/tenant-scoped.decorator.js';
 import {
   acceptInvitationInput,
+  acceptInvitationWithGoogleInput,
   createInvitationInput,
   invitationToken,
 } from './invitation.input.js';
@@ -77,8 +78,15 @@ export class PublicInvitationsController {
 
   @Post(':token/accept')
   accept(@Param('token') token: string, @Body() body: unknown) {
+    const checked = validToken(token);
+    // A Google credential replaces the password fields; mixing both is a 400 in either schema.
+    if (typeof body === 'object' && body !== null && 'googleCredential' in body)
+      return this.invitations.acceptWithGoogle(
+        checked,
+        parseBody(acceptInvitationWithGoogleInput, body, 'account'),
+      );
     const input = parseBody(acceptInvitationInput, body, 'account');
-    return this.invitations.accept(validToken(token), input);
+    return this.invitations.accept(checked, input);
   }
 }
 

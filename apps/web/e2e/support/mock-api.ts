@@ -81,7 +81,18 @@ export interface Subscription {
   initPoint?: string;
 }
 
+/** What the stubbed Google Identity Services hands back for each "account" (CORE-05). */
+export const GOOGLE_CREDENTIALS = {
+  registered: 'google-credential-registered',
+  stranger: 'google-credential-stranger',
+  wrongEmail: 'google-credential-wrong-email',
+} as const;
+
 export interface MockApi {
+  /** Client id answered by `GET /auth/providers`; null hides "Ingresar con Google". */
+  googleClientId: string | null;
+  /** `GET /public/invitations/:token` answers this; null answers 404. */
+  invitation: { organizationName: string; email: string | null; name: string | null } | null;
   signedIn: boolean;
   subscription: Subscription;
   /** Problem answered by `POST /reservations` instead of creating the hold. */
@@ -116,6 +127,8 @@ const problem = (route: Route, status: number, code?: string) =>
 
 export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promise<MockApi> {
   const api: MockApi = {
+    googleClientId: null,
+    invitation: null,
     signedIn: true,
     subscription: { status: 'ACTIVE', currentPeriodEnd: future(60 * 24 * 20) },
     holdProblem: null,
@@ -143,6 +156,27 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
       if (body.password !== PASSWORD) return problem(route, 401);
       api.signedIn = true;
       return json(route, SESSION);
+    }
+    if (path === '/auth/providers')
+      return json(route, {
+        google: api.googleClientId ? { clientId: api.googleClientId } : null,
+      });
+    if (path === '/auth/google') {
+      const { credential } = JSON.parse(raw ?? '{}') as { credential?: string };
+      if (credential === GOOGLE_CREDENTIALS.stranger)
+        return problem(route, 403, 'GOOGLE_ACCOUNT_NOT_REGISTERED');
+      if (credential !== GOOGLE_CREDENTIALS.registered)
+        return problem(route, 401, 'GOOGLE_CREDENTIAL_INVALID');
+      api.signedIn = true;
+      return json(route, SESSION);
+    }
+    if (/^\/public\/invitations\/[^/]+$/.test(path))
+      return api.invitation ? json(route, api.invitation) : problem(route, 404);
+    if (/^\/public\/invitations\/[^/]+\/accept$/.test(path)) {
+      const body = JSON.parse(raw ?? '{}') as { googleCredential?: string };
+      if (body.googleCredential === GOOGLE_CREDENTIALS.wrongEmail)
+        return problem(route, 422, 'INVITATION_EMAIL_MISMATCH');
+      return json(route, { user: { id: 'u1', email: EMAIL }, tenantId: 't1' }, 201);
     }
     if (path === '/auth/logout') {
       api.signedIn = false;

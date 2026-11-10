@@ -63,7 +63,12 @@ export function toProblem(
   const title = STATUS_CODES[status] ?? 'Error';
   const safe = exception instanceof HttpException && status < 500;
   const issues = safe ? issuesOf(exception.getResponse()) : undefined;
-  const code = safe ? codeOf(exception.getResponse()) : undefined;
+  // The code is a constant written by our own code (never a message), so it is safe on 5xx too:
+  // clients branch on it, e.g. GOOGLE_SIGN_IN_UNAVAILABLE.
+  const code =
+    exception instanceof HttpException
+      ? codeOf(exception.getResponse())
+      : undefined;
   return {
     ...(issues ? { issues } : {}),
     ...(code ? { code } : {}),

@@ -65,11 +65,11 @@ Sin credenciales, la API arranca igual y los pagos responden 503. La integració
 | Etapa | Dónde |
 |---|---|
 | 1. Crear aplicación | En [Tus integraciones](https://www.mercadopago.com.ar/developers/panel/app): *Pagos online* → *Checkout Pro*. Activá OAuth con la URL de redirección igual a `MP_OAUTH_REDIRECT_URI`. |
-| 2. Configurar ambiente | Credenciales de prueba de la aplicación (selector *Prueba*): Access Token → `MP_ACCESS_TOKEN`, Public Key → `MP_PUBLIC_KEY` (el checkout ya no la usa), Client ID/Secret → `MP_CLIENT_ID`/`MP_CLIENT_SECRET`, `MP_ENVIRONMENT=sandbox`. SDK `mercadopago` en la API. |
+| 2. Configurar ambiente | Credenciales de prueba de la aplicación (selector *Prueba*): Access Token → `MP_ACCESS_TOKEN`, Public Key → `MP_PUBLIC_KEY` (la usa el Wallet Brick en modo `preferences`), `MP_CHECKOUT_API=preferences\|orders` (por defecto `preferences`, ver abajo), Client ID/Secret → `MP_CLIENT_ID`/`MP_CLIENT_SECRET`, `MP_ENVIRONMENT=sandbox`. SDK `mercadopago` en la API. |
 | 3. Order | `POST /reservations/{id}/checkout` (PAY-02) crea una order (`POST /v1/orders`, `type: online`, `processing_mode: manual`) con monto congelado, `external_reference`, `payer` (el feriante logueado), `expiration_time` = lo que resta del hold y `X-Idempotency-Key` = id del intento: un reintento tras un timeout devuelve la misma order. `retries.allowed: true`: tras un rechazo se reintenta sobre la misma order. |
 | 4. URLs de retorno | `config.online.{success,pending,failure}_url` a `/feriante/reservas/{id}/pago/{aprobado\|pendiente\|rechazado}`; `auto_return` solo con `success_url` https (PAY-04). |
 | 5. Redirección | La web redirige al `checkout_url` de la order (`checkoutUrl`); `wallet` es siempre `null`: no hay Wallet Brick. |
-| 6. Notificaciones | En *Webhooks* activá el evento **Order (Mercado Pago)** (topic `order`/`orders`) con la URL https de `/api/v1/webhooks/mercadopago` (en local, un túnel como `cloudflared`) y la clave en `MP_WEBHOOK_SECRET` (PAY-03). La URL no lleva `?tenant=`: el tenant sale de nuestro `order id`. El topic `payment` ya no se procesa; `MP_NOTIFICATION_URL` queda sin uso. |
+| 6. Notificaciones | La clave de firma va en `MP_WEBHOOK_SECRET` (PAY-03) y la URL https de `/api/v1/webhooks/mercadopago` (en local, un túnel como `cloudflared`) en el panel. Según `MP_CHECKOUT_API`: **`preferences`** (por defecto) → activá el evento **Pagos** (topic `payment`); el tenant viaja en `?tenant=` de `MP_NOTIFICATION_URL`, que se envía en cada preferencia. **`orders`** → activá **Order (Mercado Pago)** (topic `order`/`orders`); la URL no lleva `?tenant=` (el tenant sale de nuestro `order id`) y `MP_NOTIFICATION_URL` no se usa. |
 | 7. Pruebas | En *Cuentas de prueba* creá un **vendedor** (organizador, que vincula su cuenta en `/organizador/mercado-pago`) y un **comprador** (feriante). Pagá siempre con el comprador de prueba. |
 | 8. Producción | Activá las credenciales productivas, reemplazá Access Token/Public Key, `MP_ENVIRONMENT=production` y HTTPS obligatorio. |
 
@@ -80,6 +80,21 @@ Sin credenciales, la API arranca igual y los pagos responden 503. La integració
 - Sandbox: sin plan, Mercado Pago rechaza el cobro si la cuenta que paga no tiene el email del `payerEmail`. Enviá **el email del comprador de prueba** (`{ "payerEmail": "..." }`), no el de la cuenta Juntta. Para probar el flujo real: `bootstrap-sandbox.mjs --no-subscription`, luego `sandbox-checkout.mjs subscribe <email del comprador>` y, tras autorizar, `sandbox-checkout.mjs notify-subscription <preapproval_id>`.
 
 Los valores nunca se versionan ni se pegan en issues: sólo los nombres de las variables. `MP_TOKEN_ENCRYPTION_KEY` son 32 bytes en base64 (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`). Sin cuenta vinculada, `sandbox` usa `MP_ACCESS_TOKEN` y `production` deja los pagos apagados.
+
+#### Ingresar con Google (`CORE-05`)
+
+Es opcional: sin `GOOGLE_CLIENT_ID`, `POST /api/v1/auth/google` responde 503 `GOOGLE_SIGN_IN_UNAVAILABLE` y la web no muestra el botón. Sólo entran cuentas que ya existen (o que se crean aceptando una invitación con Google); nunca se crea un usuario desde un ingreso con Google ([ADR 0008](docs/adr/0008-google-sign-in.md)).
+
+1. En [Google Cloud Console](https://console.cloud.google.com/) elegí o creá un proyecto.
+2. *APIs y servicios* → *Pantalla de consentimiento de OAuth*: tipo *Externo*, nombre de la app y tu email; los scopes por defecto (`openid`, `email`, `profile`) alcanzan. Mientras esté en *Prueba*, agregá como *usuarios de prueba* los emails que vayan a ingresar.
+3. *APIs y servicios* → *Credenciales* → *Crear credenciales* → *ID de cliente de OAuth*:
+   - Tipo de aplicación: **Aplicación web**.
+   - *Orígenes autorizados de JavaScript*: `http://localhost:4200` (y más adelante el origen de producción, con HTTPS).
+   - *URI de redireccionamiento autorizados*: **ninguno**; Google Identity Services entrega un ID token al navegador y no usa redirección.
+4. Copiá el *ID de cliente* (`123-abc.apps.googleusercontent.com`; el secreto del cliente no se usa) en `.env` como `GOOGLE_CLIENT_ID=...` y recreá la API: `docker compose up -d --force-recreate api`.
+5. La web lo descubre en `GET /api/v1/auth/providers` (`{ "google": { "clientId": "..." } }`, o `null`), así que no necesita variables de build. Probalo en `http://localhost:4200/ingresar`.
+
+Un cambio de origen (otro puerto, `127.0.0.1` en lugar de `localhost`) requiere agregarlo a los orígenes autorizados: si no, el botón no aparece o Google rechaza el ingreso.
 
 ### 2. Con Docker Compose (recomendado)
 

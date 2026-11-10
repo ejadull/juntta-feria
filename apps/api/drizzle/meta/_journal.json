@@ -120,6 +120,13 @@
       "when": 1794283427740,
       "tag": "0016_checkout_pro_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794285597771,
+      "tag": "0017_google_sign_in",
+      "breakpoints": true
     }
   ]
 }

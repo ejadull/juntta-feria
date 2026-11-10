@@ -106,6 +106,21 @@ describe('toProblem (RFC 9457)', () => {
     expect(problem.detail).not.toContain('10.0.0.3');
   });
 
+  it('passes the machine `code` of a 503 through, still hiding its message', () => {
+    const problem = toProblem(
+      new ServiceUnavailableException({
+        message: 'keys at 10.0.0.3 down',
+        code: 'GOOGLE_SIGN_IN_UNAVAILABLE',
+      }),
+      req,
+    );
+    expect(problem).toMatchObject({
+      status: 503,
+      code: 'GOOGLE_SIGN_IN_UNAVAILABLE',
+    });
+    expect(problem.detail).not.toContain('10.0.0.3');
+  });
+
   it('treats thrown non-errors as 500', () => {
     expect(toProblem('boom', req).status).toBe(500);
   });

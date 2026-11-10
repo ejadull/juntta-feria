@@ -57,6 +57,14 @@ export class SessionStore {
     );
   }
 
+  /** Same session as `login`, from a Google ID token (CORE-05). */
+  loginWithGoogle(credential: string): Observable<void> {
+    return this.http.post<SessionDto>(`${API_BASE}/auth/google`, { credential }).pipe(
+      tap((session) => this.session.set(session)),
+      map(() => undefined),
+    );
+  }
+
   /** Renews the session with the cookie. One request at a time, however many callers (single-flight). */
   refresh(): Observable<boolean> {
     this.inflight ??= this.http.post<SessionDto>(`${API_BASE}/auth/refresh`, {}).pipe(

@@ -75,8 +75,22 @@ describe('parseEnvironment (FND-02)', () => {
         oauthRedirectUri: undefined,
         tokenKey: undefined,
         publicKey: undefined,
+        checkoutApi: 'preferences',
       },
+      google: { clientId: undefined },
     });
+  });
+
+  it('reads the optional Google client id (CORE-05)', () => {
+    expect(
+      parseEnvironment({
+        ...valid(),
+        GOOGLE_CLIENT_ID: ' 123-abc.apps.googleusercontent.com ',
+      }).google.clientId,
+    ).toBe('123-abc.apps.googleusercontent.com');
+    expect(
+      parseEnvironment({ ...valid(), GOOGLE_CLIENT_ID: '' }).google.clientId,
+    ).toBeUndefined();
   });
 
   it('reads the Mercado Pago settings (PAY-01)', () => {
@@ -99,7 +113,22 @@ describe('parseEnvironment (FND-02)', () => {
       oauthRedirectUri: undefined,
       tokenKey: undefined,
       publicKey: 'APP_USR-fake-public-key',
+      checkoutApi: 'preferences',
     });
+  });
+
+  it('selects the Checkout Pro API with MP_CHECKOUT_API (preferences by default)', () => {
+    expect(
+      parseEnvironment({ ...valid(), MP_CHECKOUT_API: 'orders' }).mercadoPago
+        .checkoutApi,
+    ).toBe('orders');
+    expect(
+      parseEnvironment({ ...valid(), MP_CHECKOUT_API: '' }).mercadoPago
+        .checkoutApi,
+    ).toBe('preferences');
+    expect(() =>
+      parseEnvironment({ ...valid(), MP_CHECKOUT_API: 'checkout' }),
+    ).toThrow(/MP_CHECKOUT_API/);
   });
 
   it('reads the platform subscription price (EXH-05) and rejects a non-positive one', () => {

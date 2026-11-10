@@ -140,6 +140,13 @@ export const routes: Routes = [
       },
       { path: 'ingresar', title: title('Ingresar'), loadComponent: login },
       {
+        // The link EXH-04 invitations carry: `<web>/invitacion/<token>`.
+        path: 'invitacion/:token',
+        title: title('Tu invitación'),
+        loadComponent: () =>
+          import('./features/invitation/invitation.page').then((m) => m.InvitationPage),
+      },
+      {
         path: 'feriante',
         providers: feriante,
         canActivate: [authGuard],

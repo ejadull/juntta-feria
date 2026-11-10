@@ -27,8 +27,21 @@ export const acceptInvitationInput = z.strictObject({
   phone: phoneInput.optional(),
 });
 
+/**
+ * Accepting with a Google ID token instead of a password (CORE-05). The email comes from the
+ * verified token, so it is not asked; there is no password field at all.
+ */
+export const acceptInvitationWithGoogleInput = z.strictObject({
+  googleCredential: z.string().min(1).max(4096),
+  fullName: z.string().trim().min(1).max(120).optional(),
+  phone: phoneInput.optional(),
+});
+
 /** 256-bit base64url token from the link; anything else cannot be an invitation. */
 export const invitationToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 
 export type CreateInvitationInput = z.infer<typeof createInvitationInput>;
 export type AcceptInvitationInput = z.infer<typeof acceptInvitationInput>;
+export type AcceptInvitationWithGoogleInput = z.infer<
+  typeof acceptInvitationWithGoogleInput
+>;

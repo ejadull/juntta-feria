@@ -16,6 +16,7 @@ const LOG_LEVELS = [
 ] as const;
 const NODE_ENVS = ['development', 'test', 'production'] as const;
 const MP_ENVIRONMENTS = ['sandbox', 'production'] as const;
+const MP_CHECKOUT_APIS = ['preferences', 'orders'] as const;
 
 export type AppEnvironment = Readonly<{
   nodeEnv: (typeof NODE_ENVS)[number];
@@ -64,7 +65,11 @@ export type AppEnvironment = Readonly<{
     publicKey: string | undefined;
     /** EXH-05: monthly price (ARS cents) of the platform subscription; unset → subscribing answers 503. */
     subscriptionPriceCents: number | undefined;
+    /** Checkout Pro API behind the payment port (ADR 0007, amended 2026-11-10): Preferences by default. */
+    checkoutApi: (typeof MP_CHECKOUT_APIS)[number];
   }>;
+  /** CORE-05 (ADR 0008): OAuth client id of "Sign in with Google"; unset → the feature answers 503. */
+  google: Readonly<{ clientId: string | undefined }>;
 }>;
 
 const MIN_SECRET_LENGTH = 32;
@@ -221,6 +226,14 @@ const schema = z
         })
         .default('sandbox'),
     ),
+    MP_CHECKOUT_API: z.preprocess(
+      blankAsUndefined,
+      z
+        .enum(MP_CHECKOUT_APIS, {
+          error: `must be one of ${MP_CHECKOUT_APIS.join(', ')}`,
+        })
+        .default('preferences'),
+    ),
     MP_ACCESS_TOKEN: z.preprocess(
       blankAsUndefined,
       z.string().trim().optional(),
@@ -260,6 +273,10 @@ const schema = z
         .int({ error: 'must be an integer' })
         .positive({ error: 'must be > 0' })
         .optional(),
+    ),
+    GOOGLE_CLIENT_ID: z.preprocess(
+      blankAsUndefined,
+      z.string().trim().optional(),
     ),
     MP_TOKEN_ENCRYPTION_KEY: z.preprocess(
       blankAsUndefined,
@@ -360,6 +377,8 @@ export function parseEnvironment(input: NodeJS.ProcessEnv): AppEnvironment {
       tokenKey: e.MP_TOKEN_ENCRYPTION_KEY,
       publicKey: e.MP_PUBLIC_KEY,
       subscriptionPriceCents: e.PLATFORM_SUBSCRIPTION_PRICE_CENTS,
+      checkoutApi: e.MP_CHECKOUT_API,
     },
+    google: { clientId: e.GOOGLE_CLIENT_ID },
   };
 }

@@ -5,8 +5,14 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { desc, eq, sql } from 'drizzle-orm';
+import {
+  GOOGLE_ID_TOKEN_VERIFIER,
+  verifyGoogleCredential,
+  type GoogleVerifier,
+} from '../auth/google-sign-in.js';
 import { hashPassword } from '../auth/password.js';
 import {
   configuration,
@@ -26,6 +32,7 @@ import {
 import { AuditService } from '../tenancy/audit.service.js';
 import type {
   AcceptInvitationInput,
+  AcceptInvitationWithGoogleInput,
   CreateInvitationInput,
 } from './invitation.input.js';
 
@@ -102,6 +109,7 @@ export class InvitationsService {
     private readonly database: DatabaseService,
     private readonly audit: AuditService,
     @Inject(configuration.KEY) env: AppConfiguration,
+    @Inject(GOOGLE_ID_TOKEN_VERIFIER) private readonly google: GoogleVerifier,
   ) {
     this.webOrigin = env.corsOrigins.find((origin) => origin !== '*') ?? '';
   }
@@ -204,31 +212,69 @@ export class InvitationsService {
   ): Promise<{ user: { id: string; email: string }; tenantId: string }> {
     const target = await this.lookup(token);
     const passwordHash = await hashPassword(input.password);
+    return this.consume(target, 'password', (invitation) => {
+      if (invitation.email && invitation.email !== input.email)
+        throw new BadRequestException(
+          'Invalid account: use the email the invitation was sent to.',
+        );
+      return {
+        email: input.email,
+        passwordHash,
+        fullName: input.fullName,
+        phone: input.phone ?? invitation.phone,
+      };
+    });
+  }
+
+  /**
+   * Same, but identity comes from a verified Google ID token (CORE-05): no password is stored and
+   * the account is bound to the Google subject. The Google email must be the invited one.
+   */
+  async acceptWithGoogle(
+    token: string,
+    input: AcceptInvitationWithGoogleInput,
+  ): Promise<{ user: { id: string; email: string }; tenantId: string }> {
+    const target = await this.lookup(token);
+    const identity = await verifyGoogleCredential(
+      this.google,
+      input.googleCredential,
+    );
+    const email = identity.email.trim().toLowerCase();
+    return this.consume(target, 'google', (invitation) => {
+      if (invitation.email && invitation.email.toLowerCase() !== email)
+        throw new UnprocessableEntityException({
+          message: 'The Google account email is not the one invited.',
+          code: 'INVITATION_EMAIL_MISMATCH',
+        });
+      return {
+        email,
+        passwordHash: null,
+        googleSub: identity.sub,
+        fullName: input.fullName ?? identity.name ?? null,
+        phone: input.phone ?? invitation.phone,
+      };
+    });
+  }
+
+  /** Creates the user from `build`, the membership, and consumes the invitation, atomically. */
+  private async consume(
+    target: { id: string; tenantId: string },
+    method: 'password' | 'google',
+    build: (invitation: Row) => typeof users.$inferInsert,
+  ): Promise<{ user: { id: string; email: string }; tenantId: string }> {
     try {
       return await this.database.withTenant(target.tenantId, async (tx) => {
         const invitation = await this.usable(tx, target.id, true);
-        if (invitation.email && invitation.email !== input.email)
-          throw new BadRequestException(
-            'Invalid account: use the email the invitation was sent to.',
-          );
         const now = new Date();
         const [user] = await tx
           .insert(users)
-          .values({
-            email: input.email,
-            passwordHash,
-            fullName: input.fullName,
-            phone: input.phone ?? invitation.phone,
-            confirmedAt: now,
-          })
+          .values({ ...build(invitation), confirmedAt: now })
           .returning({ id: users.id, email: users.email });
-        await tx
-          .insert(memberships)
-          .values({
-            tenantId: target.tenantId,
-            userId: user.id,
-            role: 'EXHIBITOR',
-          });
+        await tx.insert(memberships).values({
+          tenantId: target.tenantId,
+          userId: user.id,
+          role: 'EXHIBITOR',
+        });
         await tx
           .update(exhibitorInvitations)
           .set({ acceptedAt: now, acceptedUserId: user.id })
@@ -238,7 +284,7 @@ export class InvitationsService {
           action: 'invitation.accepted',
           entityType: 'exhibitor_invitation',
           entityId: target.id,
-          after: { userId: user.id, email: user.email },
+          after: { userId: user.id, email: user.email, method },
         });
         return { user, tenantId: target.tenantId };
       });

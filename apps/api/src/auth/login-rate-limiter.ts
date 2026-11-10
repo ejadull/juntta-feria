@@ -49,6 +49,15 @@ export class LoginRateLimiter {
       : { allowed: false, retryAfterSeconds: Math.max(...blocked) };
   }
 
+  /** IP bucket only: for a Google credential that failed verification, so no email is known yet. */
+  async hitIp(ip: string): Promise<RateDecision> {
+    const { windowSeconds, perIp } = this.limits;
+    const byIp = await this.store.incrementWithWindow(ipKey(ip), windowSeconds);
+    return byIp.count > perIp
+      ? { allowed: false, retryAfterSeconds: byIp.ttl }
+      : { allowed: true };
+  }
+
   async succeeded(email: string): Promise<void> {
     await this.store.reset(emailKey(email));
   }

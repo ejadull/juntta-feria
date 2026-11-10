@@ -61,4 +61,17 @@ describe('LoginRateLimiter (CORE-02, §8 rate limits)', () => {
     await limiter.succeeded('ana@demo.test');
     expect((await limiter.hit('1.2.3.4', 'ana@demo.test')).allowed).toBe(true);
   });
+
+  it('hitIp counts only the IP bucket (credentials that never reached an email)', async () => {
+    const store = new FakeStore();
+    const limiter = new LoginRateLimiter(store, limits);
+    for (let i = 0; i < 5; i++)
+      expect(await limiter.hitIp('7.7.7.7')).toEqual({ allowed: true });
+    expect(await limiter.hitIp('7.7.7.7')).toEqual({
+      allowed: false,
+      retryAfterSeconds: 900,
+    });
+    expect([...store.counts.keys()]).toHaveLength(1);
+    expect((await limiter.hit('8.8.8.8', 'ana@demo.test')).allowed).toBe(true);
+  });
 });

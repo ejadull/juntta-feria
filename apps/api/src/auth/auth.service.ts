@@ -7,6 +7,7 @@ import {
 } from '../config/configuration.js';
 import {
   DatabaseService,
+  isUniqueViolation,
   type Database,
   type Transaction,
 } from '../db/database.service.js';
@@ -17,6 +18,7 @@ import {
   users,
   type MembershipRole,
 } from '../db/schema.js';
+import type { GoogleIdentity } from './google-id-token.verifier.js';
 import { verifyAgainstDummy, verifyPassword } from './password.js';
 import { AccessTokens, hashRefreshToken, newRefreshToken } from './tokens.js';
 
@@ -43,6 +45,15 @@ export interface Session extends Profile {
   readonly expiresIn: number;
   readonly refreshToken: string;
 }
+
+/** Outcome of signing in with a verified Google identity (CORE-05). */
+export type GoogleLoginResult =
+  | { readonly status: 'ok'; readonly session: Session }
+  /** The account is bound to another Google subject. */
+  | { readonly status: 'mismatch' }
+  | { readonly status: 'not-registered' }
+  /** Disabled account: answered like a failed password login. */
+  | { readonly status: 'inactive' };
 
 /**
  * Login, refresh rotation with reuse detection, logout and profile (CORE-02, ADR 0004).
@@ -74,6 +85,9 @@ export class AuthService {
       .where(sql`lower(${users.email}) = lower(${email.trim()})`)
       .limit(1);
     if (!user) return verifyAgainstDummy(password).then(() => null);
+    // Google-only accounts have no password: same cost and same answer as a wrong one.
+    if (!user.passwordHash)
+      return verifyAgainstDummy(password).then(() => null);
     const valid = await verifyPassword(user.passwordHash, password);
     if (!valid || user.status !== 'ACTIVE') return null;
     const refreshToken = await this.issueRefreshToken(
@@ -82,6 +96,53 @@ export class AuthService {
       randomUUID(),
     );
     return this.session(db, user, refreshToken);
+  }
+
+  /**
+   * Existing accounts only (CORE-05, ADR 0008): match the stored Google subject, else the verified
+   * email, binding the subject on first success. Never creates a user. The session is the same one
+   * password login issues.
+   */
+  async loginWithGoogle(identity: GoogleIdentity): Promise<GoogleLoginResult> {
+    const db = this.database.db;
+    const [bySub] = await db
+      .select()
+      .from(users)
+      .where(eq(users.googleSub, identity.sub))
+      .limit(1);
+    let user = bySub;
+    if (!user) {
+      const [byEmail] = await db
+        .select()
+        .from(users)
+        .where(sql`lower(${users.email}) = lower(${identity.email.trim()})`)
+        .limit(1);
+      if (!byEmail) return { status: 'not-registered' };
+      if (byEmail.googleSub && byEmail.googleSub !== identity.sub)
+        return { status: 'mismatch' };
+      user = byEmail;
+    }
+    if (user.status !== 'ACTIVE') return { status: 'inactive' };
+    if (!user.googleSub) {
+      try {
+        await db
+          .update(users)
+          .set({ googleSub: identity.sub })
+          .where(and(eq(users.id, user.id), isNull(users.googleSub)));
+      } catch (error) {
+        if (isUniqueViolation(error)) return { status: 'mismatch' };
+        throw error;
+      }
+    }
+    const refreshToken = await this.issueRefreshToken(
+      db,
+      user.id,
+      randomUUID(),
+    );
+    return {
+      status: 'ok',
+      session: await this.session(db, user, refreshToken),
+    };
   }
 
   /**
