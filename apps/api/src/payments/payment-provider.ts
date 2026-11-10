@@ -7,8 +7,8 @@ import {
 export interface CheckoutRequest {
   readonly tenantId: string;
   /**
-   * Payment attempt id, sent as `external_reference` (ADR 0006 §4) and as the provider
-   * idempotency key (ADR 0007): a retry after a timeout returns the same order, never a second one.
+   * Payment attempt id, sent as `external_reference` (ADR 0006 §4). Orders also use it as the
+   * provider idempotency key (ADR 0007): a retry after a timeout returns the same order.
    */
   readonly externalReference: string;
   readonly title: string;
@@ -21,6 +21,11 @@ export interface CheckoutRequest {
     readonly pending: string;
     readonly failure: string;
   };
+  /**
+   * Tenant-tagged webhook URL (`?tenant=`): only the Preferences API takes one per checkout;
+   * Orders notify the URL configured in the Mercado Pago panel and ignore this.
+   */
+  readonly notificationUrl?: string;
   /** The logged-in exhibitor, read server-side (never from the request body). */
   readonly payer: {
     readonly email: string;
@@ -30,7 +35,7 @@ export interface CheckoutRequest {
 }
 
 export interface Checkout {
-  /** The provider's order id (Checkout Pro via Orders API, ADR 0007). */
+  /** The provider's checkout id: a preference id (Preferences API) or an order id (Orders API, ADR 0007). */
   readonly checkoutId: string;
   readonly checkoutUrl: string;
 }
@@ -41,7 +46,7 @@ export interface Checkout {
  * refunded | charged_back`.
  */
 export interface ProviderPayment {
-  /** The payment transaction id inside the order; refunds name it. */
+  /** The payment id (a transaction id inside the order in Orders); refunds name it. */
   readonly id: string;
   readonly status: string;
   readonly statusDetail: string | null;
@@ -92,6 +97,11 @@ export interface ProviderAuthorizedPayment {
  */
 export interface PaymentProvider {
   createCheckout(request: CheckoutRequest): Promise<Checkout>;
+  /**
+   * One payment by its id, for notifications that name the payment (Preferences `payment` topic).
+   * The Orders adapter cannot read a payment on its own and fails.
+   */
+  getPayment(tenantId: string, paymentId: string): Promise<ProviderPayment>;
   /** Every payment made against one checkout (PAY-03, PAY-05, PAY-06), re-read from the provider. */
   getPayments(tenantId: string, checkoutId: string): Promise<ProviderPayment[]>;
   refund(

@@ -44,10 +44,14 @@ export interface Notification {
   readonly requestId: string | undefined;
   readonly dataId: string;
   readonly topic: string;
+  /** Unsigned `?tenant=` hint of the Preferences `notification_url` (PAY-02). */
+  readonly tenant?: string | undefined;
 }
 
 /** Orders notifications: `type=order` on the Checkout Pro page, topic `orders` in the panel. */
 const ORDER_TOPICS: readonly string[] = ['order', 'orders'];
+/** Preferences notifications (the "Pagos" topic) name a payment. */
+const PAYMENT_TOPICS: readonly string[] = ['payment'];
 
 /** States that still own the stand and can be confirmed (§4.5). */
 const CONFIRMABLE: readonly string[] = ['HELD', 'PAYMENT_PENDING'];
@@ -77,7 +81,7 @@ export class MercadoPagoWebhooksService {
   /** Returns the inbox id to process, or null for a duplicate or an ignored notification. */
   async receive(notification: Notification): Promise<string | null> {
     if (!this.secret) throw paymentsUnavailable();
-    const { signature, requestId, dataId, topic } = notification;
+    const { signature, requestId, dataId, topic, tenant } = notification;
     if (!requestId)
       throw new UnauthorizedException('Invalid webhook signature.');
     this.verify(signature, requestId, dataId);
@@ -85,8 +89,12 @@ export class MercadoPagoWebhooksService {
 
     // Orders and subscriptions come from the one URL set in the Mercado Pago panel, which cannot
     // carry a tenant: `process` finds the tenant of an order from our own stored order id.
+    // Payments (Preferences) carry the `?tenant=` hint of the preference's notification_url.
+    const tenantId = isUuid(tenant) ? tenant : null;
     const ignored =
-      SUBSCRIPTION_TOPICS.includes(topic) || ORDER_TOPICS.includes(topic)
+      SUBSCRIPTION_TOPICS.includes(topic) ||
+      ORDER_TOPICS.includes(topic) ||
+      PAYMENT_TOPICS.includes(topic)
         ? null
         : 'UNSUPPORTED_TOPIC';
     const [row] = await this.database.db
@@ -95,6 +103,9 @@ export class MercadoPagoWebhooksService {
         requestId,
         topic,
         dataId,
+        // Untrusted hint (no FK): it is only used for a payment, and only applies if the payment
+        // matches an attempt of that tenant.
+        tenantId: PAYMENT_TOPICS.includes(topic) ? tenantId : null,
         status: ignored ? 'IGNORED' : 'RECEIVED',
         outcome: ignored,
         processedAt: ignored ? new Date() : null,
@@ -118,6 +129,8 @@ export class MercadoPagoWebhooksService {
       if (entry?.status !== 'RECEIVED') return;
       if (SUBSCRIPTION_TOPICS.includes(entry.topic))
         return await this.processSubscription(inboxId, entry);
+      if (PAYMENT_TOPICS.includes(entry.topic))
+        return await this.processPayment(inboxId, entry);
       await this.processOrder(inboxId, entry.dataId);
     } catch (error) {
       this.logger.error(
@@ -128,6 +141,34 @@ export class MercadoPagoWebhooksService {
         () => undefined,
       );
     }
+  }
+
+  /**
+   * PAY-03 (Preferences): the notification only names the payment. Its tenant is the URL hint;
+   * the payment is re-read with that tenant's seller credentials and must match one of its
+   * attempts through `external_reference`, so a forged hint changes nothing.
+   * A payment notified without the hint cannot be attributed: attempts are hidden by RLS and
+   * the attempt id is only known once the payment is read, so reconciliation (PAY-05) settles it.
+   */
+  private async processPayment(
+    inboxId: string,
+    entry: { dataId: string; tenantId: string | null },
+  ): Promise<void> {
+    const tenantId = entry.tenantId;
+    if (!tenantId)
+      return await this.finish(inboxId, 'IGNORED', 'MISSING_TENANT');
+    let payment: ProviderPayment;
+    try {
+      payment = await this.provider.getPayment(tenantId, entry.dataId);
+    } catch {
+      return await this.finish(inboxId, 'FAILED', 'PROVIDER_ERROR');
+    }
+    const outcome = await this.applyPayment(tenantId, payment);
+    await this.finish(
+      inboxId,
+      outcome === 'UNKNOWN_ATTEMPT' ? 'IGNORED' : 'PROCESSED',
+      outcome,
+    );
   }
 
   /**

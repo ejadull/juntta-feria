@@ -3,10 +3,10 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
-  MercadoPagoProvider,
+  MercadoPagoOrdersProvider,
   toDuration,
   toPayments,
-} from './mercadopago.provider.js';
+} from './mercadopago-orders.provider.js';
 import type { CheckoutRequest } from './payment-provider.js';
 
 /** Fictitious credential: nothing here reaches Mercado Pago. */
@@ -59,7 +59,7 @@ const checkout: CheckoutRequest = {
 };
 
 const sandbox = () =>
-  new MercadoPagoProvider({ environment: 'sandbox', accessToken: TOKEN });
+  new MercadoPagoOrdersProvider({ environment: 'sandbox', accessToken: TOKEN });
 
 const order = {
   id: 'ORDTST01ABC',
@@ -86,7 +86,7 @@ describe('toDuration', () => {
   });
 });
 
-describe('MercadoPagoProvider (PAY-01, ADR 0007)', () => {
+describe('MercadoPagoOrdersProvider (PAY-01, ADR 0007)', () => {
   it('creates a Checkout Pro order from the server amount, idempotent by attempt (PAY-02)', async () => {
     respond({ status: 201, body: order });
 
@@ -172,7 +172,7 @@ describe('MercadoPagoProvider (PAY-01, ADR 0007)', () => {
 
   it('refuses the platform token in production until PAY-07 links the organizer account', async () => {
     respond();
-    const provider = new MercadoPagoProvider({
+    const provider = new MercadoPagoOrdersProvider({
       environment: 'production',
       accessToken: TOKEN,
     });
@@ -185,7 +185,7 @@ describe('MercadoPagoProvider (PAY-01, ADR 0007)', () => {
   it("uses the organizer's linked seller token, in production too (PAY-07)", async () => {
     respond({ status: 200, body: { id: 'ORD1', status: 'processed' } });
     const tenants: string[] = [];
-    const provider = new MercadoPagoProvider(
+    const provider = new MercadoPagoOrdersProvider(
       { environment: 'production', accessToken: undefined },
       (tenantId) => {
         tenants.push(tenantId);
@@ -199,7 +199,7 @@ describe('MercadoPagoProvider (PAY-01, ADR 0007)', () => {
 
   it('prefers the linked seller token over the sandbox platform token', async () => {
     respond({ status: 200, body: { id: 'ORD1', status: 'processed' } });
-    const provider = new MercadoPagoProvider(
+    const provider = new MercadoPagoOrdersProvider(
       { environment: 'sandbox', accessToken: TOKEN },
       () => Promise.resolve('APP_USR-seller-token'),
     );
@@ -209,7 +209,7 @@ describe('MercadoPagoProvider (PAY-01, ADR 0007)', () => {
 
   it('fails explicitly without credentials and never calls the provider (§13.1)', async () => {
     respond();
-    const provider = new MercadoPagoProvider({
+    const provider = new MercadoPagoOrdersProvider({
       environment: 'sandbox',
       accessToken: undefined,
     });
@@ -386,7 +386,7 @@ describe('MercadoPagoProvider (PAY-01, ADR 0007)', () => {
   });
 });
 
-describe('MercadoPagoProvider auto_return', () => {
+describe('MercadoPagoOrdersProvider auto_return', () => {
   it('sends auto_return approved only with https back_urls', async () => {
     respond({ status: 201, body: order });
     await sandbox().createCheckout(checkout);
@@ -414,7 +414,7 @@ describe('MercadoPagoProvider auto_return', () => {
   });
 });
 
-describe('MercadoPagoProvider subscriptions (EXH-05)', () => {
+describe('MercadoPagoOrdersProvider subscriptions (EXH-05)', () => {
   const USER = '5b5b5b5b-5b5b-4b5b-8b5b-5b5b5b5b5b5b';
   const KEY = '6c6c6c6c-6c6c-4c6c-8c6c-6c6c6c6c6c6c';
   const request = {
@@ -476,7 +476,7 @@ describe('MercadoPagoProvider subscriptions (EXH-05)', () => {
       status: 201,
       body: { id: 'pre-2', init_point: 'https://mp.test/x' },
     });
-    const production = new MercadoPagoProvider({
+    const production = new MercadoPagoOrdersProvider({
       environment: 'production',
       accessToken: TOKEN,
     });
@@ -484,7 +484,7 @@ describe('MercadoPagoProvider subscriptions (EXH-05)', () => {
     expect(sent[0].headers.Authorization).toBe(`Bearer ${TOKEN}`);
 
     respond();
-    const bare = new MercadoPagoProvider({
+    const bare = new MercadoPagoOrdersProvider({
       environment: 'production',
       accessToken: undefined,
     });

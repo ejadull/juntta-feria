@@ -38,6 +38,7 @@ export class MercadoPagoWebhooksController {
       dataId,
       topic:
         text(query.type) ?? text(query.topic) ?? text(body.type) ?? 'unknown',
+      tenant: text(query.tenant),
     });
     if (inboxId) void this.webhooks.process(inboxId);
     return { received: true };

@@ -6,7 +6,7 @@ import {
 import { MercadoPagoWebhooksController } from './mercadopago-webhooks.controller.js';
 import { MercadoPagoWebhooksService } from './mercadopago-webhooks.service.js';
 import { MercadoPagoOAuth, OAUTH_CLIENT } from './mercadopago-oauth.js';
-import { MercadoPagoProvider } from './mercadopago.provider.js';
+import { createPaymentProvider } from './payment-provider.factory.js';
 import { PaymentAccountController } from './payment-account.controller.js';
 import { PaymentIncidentsController } from './payment-incidents.controller.js';
 import { PAYMENT_PROVIDER } from './payment-provider.js';
@@ -49,7 +49,7 @@ import { SellerAccountsService } from './seller-accounts.service.js';
       provide: PAYMENT_PROVIDER,
       inject: [configuration.KEY, SellerAccountsService],
       useFactory: (env: AppConfiguration, accounts: SellerAccountsService) =>
-        new MercadoPagoProvider(env.mercadoPago, (tenantId) =>
+        createPaymentProvider(env.mercadoPago, (tenantId) =>
           accounts.accessToken(tenantId),
         ),
     },

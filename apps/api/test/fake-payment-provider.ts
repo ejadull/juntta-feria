@@ -75,6 +75,16 @@ export class FakePaymentProvider implements PaymentProvider {
       : Promise.reject(providerFailed());
   }
 
+  /** One payment by id (the Preferences `payment` notification names the payment). */
+  getPayment(tenantId: string, paymentId: string): Promise<ProviderPayment> {
+    this.singleReads.push({ tenantId, paymentId });
+    const payment = this.payments.get(paymentId);
+    return payment
+      ? Promise.resolve(payment)
+      : Promise.reject(providerFailed());
+  }
+  readonly singleReads: { tenantId: string; paymentId: string }[] = [];
+
   /** Refunds and cancellations sent, in order (PAY-06). */
   readonly reversals: {
     kind: 'refund' | 'cancel';

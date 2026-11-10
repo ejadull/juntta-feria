@@ -25,9 +25,10 @@ import {
   type PaymentProvider,
 } from '../payments/payment-provider.js';
 import { AuditService } from '../tenancy/audit.service.js';
+import { SellerAccountsService } from '../payments/seller-accounts.service.js';
 import { fail } from './reservations.service.js';
 
-/** Wallet settings kept for the web; Orders API checkout is a redirect, so the web gets `null` (ADR 0007). */
+/** Wallet Brick settings (Checkout Pro, Preferences API): public data only. `null` in Orders mode (ADR 0007). */
 export interface WalletSettings {
   /** The platform's public key, also in marketplace mode. */
   readonly publicKey: string;
@@ -38,14 +39,14 @@ export interface WalletSettings {
 /** §5.2 response: our attempt id and public checkout data, never provider credentials. */
 export interface CheckoutView {
   readonly paymentAttemptId: string;
-  /** The order's `checkout_url`: the web redirects the buyer there. */
+  /** The provider's checkout URL: the redirect fallback when there is no Wallet Brick. */
   readonly checkoutUrl: string;
   /**
-   * Backward compatible name: since ADR 0007 this is the provider's ORDER id (it used to be the
-   * Preferences id the Wallet Brick rendered).
+   * The provider's checkout id: the preference the Wallet Brick renders (Preferences API) or the
+   * order id (Orders API, ADR 0007). Historical field name.
    */
   readonly preferenceId: string;
-  /** Always null: an Orders checkout has no Wallet Brick, so the web falls back to `checkoutUrl`. */
+  /** Null in Orders mode, or without MP_PUBLIC_KEY: the web then redirects to `checkoutUrl`. */
   readonly wallet: WalletSettings | null;
   readonly status: PaymentAttemptStatus;
 }
@@ -59,11 +60,14 @@ const notPayable = () =>
     'Only a live hold can be paid.',
   );
 
-const view = (attempt: Attempt): CheckoutView => ({
+const view = (
+  attempt: Attempt,
+  wallet: WalletSettings | null,
+): CheckoutView => ({
   paymentAttemptId: attempt.id,
   checkoutUrl: attempt.checkoutUrl ?? '',
   preferenceId: attempt.providerCheckoutId ?? '',
-  wallet: null,
+  wallet,
   status: attempt.status,
 });
 
@@ -75,13 +79,21 @@ const view = (attempt: Attempt): CheckoutView => ({
 @Injectable()
 export class CheckoutService {
   private readonly webOrigin: string;
+  private readonly notificationUrl: string | undefined;
+  private readonly publicKey: string | undefined;
+  private readonly checkoutApi: AppConfiguration['mercadoPago']['checkoutApi'];
+
   constructor(
     private readonly database: DatabaseService,
     private readonly audit: AuditService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
+    private readonly accounts: SellerAccountsService,
     @Inject(configuration.KEY) env: AppConfiguration,
   ) {
     this.webOrigin = env.corsOrigins.find((origin) => origin !== '*') ?? '';
+    this.notificationUrl = env.mercadoPago.notificationUrl;
+    this.publicKey = env.mercadoPago.publicKey;
+    this.checkoutApi = env.mercadoPago.checkoutApi;
   }
 
   /** `created` is true when this request opened the checkout (201), false on a replay (200). */
@@ -97,7 +109,7 @@ export class CheckoutService {
       reservationId,
       idempotencyKey,
     );
-    return { checkout: view(attempt), created };
+    return { checkout: view(attempt, await this.wallet(tenantId)), created };
   }
 
   private async openCheckout(
@@ -120,6 +132,10 @@ export class CheckoutService {
       currency: attempt.currency,
       expiresAt: attempt.expiresAt,
       backUrls: this.backUrls(reservationId),
+      // Only Preferences take a per-checkout webhook URL; Orders use the one in the panel.
+      ...(this.checkoutApi === 'preferences' && this.notificationUrl
+        ? { notificationUrl: this.notificationFor(tenantId) }
+        : {}),
       payer,
     });
     return this.database.withTenant(tenantId, (tx) =>
@@ -253,6 +269,26 @@ export class CheckoutService {
         after: { status: 'PAYMENT_PENDING', paymentAttemptId: attempt.id },
       });
     return { attempt: saved, created: true };
+  }
+
+  /** Marketplace mode whenever the organizer has a seller account (PAY-07); its token pays. */
+  private async wallet(tenantId: string): Promise<WalletSettings | null> {
+    if (this.checkoutApi !== 'preferences' || !this.publicKey) return null;
+    const account = await this.accounts.status(tenantId);
+    return {
+      publicKey: this.publicKey,
+      marketplace: account.status !== 'NOT_LINKED',
+    };
+  }
+
+  /**
+   * The webhook needs the tenant to read the payment with its seller credentials (PAY-03).
+   * The query is unsigned: the webhook trusts it only after the payment matches an attempt of it.
+   */
+  private notificationFor(tenantId: string): string {
+    const url = new URL(this.notificationUrl ?? '');
+    url.searchParams.set('tenant', tenantId);
+    return url.toString();
   }
 
   /**
