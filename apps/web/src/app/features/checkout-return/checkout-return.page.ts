@@ -12,7 +12,7 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { concatMap, finalize, take, takeWhile, timer, type Subscription } from 'rxjs';
-import { EXTERNAL_NAVIGATION } from '../../shared/external-navigation';
+import { MercadoPagoWallet, type CheckoutDto } from '../../shared/mercado-pago-wallet';
 import { formatArs } from '../../shared/money';
 import {
   ReservationPaymentRepository,
@@ -46,7 +46,7 @@ type View = 'loading' | 'confirmed' | 'waiting' | 'rejected' | 'expired' | 'clos
  */
 @Component({
   selector: 'app-checkout-return-page',
-  imports: [RouterLink],
+  imports: [RouterLink, MercadoPagoWallet],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-3xl px-4 py-6 sm:px-8 sm:py-8">
@@ -100,14 +100,18 @@ type View = 'loading' | 'confirmed' | 'waiting' | 'rejected' | 'expired' | 'clos
               No se cobró nada. Podés intentar con otro medio de pago hasta las
               <strong>{{ until }}</strong>, mientras el stand siga reservado para vos.
             </p>
-            <button
-              type="button"
-              class="btn btn-primary mt-4"
-              [disabled]="retrying()"
-              (click)="retry()"
-            >
-              Reintentar el pago
-            </button>
+            @if (retryCheckout(); as checkout) {
+              <div class="mt-4"><app-mercado-pago-wallet [checkout]="checkout" /></div>
+            } @else {
+              <button
+                type="button"
+                class="btn btn-primary mt-4"
+                [disabled]="retrying()"
+                (click)="retry()"
+              >
+                Reintentar el pago
+              </button>
+            }
           } @else {
             <p class="mt-6 text-text">
               No se cobró nada. El tiempo de reserva venció, así que el stand ya no está reservado
@@ -174,7 +178,6 @@ export class CheckoutReturnPage implements OnInit {
   readonly outcome = input.required<CheckoutOutcome>();
 
   private readonly repository = inject(ReservationPaymentRepository);
-  private readonly navigate = inject(EXTERNAL_NAVIGATION);
   private readonly poll = inject(CHECKOUT_POLL);
   private readonly destroyRef = inject(DestroyRef);
   private subscription?: Subscription;
@@ -184,6 +187,8 @@ export class CheckoutReturnPage implements OnInit {
   protected readonly polling = signal(false);
   protected readonly retrying = signal(false);
   protected readonly retryFailed = signal(false);
+  /** The open preference, rendered as Checkout Pro's Wallet Brick. */
+  protected readonly retryCheckout = signal<CheckoutDto | null>(null);
 
   protected readonly view = computed<View>(() => {
     const r = this.reservation();
@@ -230,8 +235,8 @@ export class CheckoutReturnPage implements OnInit {
   protected retry(): void {
     this.retrying.set(true);
     this.retryFailed.set(false);
-    this.repository.checkoutUrl(this.id()).subscribe({
-      next: (url) => this.navigate(url),
+    this.repository.checkout(this.id()).subscribe({
+      next: (checkout) => this.retryCheckout.set(checkout),
       error: () => {
         this.retrying.set(false);
         this.retryFailed.set(true);

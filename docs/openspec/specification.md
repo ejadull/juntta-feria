@@ -744,6 +744,8 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
   - Se ignoran los query params; el retorno sólo elige el texto. Lo que manda es `GET /reservations/{id}`: `CONFIRMED` → confirmado, `EXPIRED` → venció, `CANCELLED`/`REFUND_*` → reserva inactiva, aunque el retorno diga "aprobado".
   - Aprobado o pendiente con la reserva todavía `HELD`/`PAYMENT_PENDING`: consulta cada 4 s hasta 15 veces y después ofrece "Volver a consultar".
   - Rechazado: una sola consulta; "Reintentar el pago" (`POST /reservations/{id}/checkout`, que devuelve la preferencia abierta) sólo mientras el hold no venció.
+  - El pago se abre con el **Wallet Brick** de Checkout Pro (etapa "Agregar el SDK al frontend"): `MercadoPagoWallet` carga `sdk.mercadopago.com/js/v2` con la Public Key de la plataforma (`MP_PUBLIC_KEY`), el `preferenceId` y `marketplace: true` cuando el organizador vinculó su cuenta (PAY-07). Sin public key, o si el SDK no carga, cae a un link a `init_point`. `CheckoutView` suma `preferenceId` y `wallet: {publicKey, marketplace} | null`.
+  - 2026-11-09: API `test:int` 171/171 (vista del checkout con `wallet`, modo marketplace con cuenta vinculada), `npm test` 124/124; web `ng test` 295/295 (3 de `mercado-pago-wallet.spec.ts`), Playwright 11/11.
 - [x] Estado pendiente con reintento de consulta y explicación de pagos offline.
 - [x] Rechazado con opción de reintentar dentro del hold.
 - [ ] Adaptador HTTP de `ReservationPaymentRepository` (con sesión).

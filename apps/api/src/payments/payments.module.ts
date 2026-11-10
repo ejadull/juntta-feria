@@ -49,6 +49,6 @@ import { SellerAccountsService } from './seller-accounts.service.js';
         ),
     },
   ],
-  exports: [PAYMENT_PROVIDER],
+  exports: [PAYMENT_PROVIDER, SellerAccountsService],
 })
 export class PaymentsModule {}

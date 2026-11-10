@@ -19,6 +19,8 @@ export const NOTIFICATION_URL =
   'https://api.example.test/api/v1/webhooks/mercadopago?source=juntta';
 /** Fictitious OAuth app and token key (PAY-07). */
 export const TOKEN_KEY = Buffer.alloc(32, 9).toString('base64');
+/** Platform public key for the Wallet Brick (Checkout Pro "Agregar el SDK al frontend"). */
+export const PUBLIC_KEY = 'TEST-int-public-key';
 export const OAUTH_REDIRECT_URI =
   'http://localhost:4200/organizador/mercado-pago/vincular';
 
@@ -65,6 +67,7 @@ export async function startIntApp(
     MP_CLIENT_SECRET: 'int-client-secret',
     MP_OAUTH_REDIRECT_URI: OAUTH_REDIRECT_URI,
     MP_TOKEN_ENCRYPTION_KEY: TOKEN_KEY,
+    MP_PUBLIC_KEY: PUBLIC_KEY,
   };
   for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
   let builder = Test.createTestingModule({

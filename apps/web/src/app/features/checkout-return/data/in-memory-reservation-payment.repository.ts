@@ -1,4 +1,5 @@
 import { defer, of, throwError, type Observable } from 'rxjs';
+import type { CheckoutDto } from '../../../shared/mercado-pago-wallet';
 import {
   ReservationPaymentRepository,
   type ReservationDto,
@@ -49,11 +50,16 @@ export class InMemoryReservationPaymentRepository extends ReservationPaymentRepo
     });
   }
 
-  checkoutUrl(id: string): Observable<string> {
+  /** No public key in the demo: the Wallet Brick falls back to its link, which skips Mercado Pago. */
+  checkout(id: string): Observable<CheckoutDto> {
     return defer(() => {
       const entry = this.reservations.get(id);
       if (!entry) return throwError(() => new Error('NOT_FOUND'));
-      return of(`/feriante/reservas/${id}/pago/aprobado`);
+      return of({
+        checkoutUrl: `/feriante/reservas/${id}/pago/aprobado`,
+        preferenceId: `demo-pref-${id}`,
+        wallet: null,
+      });
     });
   }
 }

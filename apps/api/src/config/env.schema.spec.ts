@@ -74,6 +74,7 @@ describe('parseEnvironment (FND-02)', () => {
         clientSecret: undefined,
         oauthRedirectUri: undefined,
         tokenKey: undefined,
+        publicKey: undefined,
       },
     });
   });
@@ -83,6 +84,7 @@ describe('parseEnvironment (FND-02)', () => {
       ...valid(),
       MP_ENVIRONMENT: 'production',
       MP_ACCESS_TOKEN: 'fake-mp-token',
+      MP_PUBLIC_KEY: 'APP_USR-fake-public-key',
       MP_WEBHOOK_SECRET: 'fake-mp-webhook-secret',
       MP_NOTIFICATION_URL:
         'https://api.example.test/api/v1/webhooks/mercadopago',
@@ -96,6 +98,7 @@ describe('parseEnvironment (FND-02)', () => {
       clientSecret: undefined,
       oauthRedirectUri: undefined,
       tokenKey: undefined,
+      publicKey: 'APP_USR-fake-public-key',
     });
   });
 

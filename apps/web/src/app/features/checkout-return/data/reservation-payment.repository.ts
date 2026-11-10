@@ -1,4 +1,5 @@
 import type { Observable } from 'rxjs';
+import type { CheckoutDto } from '../../../shared/mercado-pago-wallet';
 
 export type ReservationStatus =
   | 'HELD'
@@ -22,5 +23,5 @@ export interface ReservationDto {
 export abstract class ReservationPaymentRepository {
   abstract reservation(id: string): Observable<ReservationDto>;
   /** `POST /reservations/{id}/checkout` (PAY-02): the open preference again, to retry a payment. */
-  abstract checkoutUrl(id: string): Observable<string>;
+  abstract checkout(id: string): Observable<CheckoutDto>;
 }

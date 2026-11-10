@@ -10,6 +10,7 @@ import { FakePaymentProvider } from './fake-payment-provider.js';
 import {
   NOTIFICATION_URL,
   ORIGIN,
+  PUBLIC_KEY,
   WEBHOOK_SECRET,
   startIntApp,
 } from './int.app.js';
@@ -209,6 +210,9 @@ describe('checkout (PAY-02)', () => {
   let anaKey = '';
   let anaAttempt = '';
   let anaUrl = '';
+  let anaPreference = '';
+  /** Wallet Brick settings: platform public key; marketplace only with a linked seller (PAY-07). */
+  const wallet = { publicKey: PUBLIC_KEY, marketplace: false };
 
   it('creates a payment attempt and a preference from the reservation snapshot (201)', async () => {
     anaReservation = await hold('ana', 'C1');
@@ -228,10 +232,13 @@ describe('checkout (PAY-02)', () => {
       checkoutUrl: expect.stringMatching(
         /^https:\/\/sandbox\.mp\.test\/checkout\//,
       ),
+      preferenceId: expect.any(String),
+      wallet,
       status: 'PENDING',
     });
     anaAttempt = body.paymentAttemptId;
     anaUrl = body.checkoutUrl;
+    anaPreference = body.preferenceId;
 
     const [sent] = provider.checkouts.slice(-1);
     const reservation = (
@@ -262,6 +269,8 @@ describe('checkout (PAY-02)', () => {
       expect(res.json()).toEqual({
         paymentAttemptId: anaAttempt,
         checkoutUrl: anaUrl,
+        preferenceId: anaPreference,
+        wallet,
         status: 'PENDING',
       });
     }
@@ -968,7 +977,13 @@ describe('collector check (PAY-07, §6.7)', () => {
       ),
     );
     const reservation = await hold('gabi', 'C5');
-    expect((await checkout('gabi', reservation)).statusCode).toBe(201);
+    const opened = await checkout('gabi', reservation);
+    expect(opened.statusCode).toBe(201);
+    // A linked seller collects: the Wallet Brick runs in marketplace mode.
+    expect(opened.json().wallet).toEqual({
+      publicKey: PUBLIC_KEY,
+      marketplace: true,
+    });
     const gabi = await attemptOf('gabi', 'C5');
     provider.payments.set('9800', {
       id: '9800',

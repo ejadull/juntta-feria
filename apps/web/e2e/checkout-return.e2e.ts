@@ -38,9 +38,11 @@ test('a rejected return retries within the hold', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('El pago fue rechazado');
   expect(await seriousViolations(page)).toEqual([]);
 
-  // The demo adapter skips Mercado Pago and lands on the approved return (a full page load, as
-  // with the real redirect), which waits for the API instead of trusting the return.
+  // The demo API has no public key, so the Wallet Brick falls back to its init_point link; the
+  // demo link skips Mercado Pago and lands on the approved return (a full page load, as with the
+  // real redirect), which waits for the API instead of trusting the return.
   await page.getByRole('button', { name: 'Reintentar el pago' }).click();
+  await page.getByRole('link', { name: 'Pagar con Mercado Pago' }).click();
   await expect(page).toHaveURL(/demo-rechazada\/pago\/aprobado$/);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Estamos confirmando tu pago');
 });

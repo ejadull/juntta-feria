@@ -22,13 +22,27 @@ import {
   type Checkout,
   type PaymentProvider,
 } from '../payments/payment-provider.js';
+import { SellerAccountsService } from '../payments/seller-accounts.service.js';
 import { AuditService } from '../tenancy/audit.service.js';
 import { fail } from './reservations.service.js';
 
-/** §5.2 response: only our attempt id and the provider URL, never provider credentials. */
+/** Wallet Brick settings (Checkout Pro, "Agregar el SDK al frontend"): public data only. */
+export interface WalletSettings {
+  /** The platform's public key, also in marketplace mode. */
+  readonly publicKey: string;
+  /** True when the organizer's linked seller account collects (PAY-07). */
+  readonly marketplace: boolean;
+}
+
+/** §5.2 response: our attempt id and public checkout data, never provider credentials. */
 export interface CheckoutView {
   readonly paymentAttemptId: string;
+  /** `init_point`: the redirect fallback when there is no Wallet Brick. */
   readonly checkoutUrl: string;
+  /** What the Wallet Brick renders. */
+  readonly preferenceId: string;
+  /** Null without MP_PUBLIC_KEY: the web then redirects to `checkoutUrl`. */
+  readonly wallet: WalletSettings | null;
   readonly status: PaymentAttemptStatus;
 }
 
@@ -41,9 +55,14 @@ const notPayable = () =>
     'Only a live hold can be paid.',
   );
 
-const view = (attempt: Attempt): CheckoutView => ({
+const view = (
+  attempt: Attempt,
+  wallet: WalletSettings | null,
+): CheckoutView => ({
   paymentAttemptId: attempt.id,
   checkoutUrl: attempt.checkoutUrl ?? '',
+  preferenceId: attempt.preferenceId ?? '',
+  wallet,
   status: attempt.status,
 });
 
@@ -56,15 +75,18 @@ const view = (attempt: Attempt): CheckoutView => ({
 export class CheckoutService {
   private readonly webOrigin: string;
   private readonly notificationUrl: string | undefined;
+  private readonly publicKey: string | undefined;
 
   constructor(
     private readonly database: DatabaseService,
     private readonly audit: AuditService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
+    private readonly accounts: SellerAccountsService,
     @Inject(configuration.KEY) env: AppConfiguration,
   ) {
     this.webOrigin = env.corsOrigins.find((origin) => origin !== '*') ?? '';
     this.notificationUrl = env.mercadoPago.notificationUrl;
+    this.publicKey = env.mercadoPago.publicKey;
   }
 
   /** `created` is true when this request opened the checkout (201), false on a replay (200). */
@@ -74,10 +96,25 @@ export class CheckoutService {
     reservationId: string,
     idempotencyKey: string,
   ): Promise<{ checkout: CheckoutView; created: boolean }> {
+    const { attempt, created } = await this.openCheckout(
+      tenantId,
+      userId,
+      reservationId,
+      idempotencyKey,
+    );
+    return { checkout: view(attempt, await this.wallet(tenantId)), created };
+  }
+
+  private async openCheckout(
+    tenantId: string,
+    userId: string,
+    reservationId: string,
+    idempotencyKey: string,
+  ): Promise<{ attempt: Attempt; created: boolean }> {
     const { attempt, title } = await this.database.withTenant(tenantId, (tx) =>
       this.openAttempt(tx, userId, reservationId, idempotencyKey),
     );
-    if (attempt.checkoutUrl) return { checkout: view(attempt), created: false };
+    if (attempt.checkoutUrl) return { attempt, created: false };
 
     const result = await this.provider.createCheckout({
       tenantId,
@@ -174,7 +211,7 @@ export class CheckoutService {
     userId: string,
     attempt: Attempt,
     result: Checkout,
-  ): Promise<{ checkout: CheckoutView; created: boolean }> {
+  ): Promise<{ attempt: Attempt; created: boolean }> {
     const [saved] = await tx
       .update(paymentAttempts)
       .set({
@@ -194,7 +231,7 @@ export class CheckoutService {
         .select()
         .from(paymentAttempts)
         .where(eq(paymentAttempts.id, attempt.id));
-      return { checkout: view(current), created: false };
+      return { attempt: current, created: false };
     }
     // HELD → PAYMENT_PENDING (§4.5): from now on the hold is not released blindly (§6.6, PAY-05).
     const moved = await tx
@@ -216,7 +253,17 @@ export class CheckoutService {
         before: { status: 'HELD' },
         after: { status: 'PAYMENT_PENDING', paymentAttemptId: attempt.id },
       });
-    return { checkout: view(saved), created: true };
+    return { attempt: saved, created: true };
+  }
+
+  /** Marketplace mode whenever the organizer has a seller account (PAY-07); its token pays. */
+  private async wallet(tenantId: string): Promise<WalletSettings | null> {
+    if (!this.publicKey) return null;
+    const account = await this.accounts.status(tenantId);
+    return {
+      publicKey: this.publicKey,
+      marketplace: account.status !== 'NOT_LINKED',
+    };
   }
 
   /**

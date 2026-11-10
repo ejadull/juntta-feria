@@ -58,15 +58,22 @@ node scripts/init-local-env.mjs
 
 El script completa los marcadores `GENERATE_LOCAL_HEX_64` con valores aleatorios, conserva lo que ya tenga `.env`, deja vacías las credenciales de Mercado Pago y sólo informa **nombres** de variables, nunca valores. Las credenciales sandbox de Mercado Pago se cargan a mano recién cuando se trabaje en pagos. `.env` no se versiona.
 
-#### Mercado Pago sandbox (`PAY-01`)
+#### Mercado Pago: Checkout Pro (`PAY-01..07`)
 
-Sin credenciales, la API arranca igual y los pagos responden 503. Para probar el checkout:
+Sin credenciales, la API arranca igual y los pagos responden 503. La integración sigue las [etapas de Checkout Pro](https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-preferences/create-application):
 
-1. En [Tus integraciones](https://www.mercadopago.com.ar/developers/panel/app) creá una aplicación de Checkout Pro y copiá las **credenciales de prueba** (Access Token `TEST-…`) en `MP_ACCESS_TOKEN`, con `MP_ENVIRONMENT=sandbox`.
-2. En *Cuentas de prueba* creá un usuario **vendedor** y uno **comprador**. Pagá siempre logueado con el comprador de prueba, nunca con tu cuenta real.
-3. La firma secreta de webhooks va en `MP_WEBHOOK_SECRET`. `MP_NOTIFICATION_URL` es la URL pública https del webhook; en local, un túnel (por ejemplo `cloudflared`) a `/api/v1/webhooks/mercadopago`.
+| Etapa | Dónde |
+|---|---|
+| 1. Crear aplicación | En [Tus integraciones](https://www.mercadopago.com.ar/developers/panel/app): *Pagos online* → *Checkout Pro*. Activá OAuth con la URL de redirección igual a `MP_OAUTH_REDIRECT_URI`. |
+| 2. Configurar ambiente | Credenciales de prueba: Access Token `TEST-…` → `MP_ACCESS_TOKEN`, Public Key → `MP_PUBLIC_KEY`, Client ID/Secret → `MP_CLIENT_ID`/`MP_CLIENT_SECRET`, `MP_ENVIRONMENT=sandbox`. SDK `mercadopago` en la API. |
+| 3. Preferencia | `POST /reservations/{id}/checkout` (PAY-02): monto congelado, `external_reference`, vencimiento del hold, `binary_mode: false`. |
+| 4. URLs de retorno | `back_urls` a `/feriante/reservas/{id}/pago/{aprobado\|pendiente\|rechazado}` y `auto_return` (PAY-04). |
+| 5. SDK en el frontend | Wallet Brick (`sdk.mercadopago.com/js/v2`) con `preferenceId`, la Public Key de la plataforma y `marketplace: true` si el organizador vinculó su cuenta. Sin `MP_PUBLIC_KEY`, o si el SDK no carga, la web redirige a `init_point`. |
+| 6. Notificaciones | Webhook *Pagos* → `MP_NOTIFICATION_URL` (https; en local, un túnel como `cloudflared` a `/api/v1/webhooks/mercadopago`) con la clave en `MP_WEBHOOK_SECRET` (PAY-03). |
+| 7. Pruebas | En *Cuentas de prueba* creá un **vendedor** (organizador, que vincula su cuenta en `/organizador/mercado-pago`) y un **comprador** (feriante). Pagá siempre con el comprador de prueba. |
+| 8. Producción | Activá las credenciales productivas, reemplazá Access Token/Public Key, `MP_ENVIRONMENT=production` y HTTPS obligatorio. |
 
-Los valores nunca se versionan ni se pegan en issues: sólo los nombres de las variables. Cada organizador vincula su propia cuenta vendedora por OAuth (`PAY-07`): en la aplicación configurá la URL de redirección igual a `MP_OAUTH_REDIRECT_URI` y completá `MP_CLIENT_ID`, `MP_CLIENT_SECRET` y `MP_TOKEN_ENCRYPTION_KEY` (32 bytes en base64: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`). Sin cuenta vinculada, `sandbox` usa `MP_ACCESS_TOKEN` y `production` deja los pagos apagados.
+Los valores nunca se versionan ni se pegan en issues: sólo los nombres de las variables. `MP_TOKEN_ENCRYPTION_KEY` son 32 bytes en base64 (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`). Sin cuenta vinculada, `sandbox` usa `MP_ACCESS_TOKEN` y `production` deja los pagos apagados.
 
 ### 2. Con Docker Compose (recomendado)
 

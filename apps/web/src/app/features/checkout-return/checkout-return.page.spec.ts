@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of, throwError, type Observable } from 'rxjs';
-import { EXTERNAL_NAVIGATION } from '../../shared/external-navigation';
+import { MERCADO_PAGO_WALLET, type CheckoutDto } from '../../shared/mercado-pago-wallet';
 import { CHECKOUT_POLL, CheckoutReturnPage, type CheckoutOutcome } from './checkout-return.page';
 import {
   ReservationPaymentRepository,
@@ -31,17 +31,24 @@ class ScriptedRepository extends ReservationPaymentRepository {
     const next = this.script[Math.min(this.reads++, this.script.length - 1)];
     return next instanceof Error ? throwError(() => next) : of(next);
   }
-  checkoutUrl = vi.fn((): Observable<string> => of('https://mp.example/checkout'));
+  checkout = vi.fn(
+    (): Observable<CheckoutDto> =>
+      of({
+        checkoutUrl: 'https://mp.example/checkout',
+        preferenceId: 'pref-1',
+        wallet: { publicKey: 'TEST-pk', marketplace: true },
+      }),
+  );
 }
 
 /** Renders the page and waits for the first `count` reads (they run on a timer). */
 async function render(outcome: CheckoutOutcome, repo: ScriptedRepository, count: number) {
-  const navigate = vi.fn();
+  const renderWallet = vi.fn(async () => undefined);
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
       { provide: ReservationPaymentRepository, useValue: repo },
-      { provide: EXTERNAL_NAVIGATION, useValue: navigate },
+      { provide: MERCADO_PAGO_WALLET, useValue: renderWallet },
       { provide: CHECKOUT_POLL, useValue: { intervalMs: 1, attempts: 3 } },
     ],
   });
@@ -56,7 +63,7 @@ async function render(outcome: CheckoutOutcome, repo: ScriptedRepository, count:
   const host = fixture.nativeElement as HTMLElement;
   const button = (name: string) =>
     [...host.querySelectorAll('button')].find((b) => plain(b.textContent) === name);
-  return { fixture, host, button, navigate, reads };
+  return { fixture, host, button, renderWallet, reads };
 }
 
 describe('CheckoutReturnPage (P19, PAY-04)', () => {
@@ -91,15 +98,22 @@ describe('CheckoutReturnPage (P19, PAY-04)', () => {
     expect(button('Volver a consultar')).toBeTruthy();
   });
 
-  it('offers to retry a rejected payment while the hold is live', async () => {
+  it('retries a rejected payment with the Wallet Brick while the hold is live', async () => {
     const repo = new ScriptedRepository([reservation()]);
-    const { host, button, navigate, fixture } = await render('rejected', repo, 1);
+    const { host, button, renderWallet, fixture } = await render('rejected', repo, 1);
     expect(plain(host.querySelector('h1')?.textContent)).toContain('rechazado');
     button('Reintentar el pago')!.click();
     await fixture.whenStable();
     expect(repo.reads).toBe(1); // no polling: a rejection is final for that attempt
-    expect(repo.checkoutUrl).toHaveBeenCalledWith('r1');
-    expect(navigate).toHaveBeenCalledWith('https://mp.example/checkout');
+    expect(repo.checkout).toHaveBeenCalledWith('r1');
+    await vi.waitFor(() =>
+      expect(renderWallet).toHaveBeenCalledWith(expect.stringMatching(/^wallet-/), {
+        publicKey: 'TEST-pk',
+        preferenceId: 'pref-1',
+        marketplace: true,
+      }),
+    );
+    expect(button('Reintentar el pago')).toBeUndefined();
   });
 
   it('does not offer a retry once the hold is over', async () => {

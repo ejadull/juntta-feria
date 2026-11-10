@@ -60,6 +60,8 @@ export type AppEnvironment = Readonly<{
     oauthRedirectUri: string | undefined;
     /** Base64 of 32 bytes: AES-256-GCM key for the sellers' tokens. */
     tokenKey: string | undefined;
+    /** Platform public key for the Wallet Brick (Checkout Pro); without it the web redirects to init_point. */
+    publicKey: string | undefined;
   }>;
 }>;
 
@@ -248,6 +250,7 @@ const schema = z
         })
         .optional(),
     ),
+    MP_PUBLIC_KEY: z.preprocess(blankAsUndefined, z.string().trim().optional()),
     MP_TOKEN_ENCRYPTION_KEY: z.preprocess(
       blankAsUndefined,
       z
@@ -345,6 +348,7 @@ export function parseEnvironment(input: NodeJS.ProcessEnv): AppEnvironment {
       clientSecret: e.MP_CLIENT_SECRET,
       oauthRedirectUri: e.MP_OAUTH_REDIRECT_URI,
       tokenKey: e.MP_TOKEN_ENCRYPTION_KEY,
+      publicKey: e.MP_PUBLIC_KEY,
     },
   };
 }
