@@ -461,7 +461,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `PAY-01` Proveedor de pagos y credenciales | `FND-04`, `PAY-00` | puerto `PaymentProvider`, adaptador SDK `mercadopago`, sandbox — [detalle](#pay-01--proveedor-de-pagos-y-credenciales); falta la prueba en sandbox | `IN_PROGRESS` |
 | `PAY-02` Preferencia Checkout Pro | `RES-01`, `PAY-01` | payment attempt idempotente y preferencia desde snapshot de precio — [detalle](#pay-02--preferencia-checkout-pro); falta la prueba en sandbox | `IN_PROGRESS` |
 | `PAY-03` Webhooks de pago | `PAY-02` | firma, inbox deduplicado, consulta server-to-server y confirmación — [detalle](#pay-03--webhooks-de-pago); falta la prueba con el simulador | `IN_PROGRESS` |
-| `PAY-04` Retorno de checkout (P19) | `PAY-02`, `PUB-UI-01..06` | pantallas aprobado/pendiente/rechazado sin confiar en query params | `PENDING` |
+| `PAY-04` Retorno de checkout (P19) | `PAY-02`, `PUB-UI-01..06` | pantallas aprobado/pendiente/rechazado sin confiar en query params | `IN_PROGRESS` |
 | `PAY-05` Conciliación y pago tardío | `PAY-03` | job de reconciliación, `LATE_PAYMENT_CONFLICT`, P10 — [detalle](#pay-05--conciliación-y-pago-tardío); falta la pantalla P10 y la prueba en sandbox | `IN_PROGRESS` |
 | `PAY-06` Reembolsos, cancelaciones y contracargos | `PAY-05` | refund total/parcial, cancelación de pendientes, chargebacks | `IN_PROGRESS` |
 | `PAY-07` Configuración Mercado Pago (P12) | `PAY-01`, `CORE-03` | vincular cuenta vendedora del organizador sin secretos en claro | `IN_PROGRESS` |
@@ -734,13 +734,19 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 
 ##### PAY-04 — Retorno de checkout (P19)
 
-- **Estado:** `PENDING`
+- **Estado:** `IN_PROGRESS` (pantallas listas con adaptador de demo; falta el adaptador HTTP cuando la web tenga sesión, CORE-02)
 - **Dependencias:** `PAY-02`, `PUB-UI-01..06`
-- **Entrega:** páginas de retorno aprobado/pendiente/rechazado en el área Feriante, que reemplazan el marcador "Reserva y pago".
+- **Entrega:** páginas de retorno aprobado/pendiente/rechazado en el área Feriante, en las `back_urls` de PAY-02: `/feriante/reservas/{id}/pago/{aprobado|pendiente|rechazado}`. El marcador "Reserva y pago" (P18) sigue hasta RES-UI.
 - **Aceptación:** los query params del retorno (`payment_id`, `status`, `external_reference`, `merchant_order_id`, `preference_id`…) sólo orientan la UI; el estado mostrado sale de la API propia y se actualiza cuando llega el webhook.
 - **Evidencia requerida:** tests de página, E2E con API simulada y axe.
-- [ ] Estado pendiente con reintento de consulta y explicación de pagos offline.
-- [ ] Rechazado con opción de reintentar dentro del hold.
+  - 2026-11-09: `ng test` 292/292 (7 de `checkout-return.page.spec.ts` y 1 de rutas), repetido 3 veces; Playwright 11/11 (3 de `e2e/checkout-return.e2e.ts`, axe sin violaciones serias/críticas); `tsc` y `oxlint` OK.
+- **Reglas de la pantalla** (`CheckoutReturnPage`, puerto `ReservationPaymentRepository`):
+  - Se ignoran los query params; el retorno sólo elige el texto. Lo que manda es `GET /reservations/{id}`: `CONFIRMED` → confirmado, `EXPIRED` → venció, `CANCELLED`/`REFUND_*` → reserva inactiva, aunque el retorno diga "aprobado".
+  - Aprobado o pendiente con la reserva todavía `HELD`/`PAYMENT_PENDING`: consulta cada 4 s hasta 15 veces y después ofrece "Volver a consultar".
+  - Rechazado: una sola consulta; "Reintentar el pago" (`POST /reservations/{id}/checkout`, que devuelve la preferencia abierta) sólo mientras el hold no venció.
+- [x] Estado pendiente con reintento de consulta y explicación de pagos offline.
+- [x] Rechazado con opción de reintentar dentro del hold.
+- [ ] Adaptador HTTP de `ReservationPaymentRepository` (con sesión).
 
 ##### PAY-05 — Conciliación y pago tardío
 

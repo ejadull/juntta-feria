@@ -9,6 +9,8 @@ import { InMemoryPaymentAccountRepository } from './features/payment-account/dat
 import { PaymentAccountRepository } from './features/payment-account/data/payment-account.repository';
 import { InMemoryPublicCatalogRepository } from './features/public-catalog/data/in-memory-public-catalog.repository';
 import { PublicCatalogRepository } from './features/public-catalog/data/public-catalog.repository';
+import { InMemoryReservationPaymentRepository } from './features/checkout-return/data/in-memory-reservation-payment.repository';
+import { ReservationPaymentRepository } from './features/checkout-return/data/reservation-payment.repository';
 import { APP_NAME } from './shared/demo-context';
 
 const title = (section: string): string => `${section} · ${APP_NAME}`;
@@ -20,6 +22,27 @@ const reservationsPlaceholder = () =>
 const publicCatalog = [
   { provide: PublicCatalogRepository, useFactory: () => new InMemoryPublicCatalogRepository() },
 ];
+const feriante = [
+  ...publicCatalog,
+  {
+    provide: ReservationPaymentRepository,
+    useFactory: () => new InMemoryReservationPaymentRepository(),
+  },
+];
+/** P19 (PAY-04): one route per Mercado Pago `back_urls` entry (checkout.service.ts). */
+const checkoutReturns = (
+  [
+    ['aprobado', 'approved'],
+    ['pendiente', 'pending'],
+    ['rechazado', 'rejected'],
+  ] as const
+).map(([path, outcome]) => ({
+  path: `reservas/:id/pago/${path}`,
+  title: title('Pago de tu reserva'),
+  data: { outcome },
+  loadComponent: () =>
+    import('./features/checkout-return/checkout-return.page').then((m) => m.CheckoutReturnPage),
+}));
 const FERIANTE_BACK = {
   eyebrow: 'FERIANTE',
   backLink: '/feriante/explorar',
@@ -119,7 +142,7 @@ export const routes: Routes = [
       },
       {
         path: 'feriante',
-        providers: publicCatalog,
+        providers: feriante,
         children: [
           { path: '', pathMatch: 'full', redirectTo: 'explorar' },
           {
@@ -151,6 +174,7 @@ export const routes: Routes = [
               intro: 'Acá vas a ver tus reservas, su estado de pago y los comprobantes.',
             },
           },
+          ...checkoutReturns,
           { path: '**', title: title('Página no encontrada'), loadComponent: notFound },
         ],
       },

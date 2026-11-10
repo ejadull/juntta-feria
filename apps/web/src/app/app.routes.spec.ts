@@ -114,6 +114,20 @@ describe('areas and "Ver como" (PUB-UI-01)', () => {
     expect(map.current()).toEqual(['Mapa y expositores']);
   });
 
+  it('opens the checkout returns of Mercado Pago back_urls, and only those (P19, PAY-04)', async () => {
+    const { host, current } = await open('/feriante/reservas/demo-rechazada/pago/rechazado');
+    expect(TestBed.inject(Title).getTitle()).toBe('Pago de tu reserva · Juntta Feria');
+    expect(current()).toEqual(['Mis reservas']);
+    // The page reads the reservation on a timer.
+    await vi.waitFor(() =>
+      expect(host.querySelector('main h1')?.textContent).toContain('El pago fue rechazado'),
+    );
+
+    TestBed.resetTestingModule();
+    const other = await open('/feriante/reservas/demo-rechazada/pago/cualquiera');
+    expect(other.host.textContent).toContain('Página no encontrada');
+  });
+
   it('shows reservation placeholders without simulated data (spec: "Marcadores de reserva")', async () => {
     for (const path of ['/feriante/reserva', '/feriante/reservas']) {
       TestBed.resetTestingModule();

@@ -3,7 +3,8 @@ import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { InMemoryPaymentAccountRepository } from './data/in-memory-payment-account.repository';
 import { PaymentAccountRepository, type SellerAccountDto } from './data/payment-account.repository';
-import { EXTERNAL_NAVIGATION, PaymentAccountPage } from './payment-account.page';
+import { EXTERNAL_NAVIGATION } from '../../shared/external-navigation';
+import { PaymentAccountPage } from './payment-account.page';
 
 const plain = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
 

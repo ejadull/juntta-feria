@@ -4,22 +4,16 @@ import {
   Component,
   ElementRef,
   inject,
-  InjectionToken,
   Injector,
   signal,
   viewChild,
 } from '@angular/core';
+import { EXTERNAL_NAVIGATION } from '../../shared/external-navigation';
 import {
   PaymentAccountRepository,
   type SellerAccountDto,
   type SellerAccountStatus,
 } from './data/payment-account.repository';
-
-/** Leaves the app for the provider's authorization page. A token so tests never navigate. */
-export const EXTERNAL_NAVIGATION = new InjectionToken<(url: string) => void>('ExternalNavigation', {
-  providedIn: 'root',
-  factory: () => (url: string) => window.location.assign(url),
-});
 
 const STATUS: Record<SellerAccountStatus, { label: string; icon: string; tone: string }> = {
   NOT_LINKED: { label: 'Sin vincular', icon: '○', tone: 'bg-surface-soft' },
