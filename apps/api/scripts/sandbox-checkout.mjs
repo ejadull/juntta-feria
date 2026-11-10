@@ -64,24 +64,36 @@ async function http(method, pathname, opts = {}) {
   return die(`${method} ${pathname} -> ${response.status}\n${text}`);
 }
 
-const LOGIN_ATTEMPTS = 3;
+const b64url = (value) => Buffer.from(value).toString('base64url');
 
 /**
- * Retries a 503: the API's lazy Redis rate-limit store fails the first login after a cold
- * start (concurrent connect), see the gaps reported with this script.
+ * Sign-in is Google-only (ADR 0008), so there is no password to log in with: this mints the same
+ * short-lived HS256 access token the API issues (src/auth/tokens.ts), from AUTH_ACCESS_TOKEN_SECRET
+ * (present in the api container). The user ids come from .sandbox-state.json.
  */
-async function login({ email, password }) {
-  for (let attempt = 1; ; attempt += 1) {
-    const response = await fetch(`${API_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    const text = await response.text();
-    if (response.ok) return safeJson(text).accessToken;
-    if (response.status === 503 && attempt < LOGIN_ATTEMPTS) continue;
-    die(`POST /auth/login -> ${response.status}\n${text}`);
-  }
+function login({ id }) {
+  const secret = process.env.AUTH_ACCESS_TOKEN_SECRET;
+  if (!secret)
+    die('AUTH_ACCESS_TOKEN_SECRET is required (run inside the api container).');
+  if (!id)
+    die(
+      'El estado no tiene ids de usuario: volve a correr bootstrap-sandbox.mjs.',
+    );
+  const now = Math.floor(Date.now() / 1000);
+  const unsigned = `${b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))}.${b64url(
+    JSON.stringify({
+      typ: 'access',
+      sub: id,
+      iss: 'juntta-feria',
+      aud: 'juntta-feria-api',
+      iat: now,
+      exp: now + 900,
+    }),
+  )}`;
+  const signature = createHmac('sha256', secret)
+    .update(unsigned)
+    .digest('base64url');
+  return `${unsigned}.${signature}`;
 }
 
 // ---- setup ----

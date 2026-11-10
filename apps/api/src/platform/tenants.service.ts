@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { desc, sql } from 'drizzle-orm';
-import { hashPassword } from '../auth/password.js';
+import { hashPassword, passwordDisabled } from '../auth/password.js';
+import {
+  configuration,
+  type AppConfiguration,
+} from '../config/configuration.js';
 import {
   DatabaseService,
   isUniqueViolation,
@@ -46,10 +50,15 @@ const constraintOf = (error: unknown): string | undefined =>
  */
 @Injectable()
 export class TenantsService {
+  private readonly passwordEnabled: boolean;
+
   constructor(
     private readonly database: DatabaseService,
     private readonly audit: AuditService,
-  ) {}
+    @Inject(configuration.KEY) env: AppConfiguration,
+  ) {
+    this.passwordEnabled = env.auth.passwordEnabled;
+  }
 
   async create(
     actorId: string,
@@ -57,7 +66,10 @@ export class TenantsService {
   ): Promise<CreatedTenant> {
     const tenantId = randomUUID();
     // Hash before the transaction: Argon2 is slow and must not hold a connection.
-    const passwordHash = await hashPassword(input.owner.password);
+    if (input.owner.password && !this.passwordEnabled) throw passwordDisabled();
+    const passwordHash = input.owner.password
+      ? await hashPassword(input.owner.password)
+      : null;
     try {
       return await this.database.withTenant(tenantId, async (tx) => {
         const [tenant] = await tx
@@ -121,7 +133,7 @@ export class TenantsService {
   private async ensureOwner(
     tx: Transaction,
     owner: CreateTenantInput['owner'],
-    passwordHash: string,
+    passwordHash: string | null,
   ): Promise<CreatedTenant['owner']> {
     const [existing] = await tx
       .select({ id: users.id, email: users.email })

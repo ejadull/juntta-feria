@@ -17,7 +17,8 @@ export const createTenantInput = z.strictObject({
   owner: z.strictObject({
     email,
     fullName: z.string().trim().min(1).max(120),
-    password: z.string().min(10).max(256),
+    /** Only with AUTH_PASSWORD_ENABLED; otherwise the owner is created pending and binds Google (ADR 0008). */
+    password: z.string().min(10).max(256).optional(),
   }),
 });
 

@@ -2,23 +2,23 @@
 // DEV ONLY. Seeds what the HTTP API cannot create yet (tenant, users, subscription), mirroring
 // seed() in test/checkout.int-spec.ts, and writes .sandbox-state.json for sandbox-checkout.mjs.
 // Needs the OWNER connection, so run it through the db-migrate service:
-//   docker compose run --rm --no-deps db-migrate node apps/api/scripts/bootstrap-sandbox.mjs [--no-subscription]
+//   docker compose run --rm --no-deps db-migrate node apps/api/scripts/bootstrap-sandbox.mjs //     [--organizer you@gmail.com] [--exhibitor other@gmail.com] [--no-subscription]
+// Sign-in is Google-only (ADR 0008): users are created WITHOUT a password and bind to their Google
+// account on their first Google sign-in. Pass real Google emails to be able to sign in on the web;
+// without them fictitious @sandbox.test users are created (usable only by sandbox-checkout.mjs).
 // By default the exhibitor gets an ACTIVE platform subscription (shortcut). With --no-subscription it
 // does not, so the real flow (sandbox-checkout.mjs subscribe) can be tested.
 // Never prints connection strings.
-import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hash } from '@node-rs/argon2';
 import pg from 'pg';
 
 const STATE_FILE = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '.sandbox-state.json',
 );
-// Same Argon2id profile as src/auth/password.ts.
-const ARGON2 = { memoryCost: 19_456, timeCost: 2, parallelism: 1 };
+const EMAIL = /^[^@s]+@[^@s]+$/;
 const SUBSCRIPTION_DAYS = 30;
 const DAY_MS = 86_400_000;
 
@@ -34,27 +34,49 @@ function assertNotProduction(env) {
     fail('refusing to run unless MP_ENVIRONMENT is sandbox.');
 }
 
-function newRun() {
+/** --organizer / --exhibitor <email>: the Google accounts that will sign in as those users. */
+function parseArgs(argv) {
+  const options = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === '--no-subscription') options.noSubscription = true;
+    else if (arg === '--organizer' || arg === '--exhibitor') {
+      const email = (argv[(i += 1)] ?? '').trim().toLowerCase();
+      if (!EMAIL.test(email) || email.length > 254)
+        fail(`${arg} needs a valid email address.`);
+      options[arg.slice(2)] = email;
+    } else fail(`Unknown argument ${arg}.`);
+  }
+  return options;
+}
+
+function newRun(options) {
   const run = Date.now().toString(36);
-  const password = randomBytes(9).toString('base64url');
+  const fictitious = (role) => `${role}-${run}@sandbox.test`;
   return {
     run,
     slug: `sandbox-${run}`,
-    owner: { email: `organizador-${run}@sandbox.test`, password },
-    exhibitor: { email: `feriante-${run}@sandbox.test`, password },
+    owner: { email: options.organizer ?? fictitious('organizador') },
+    exhibitor: { email: options.exhibitor ?? fictitious('feriante') },
+    fictitious: !options.organizer || !options.exhibitor,
   };
 }
 
-async function insertUser(client, email, passwordHash) {
+/** Pending user (no password, no Google subject yet); an existing account is reused. */
+async function ensureUser(client, email) {
+  const found = await client.query(
+    'SELECT id FROM users WHERE lower(email) = $1',
+    [email],
+  );
+  if (found.rows[0]) return found.rows[0].id;
   const { rows } = await client.query(
-    `INSERT INTO users (email, password_hash, confirmed_at) VALUES ($1, $2, now()) RETURNING id`,
-    [email, passwordHash],
+    `INSERT INTO users (email, confirmed_at) VALUES ($1, now()) RETURNING id`,
+    [email],
   );
   return rows[0].id;
 }
 
 async function seed(client, plan, withSubscription) {
-  const passwordHash = await hash(plan.owner.password, ARGON2);
   const tenant = await client.query(
     `INSERT INTO tenants (slug, name) VALUES ($1, $2) RETURNING id`,
     [plan.slug, `Sandbox ${plan.run}`],
@@ -65,16 +87,12 @@ async function seed(client, plan, withSubscription) {
      VALUES ($1, 'FIXED', 'Predio sandbox', 'America/Argentina/Buenos_Aires', 30, 20) RETURNING id`,
     [tenantId],
   );
-  const ownerId = await insertUser(client, plan.owner.email, passwordHash);
+  const ownerId = await ensureUser(client, plan.owner.email);
   await client.query(
     `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'OWNER')`,
     [tenantId, ownerId],
   );
-  const exhibitorId = await insertUser(
-    client,
-    plan.exhibitor.email,
-    passwordHash,
-  );
+  const exhibitorId = await ensureUser(client, plan.exhibitor.email);
   await client.query(
     `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'EXHIBITOR')`,
     [tenantId, exhibitorId],
@@ -89,7 +107,7 @@ async function seed(client, plan, withSubscription) {
       `INSERT INTO platform_subscriptions (user_id, status, current_period_end) VALUES ($1, 'ACTIVE', $2)`,
       [exhibitorId, new Date(Date.now() + SUBSCRIPTION_DAYS * DAY_MS)],
     );
-  return { tenantId, venueId: venue.rows[0].id };
+  return { tenantId, venueId: venue.rows[0].id, ownerId, exhibitorId };
 }
 
 async function main() {
@@ -99,32 +117,32 @@ async function main() {
     fail(
       'DATABASE_MIGRATION_URL is required (run it via the db-migrate service).',
     );
-  const plan = newRun();
+  const options = parseArgs(process.argv.slice(2));
+  const plan = newRun(options);
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {
     await client.query('BEGIN');
-    const ids = await seed(
-      client,
-      plan,
-      !process.argv.includes('--no-subscription'),
-    );
+    const ids = await seed(client, plan, !options.noSubscription);
     await client.query('COMMIT');
+    const { ownerId, exhibitorId, ...rest } = ids;
     const state = {
       createdAt: new Date().toISOString(),
       slug: plan.slug,
-      ...ids,
-      owner: plan.owner,
-      exhibitor: plan.exhibitor,
+      ...rest,
+      owner: { ...plan.owner, id: ownerId },
+      exhibitor: { ...plan.exhibitor, id: exhibitorId },
     };
     writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
     console.log(`Tenant: ${ids.tenantId} (${plan.slug})`);
-    console.log(`Organizador: ${plan.owner.email} / ${plan.owner.password}`);
-    console.log(
-      `Feriante:    ${plan.exhibitor.email} / ${plan.exhibitor.password}`,
-    );
+    console.log(`Organizador: ${plan.owner.email}`);
+    console.log(`Feriante:    ${plan.exhibitor.email}`);
+    if (plan.fictitious)
+      console.log(
+        'Aviso: los usuarios @sandbox.test no pueden ingresar en la web (solo Google). Pasa --organizer y --exhibitor con emails de Google para poder hacerlo; sandbox-checkout.mjs funciona igual.',
+      );
     console.log('Estado guardado en apps/api/scripts/.sandbox-state.json');
-    if (process.argv.includes('--no-subscription'))
+    if (options.noSubscription)
       console.log(
         'Sin suscripcion: corre sandbox-checkout.mjs subscribe <email del comprador de prueba> antes de setup.',
       );

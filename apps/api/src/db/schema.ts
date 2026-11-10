@@ -68,7 +68,7 @@ export const users = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     email: text('email').notNull(),
-    /** Null for accounts created with Google (CORE-05): they have no password and cannot use password login. */
+    /** Null for Google accounts and for "pending" ones (email only, bound to Google on first sign-in; ADR 0008). */
     passwordHash: text('password_hash'),
     /** Google account id (`sub` of the ID token), bound on the first Google sign-in (CORE-05). */
     googleSub: text('google_sub').unique(),
@@ -87,11 +87,6 @@ export const users = pgTable(
     uniqueIndex('users_email_lower_unique').on(sql`lower(${t.email})`),
     check('users_status_check', sql`${t.status} IN ('ACTIVE', 'DISABLED')`),
     check('users_email_check', sql`${t.email} ~ '^[^@\\s]+@[^@\\s]+$'`),
-    // An account without a password must be reachable through Google, or nobody can sign in.
-    check(
-      'users_credential_check',
-      sql`${t.passwordHash} IS NOT NULL OR ${t.googleSub} IS NOT NULL`,
-    ),
   ],
 );
 

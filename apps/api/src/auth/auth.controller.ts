@@ -36,6 +36,7 @@ import {
   type GoogleVerifier,
 } from './google-sign-in.js';
 import { LoginRateLimiter, type RateDecision } from './login-rate-limiter.js';
+import { passwordDisabled } from './password.js';
 
 const googleBody = z.strictObject({ credential: z.string().min(1).max(4096) });
 
@@ -78,6 +79,7 @@ export class AuthController {
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
+    if (!this.env.auth.passwordEnabled) throw passwordDisabled();
     const input = loginBody.safeParse(body);
     if (!input.success)
       throw new BadRequestException(
@@ -98,9 +100,12 @@ export class AuthController {
 
   /** Public: what the web may offer on the sign-in page, so it needs no build-time configuration. */
   @Get('providers')
-  providers(): { google: { clientId: string } | null } {
+  providers(): { google: { clientId: string } | null; password: boolean } {
     const clientId = this.env.google.clientId;
-    return { google: clientId ? { clientId } : null };
+    return {
+      google: clientId ? { clientId } : null,
+      password: this.env.auth.passwordEnabled,
+    };
   }
 
   /** Sign in with a Google ID token (CORE-05, ADR 0008): existing accounts only, same session as login. */

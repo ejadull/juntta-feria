@@ -64,6 +64,7 @@ describe('parseEnvironment (FND-02)', () => {
         refreshCookieName: 'juntta_rt',
         cookieSecure: true,
         cookieSameSite: 'strict',
+        passwordEnabled: false,
       },
       mercadoPago: {
         environment: 'sandbox',
@@ -91,6 +92,20 @@ describe('parseEnvironment (FND-02)', () => {
     expect(
       parseEnvironment({ ...valid(), GOOGLE_CLIENT_ID: '' }).google.clientId,
     ).toBeUndefined();
+  });
+
+  it('keeps password sign-in off unless AUTH_PASSWORD_ENABLED is true (CORE-05)', () => {
+    expect(
+      parseEnvironment({ ...valid(), AUTH_PASSWORD_ENABLED: 'true' }).auth
+        .passwordEnabled,
+    ).toBe(true);
+    expect(
+      parseEnvironment({ ...valid(), AUTH_PASSWORD_ENABLED: '' }).auth
+        .passwordEnabled,
+    ).toBe(false);
+    expect(() =>
+      parseEnvironment({ ...valid(), AUTH_PASSWORD_ENABLED: 'maybe' }),
+    ).toThrow(/AUTH_PASSWORD_ENABLED/);
   });
 
   it('reads the Mercado Pago settings (PAY-01)', () => {

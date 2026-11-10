@@ -2,22 +2,29 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   CHECKOUT_URL,
   EMAIL,
+  GOOGLE_CLIENT_ID,
+  GOOGLE_CREDENTIALS,
   mockApi,
-  PASSWORD,
   reservation,
   seriousViolations,
+  stubGoogle,
 } from './support/mock-api';
 
 /** P01, P07, P18 and "Mis reservas": the exhibitor reserves and pays, against a mocked API. */
 
-async function signIn(page: Page, password = PASSWORD) {
-  await page.getByLabel('Correo electrónico').fill(EMAIL);
-  await page.getByLabel('Contraseña').fill(password);
-  await page.getByRole('button', { name: 'Ingresar' }).click();
+/** Signs in through the stubbed Google button (the only way in, ADR 0008). */
+async function signIn(page: Page) {
+  await page.getByRole('button', { name: 'Ingresar con Google' }).click();
+}
+
+async function signedOutApi(page: Page) {
+  const api = await mockApi(page, { signedIn: false, googleClientId: GOOGLE_CLIENT_ID });
+  await stubGoogle(page, GOOGLE_CREDENTIALS.registered);
+  return api;
 }
 
 test('signs in, picks a stand, holds it and reaches the Mercado Pago payment', async ({ page }) => {
-  const api = await mockApi(page, { signedIn: false });
+  const api = await signedOutApi(page);
   await page.goto('/feriante/explorar');
   await expect(page).toHaveURL(/\/ingresar\?volver=%2Fferiante%2Fexplorar$/);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Entrá a tu cuenta');
@@ -57,21 +64,12 @@ test('signs in, picks a stand, holds it and reaches the Mercado Pago payment', a
 });
 
 test('keeps the token out of web storage', async ({ page }) => {
-  await mockApi(page, { signedIn: false });
+  await signedOutApi(page);
   await page.goto('/ingresar');
   await signIn(page);
   await expect(page).toHaveURL(/\/feriante\/explorar$/);
   const stored = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
   expect(stored).not.toContain('access-token');
-});
-
-test('a wrong password shows a friendly error', async ({ page }) => {
-  await mockApi(page, { signedIn: false });
-  await page.goto('/ingresar');
-  await signIn(page, 'incorrecta');
-  await expect(page.getByRole('alert')).toContainText('no son correctos');
-  await expect(page).toHaveURL(/\/ingresar$/);
-  expect(await seriousViolations(page)).toEqual([]);
 });
 
 test('explains that a subscription is needed and links to it', async ({ page }) => {

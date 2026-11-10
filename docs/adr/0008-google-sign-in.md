@@ -23,3 +23,13 @@ El ingreso era sólo con email y contraseña. Los feriantes llegan por una invit
 - El ID token de la invitación se reutiliza para iniciar sesión justo después de aceptar; vale ~1 hora, de modo que el alta con Google es un solo clic.
 - La web gana la página `/invitacion/:token` (hasta ahora el link que genera la API no tenía pantalla) con contraseña o Google.
 - Pendiente: desvincular Google desde el perfil; "olvidé mi contraseña" para cuentas creadas con Google; el origen de producción en la consola de Google; probar con una cuenta real (las pruebas usan un JWKS generado localmente).
+
+## Enmienda (2026-11-10): sólo Google, usuarios pendientes
+
+**Decisión del producto:** el alta y el ingreso son **sólo con Google**; nadie va a usar pantallas de usuario y contraseña.
+
+- **`AUTH_PASSWORD_ENABLED`** (booleano, por defecto `false`) es la válvula de escape para pruebas y desarrollo. Apagado: `POST /auth/login` y el alta de feriante con `password` responden 403 `PASSWORD_SIGN_IN_DISABLED` (mensaje genérico), y el alta de organización (`POST /tenants`) rechaza `owner.password` con el mismo código; sin contraseña crea al dueño como usuario pendiente. Encendido: comportamiento anterior. Refresh, logout y Google no cambian. `GET /auth/providers` suma `password: boolean`. Las pruebas de integración lo encienden en el entorno base (las suites siguen usando contraseñas como fixture) y tienen casos con el flag apagado; Docker Compose no lo enciende.
+- **Usuarios pendientes** (migración `0018_pending_users`): se elimina el `CHECK (password_hash IS NOT NULL OR google_sub IS NOT NULL)` de la `0017`. Un usuario puede existir sólo con email; en su primer ingreso con Google se vincula por email verificado (`email_verified === true` sigue siendo obligatorio) y se guarda el `google_sub`. Los scripts `create-platform-admin.mjs` y `bootstrap-sandbox.mjs` crean usuarios así.
+- **Por qué:** una contraseña es una credencial más que guardar, rotar y filtrar, y no aporta nada a quien ya entra con Google. Los usuarios pendientes permiten dar de alta a alguien por su email sin inventar una contraseña temporal.
+- **Consecuencia:** las cuentas con contraseña que ya existían en una base dejan de poder ingresar por la web (no hay formulario) salvo que su email coincida con el de una cuenta de Google: se vincularán por email en el primer ingreso con Google.
+- **Riesgo asumido:** como la vinculación por email depende de que Google verifique el email, un usuario pendiente es "reclamable" por quien controle ese email.

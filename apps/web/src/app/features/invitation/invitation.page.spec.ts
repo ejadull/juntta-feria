@@ -43,92 +43,44 @@ async function render(googleClientId: string | null = 'cid.test') {
     else req.flush({ detail: 'x' }, { status: 404, statusText: 'Not Found' });
     await settle();
   };
-  const type = (id: string, value: string) => {
-    const input = host.querySelector<HTMLInputElement>(`#${id}`)!;
-    input.value = value;
-    input.dispatchEvent(new Event('input'));
-  };
-  const submit = async () => {
-    host.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
-    await settle();
-  };
-  return { host, http, rendered, open, type, submit, settle };
+  return { host, http, rendered, open, settle };
 }
 
 describe('InvitationPage (EXH-04, CORE-05)', () => {
-  it('shows the organization, prefilled and locked to the invited email', async () => {
-    const { host, open } = await render();
+  it('shows the organization and only "Continuar con Google": no password form', async () => {
+    const { host, open, rendered } = await render();
     await open();
     expect(host.textContent).toContain('Feria Norte');
-    expect(host.querySelector<HTMLInputElement>('#email')!.value).toBe('n@example.test');
-    expect(host.querySelector<HTMLInputElement>('#email')!.readOnly).toBe(true);
-    expect(host.querySelector<HTMLInputElement>('#fullName')!.value).toBe('Nora');
-    expect(host.querySelector('#password')?.getAttribute('autocomplete')).toBe('new-password');
+    expect(host.querySelector('form')).toBeNull();
+    expect(host.querySelector('input')).toBeNull();
+    expect(rendered).toHaveLength(1);
+    expect(rendered[0].options).toMatchObject({ clientId: 'cid.test', text: 'continue_with' });
+    expect(rendered[0].container.getAttribute('aria-label')).toBe('Continuar con Google');
   });
 
   it('explains an invalid, used or expired link', async () => {
     const { host, open } = await render();
     await open(null);
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('no es válido');
-    expect(host.querySelector('form')).toBeNull();
+    expect(host.querySelector('app-google-sign-in-button')).toBeNull();
   });
 
-  it('creates the account with a password, signs in and enters the exhibitor area', async () => {
-    const { http, open, type, submit } = await render(null);
-    await open();
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
-    type('password', 'una clave larga y segura');
-    type('phone', '+54 9 11 2345-6789');
-    await submit();
-
-    const accept = http.expectOne(`${INVITATION_URL}/accept`);
-    expect(accept.request.body).toEqual({
-      fullName: 'Nora',
-      email: 'n@example.test',
-      password: 'una clave larga y segura',
-      phone: '+54 9 11 2345-6789',
-    });
-    accept.flush(
-      { user: { id: 'u', email: 'n@example.test' }, tenantId: 't' },
-      { status: 201, statusText: 'Created' },
-    );
-    http.expectOne('/api/v1/auth/login').flush(SESSION);
-    expect(navigate).toHaveBeenCalledWith('/feriante/explorar');
-  });
-
-  it('asks for a long enough password before calling the API', async () => {
-    const { host, http, open, type, submit } = await render(null);
-    await open();
-    type('password', 'corta');
-    await submit();
-    http.expectNone(`${INVITATION_URL}/accept`);
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain('10 caracteres');
-  });
-
-  it('hides "Continuar con Google" when the API has no client id', async () => {
+  it('says Google is unavailable when the API has no client id', async () => {
     const { host, open, rendered } = await render(null);
     await open();
     expect(host.querySelector('app-google-sign-in-button')).toBeNull();
     expect(rendered).toHaveLength(0);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('no está disponible');
   });
 
-  it('offers a labelled "Continuar con Google" next to the password form', async () => {
-    const { host, open, rendered } = await render();
-    await open();
-    expect(rendered).toHaveLength(1);
-    expect(rendered[0].options).toMatchObject({ clientId: 'cid.test', text: 'continue_with' });
-    expect(rendered[0].container.getAttribute('aria-label')).toBe('Continuar con Google');
-    expect(host.querySelector('#password')).not.toBeNull();
-  });
-
-  it('accepts with the Google credential, without any password, then signs in with it', async () => {
+  it('accepts with the Google credential, then signs in with it', async () => {
     const { http, open, rendered } = await render();
     await open();
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
     rendered[0].options.onCredential('id-token');
 
     const accept = http.expectOne(`${INVITATION_URL}/accept`);
-    expect(accept.request.body).toEqual({ googleCredential: 'id-token', fullName: 'Nora' });
+    expect(accept.request.body).toEqual({ googleCredential: 'id-token' });
     accept.flush(
       { user: { id: 'u', email: 'n@example.test' }, tenantId: 't' },
       { status: 201, statusText: 'Created' },
@@ -153,6 +105,8 @@ describe('InvitationPage (EXH-04, CORE-05)', () => {
       .expectOne(`${INVITATION_URL}/accept`)
       .flush({ detail: 'x', ...(code ? { code } : {}) }, { status, statusText: 'x' });
     await settle();
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain(text);
+    const message = host.querySelector('[role="alert"]')?.textContent;
+    expect(message).toContain(text);
+    expect(message).not.toContain('contraseña');
   });
 });

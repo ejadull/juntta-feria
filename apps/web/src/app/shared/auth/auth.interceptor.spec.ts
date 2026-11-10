@@ -21,8 +21,8 @@ function setup() {
   });
   const store = TestBed.inject(SessionStore);
   const http = TestBed.inject(HttpTestingController);
-  store.login('a', 'b').subscribe();
-  http.expectOne('/api/v1/auth/login').flush(session('access-1'));
+  store.loginWithGoogle('id-token').subscribe();
+  http.expectOne('/api/v1/auth/google').flush(session('access-1'));
   return { store, http, client: TestBed.inject(HttpClient) };
 }
 

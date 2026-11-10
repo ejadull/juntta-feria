@@ -83,7 +83,9 @@ Los valores nunca se versionan ni se pegan en issues: sólo los nombres de las v
 
 #### Ingresar con Google (`CORE-05`)
 
-Es opcional: sin `GOOGLE_CLIENT_ID`, `POST /api/v1/auth/google` responde 503 `GOOGLE_SIGN_IN_UNAVAILABLE` y la web no muestra el botón. Sólo entran cuentas que ya existen (o que se crean aceptando una invitación con Google); nunca se crea un usuario desde un ingreso con Google ([ADR 0008](docs/adr/0008-google-sign-in.md)).
+El alta y el ingreso son **sólo con Google**: la web no tiene formulario de usuario y contraseña. Sin `GOOGLE_CLIENT_ID`, `POST /api/v1/auth/google` responde 503 `GOOGLE_SIGN_IN_UNAVAILABLE` y `/ingresar` avisa que no está disponible. Sólo entran cuentas que ya existen (o que se crean aceptando una invitación con Google); nunca se crea un usuario desde un ingreso con Google. Una cuenta "pendiente" (sólo email, sin contraseña ni `google_sub`) se vincula a Google en su primer ingreso, por email verificado ([ADR 0008](docs/adr/0008-google-sign-in.md)).
+
+**`AUTH_PASSWORD_ENABLED`** (por defecto `false`) es una válvula de escape para pruebas y desarrollo: con `true` la API vuelve a aceptar `POST /auth/login` y el alta de feriante con contraseña (la web sigue sin formulario). Apagado, esas rutas responden 403 `PASSWORD_SIGN_IN_DISABLED`. Docker Compose no lo enciende. Las cuentas con contraseña que ya existían en una base dejan de poder ingresar por la web, salvo que su email coincida con una cuenta de Google: se vinculan por email en el primer ingreso con Google.
 
 1. En [Google Cloud Console](https://console.cloud.google.com/) elegí o creá un proyecto.
 2. *APIs y servicios* → *Pantalla de consentimiento de OAuth*: tipo *Externo*, nombre de la app y tu email; los scopes por defecto (`openid`, `email`, `profile`) alcanzan. Mientras esté en *Prueba*, agregá como *usuarios de prueba* los emails que vayan a ingresar.
@@ -118,21 +120,26 @@ Todos los puertos se publican sólo en `127.0.0.1`. La web llama siempre a la ru
 Nadie puede llamar a la API antes de que exista un superadministrador, así que el primero se crea con un CLI que usa la conexión del dueño de la base (desde la raíz del repo, PowerShell o Git Bash):
 
 ```powershell
-docker compose run --rm --no-deps db-migrate node apps/api/scripts/create-platform-admin.mjs --email admin@example.com --name "Ada Admin" --password "una-clave-de-12-o-mas"
+docker compose run --rm --no-deps db-migrate node apps/api/scripts/create-platform-admin.mjs --email admin@gmail.com [--name "Ada Admin"]
 ```
 
-Es idempotente: si el email ya existe sólo lo promueve (no cambia su contraseña). Con `NODE_ENV=production` se niega a correr salvo que se pase `--allow-production`, y nunca imprime la contraseña.
+`--email` es la **cuenta de Google** del administrador: se crea un usuario pendiente, sin contraseña, que se vincula a Google en su primer ingreso en `/ingresar`. Es idempotente: si el email ya existe sólo lo promueve. Con `NODE_ENV=production` se niega a correr salvo que se pase `--allow-production`.
 
-Después, iniciá sesión y creá la organización con su dueño (PowerShell):
+Después, ingresá con Google en la web y creá la organización con `POST /api/v1/tenants` (por ejemplo desde Swagger con el access token de la sesión). El dueño se da de alta sólo con su email, sin contraseña (queda pendiente y se vincula a Google en su primer ingreso):
+
+```json
+{ "name": "Feria Norte", "slug": "feria-norte", "owner": { "email": "duena@gmail.com", "fullName": "Ana Dueña" } }
+```
+
+Responde `201` con `{ id, name, slug, owner: { userId, email, created } }`. Si el email del dueño ya tenía cuenta se reutiliza (`created: false`). Un slug repetido responde `409 TENANT_SLUG_TAKEN`. Con `AUTH_PASSWORD_ENABLED=false`, enviar `owner.password` responde 403 `PASSWORD_SIGN_IN_DISABLED`.
+
+#### Sandbox de pagos (`bootstrap-sandbox.mjs`)
 
 ```powershell
-$api = "http://localhost:3000/api/v1"
-$login = Invoke-RestMethod -Method Post -Uri "$api/auth/login" -ContentType "application/json" -Body (@{ email = "admin@example.com"; password = "una-clave-de-12-o-mas" } | ConvertTo-Json)
-$body = @{ name = "Feria Norte"; slug = "feria-norte"; owner = @{ email = "duena@example.com"; fullName = "Ana Dueña"; password = "otra-clave-larga" } } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri "$api/tenants" -Headers @{ Authorization = "Bearer $($login.accessToken)" } -ContentType "application/json" -Body $body
+docker compose run --rm --no-deps db-migrate node apps/api/scripts/bootstrap-sandbox.mjs --organizer vos@gmail.com --exhibitor otra@gmail.com [--no-subscription]
 ```
 
-Responde `201` con `{ id, name, slug, owner: { userId, email, created } }`; el dueño ya puede iniciar sesión. Si el email del dueño ya tenía cuenta se reutiliza (`created: false`) y su contraseña no cambia. Un slug repetido responde `409 TENANT_SLUG_TAKEN`.
+Crea la organización de prueba con esos dos usuarios **sin contraseña** (pendientes: se vinculan a Google en su primer ingreso). Sin `--organizer`/`--exhibitor` crea usuarios ficticios `@sandbox.test` que no pueden ingresar por la web (sólo Google); `sandbox-checkout.mjs` funciona igual, porque en lugar de iniciar sesión firma un access token con `AUTH_ACCESS_TOKEN_SECRET` (corre dentro del contenedor `api`). Si tenés un estado viejo (`.sandbox-state.json` sin ids), volvé a correr el bootstrap.
 
 ### 3. Con npm (sin contenedores de apps)
 

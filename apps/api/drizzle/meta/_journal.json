@@ -127,6 +127,13 @@
       "when": 1794285597771,
       "tag": "0017_google_sign_in",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794372000000,
+      "tag": "0018_pending_users",
+      "breakpoints": true
     }
   ]
 }

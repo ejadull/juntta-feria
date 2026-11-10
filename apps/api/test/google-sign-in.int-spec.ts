@@ -60,6 +60,10 @@ async function seed(): Promise<void> {
     await client.query(
       `INSERT INTO users (email, google_sub) VALUES ('soloGoogle@google.test', 'sub-solo')`,
     );
+    // Pending account (ADR 0008): only an email, no password, no Google subject yet.
+    await client.query(
+      `INSERT INTO users (email, status) VALUES ('pendiente@google.test', 'ACTIVE'), ('pendiente-b@google.test', 'ACTIVE')`,
+    );
   });
 }
 
@@ -106,7 +110,10 @@ describe('GET /auth/providers', () => {
       url: '/api/v1/auth/providers',
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ google: { clientId: GOOGLE_CLIENT_ID } });
+    expect(res.json()).toEqual({
+      google: { clientId: GOOGLE_CLIENT_ID },
+      password: true,
+    });
   });
 });
 
@@ -219,6 +226,27 @@ describe('POST /auth/google (CORE-05)', () => {
     );
   });
 
+  it('binds a pending account (no password, no subject) on its first Google sign-in', async () => {
+    expect(await subOf('pendiente@google.test')).toBeNull();
+    const res = await googleLogin({
+      sub: 'sub-pendiente',
+      email: 'Pendiente@Google.test',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().user.email).toBe('pendiente@google.test');
+    expect(await subOf('pendiente@google.test')).toBe('sub-pendiente');
+  });
+
+  it('never matches a pending account by an unverified email', async () => {
+    const res = await googleLogin({
+      sub: 'sub-unverified',
+      email: 'pendiente-b@google.test',
+      emailVerified: false,
+    });
+    expect(res.statusCode).toBe(401);
+    expect(await subOf('pendiente-b@google.test')).toBeNull();
+  });
+
   it('lets a Google-only account in with Google but never with a password', async () => {
     expect(
       (await googleLogin({ sub: 'sub-solo', email: 'sologoogle@google.test' }))
@@ -247,7 +275,7 @@ describe('without Google available (CORE-05)', () => {
         method: 'GET',
         url: '/api/v1/auth/providers',
       });
-      expect(providers.json()).toEqual({ google: null });
+      expect(providers.json()).toEqual({ google: null, password: true });
     } finally {
       await bare.close();
     }
@@ -271,6 +299,87 @@ describe('without Google available (CORE-05)', () => {
     } finally {
       await broken.close();
     }
+  });
+});
+
+describe('with password sign-in disabled, the default (ADR 0008)', () => {
+  let off: NestFastifyApplication;
+
+  beforeAll(async () => {
+    off = await startIntApp([], [[GoogleKeys, google.keys]], {
+      GOOGLE_CLIENT_ID,
+      AUTH_PASSWORD_ENABLED: 'false',
+    });
+  }, 60_000);
+  afterAll(async () => {
+    await off?.close();
+  });
+
+  it('refuses POST /auth/login even with right credentials (403)', async () => {
+    const res = await post(
+      '/auth/login',
+      { email: 'owner@google.test', password: PASSWORD },
+      off,
+    );
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ code: 'PASSWORD_SIGN_IN_DISABLED' });
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('says so in GET /auth/providers', async () => {
+    const res = await off.inject({
+      method: 'GET',
+      url: '/api/v1/auth/providers',
+    });
+    expect(res.json()).toEqual({
+      google: { clientId: GOOGLE_CLIENT_ID },
+      password: false,
+    });
+  });
+
+  it('keeps Google sign-in working', async () => {
+    const res = await googleLogin(
+      { sub: 'sub-bound', email: 'bound@google.test' },
+      off,
+    );
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('refuses to accept an invitation with a password (403) and keeps the link usable', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/exhibitor-invitations',
+      headers: {
+        authorization: `Bearer ${ownerToken}`,
+        'x-tenant-id': TENANT,
+      },
+      payload: {},
+    });
+    const token = (created.json().url as string).split('/').at(-1)!;
+    const denied = await post(
+      `/public/invitations/${token}/accept`,
+      {
+        fullName: 'Pedro Clave',
+        email: 'clave@google.test',
+        password: 'una clave larga y segura',
+      },
+      off,
+    );
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ code: 'PASSWORD_SIGN_IN_DISABLED' });
+    expect(await subOf('clave@google.test')).toBeUndefined();
+
+    const ok = await post(
+      `/public/invitations/${token}/accept`,
+      {
+        googleCredential: await google.idToken({
+          sub: 'sub-clave',
+          email: 'clave@google.test',
+        }),
+      },
+      off,
+    );
+    expect(ok.statusCode).toBe(201);
   });
 });
 

@@ -47,6 +47,8 @@ export type AppEnvironment = Readonly<{
     refreshCookieName: string;
     cookieSecure: boolean;
     cookieSameSite: 'strict' | 'lax';
+    /** CORE-05 (ADR 0008): email+password sign-in/sign-up; off by default, Google is the way in. */
+    passwordEnabled: boolean;
   }>;
   /** PAY-01 (ADR 0006). Credentials may be empty: payments then fail with 503, the API still runs (§13.1). */
   mercadoPago: Readonly<{
@@ -218,6 +220,7 @@ const schema = z
         .enum(['strict', 'lax'], { error: 'must be strict or lax' })
         .default('strict'),
     ),
+    AUTH_PASSWORD_ENABLED: optionalBool(false),
     MP_ENVIRONMENT: z.preprocess(
       blankAsUndefined,
       z
@@ -365,6 +368,7 @@ export function parseEnvironment(input: NodeJS.ProcessEnv): AppEnvironment {
       refreshCookieName: e.AUTH_REFRESH_COOKIE_NAME,
       cookieSecure: e.AUTH_COOKIE_SECURE,
       cookieSameSite: e.AUTH_COOKIE_SAME_SITE,
+      passwordEnabled: e.AUTH_PASSWORD_ENABLED,
     },
     mercadoPago: {
       environment: e.MP_ENVIRONMENT,

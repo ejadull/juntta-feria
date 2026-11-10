@@ -226,3 +226,55 @@ describe('platform administration (CORE-04)', () => {
     expect(slugs).toEqual(expect.arrayContaining(['feria-uno', 'feria-dos']));
   });
 });
+
+describe('platform administration with password sign-in disabled (ADR 0008)', () => {
+  let off: NestFastifyApplication;
+  const create = (payload: object) =>
+    off.inject({
+      method: 'POST',
+      url: '/api/v1/tenants',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload,
+    });
+
+  beforeAll(async () => {
+    off = await startIntApp([], [], { AUTH_PASSWORD_ENABLED: 'false' });
+  }, 60_000);
+  afterAll(async () => {
+    await off?.close();
+  });
+
+  it('refuses an owner password (403) and creates nothing', async () => {
+    const res = await create(body('feria-clave', 'owner-clave@platform.test'));
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ code: 'PASSWORD_SIGN_IN_DISABLED' });
+    const n = await owner(
+      async (c) =>
+        (await c.query(`SELECT 1 FROM tenants WHERE slug = 'feria-clave'`))
+          .rowCount,
+    );
+    expect(n).toBe(0);
+  });
+
+  it('creates the owner pending, without password, when none is given', async () => {
+    const res = await create({
+      name: 'Org pendiente',
+      slug: 'feria-pendiente',
+      owner: { email: 'Owner-Pend@Platform.test', fullName: 'Ana Pendiente' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().owner).toMatchObject({
+      email: 'owner-pend@platform.test',
+      created: true,
+    });
+    const row = await owner(
+      async (c) =>
+        (
+          await c.query(
+            `SELECT password_hash, google_sub FROM users WHERE email = 'owner-pend@platform.test'`,
+          )
+        ).rows[0],
+    );
+    expect(row).toEqual({ password_hash: null, google_sub: null });
+  });
+});

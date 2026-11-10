@@ -1,5 +1,15 @@
 import { randomBytes } from 'node:crypto';
+import { ForbiddenException, type HttpException } from '@nestjs/common';
 import { hash, verify } from '@node-rs/argon2';
+
+/** Problem `code` when a password path is used while AUTH_PASSWORD_ENABLED is false (ADR 0008). */
+export const PASSWORD_DISABLED_CODE = 'PASSWORD_SIGN_IN_DISABLED';
+
+export const passwordDisabled = (): HttpException =>
+  new ForbiddenException({
+    message: 'Sign in with a password is not available.',
+    code: PASSWORD_DISABLED_CODE,
+  });
 
 /**
  * Argon2id (the library default) with OWASP's minimum profile: 19 MiB, 2 passes, 1 lane.

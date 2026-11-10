@@ -6,7 +6,7 @@ import type { Page, Route } from '@playwright/test';
  * or Mercado Pago. State lives in the returned object; tests tweak it before or during the run.
  */
 
-export const PASSWORD = 'secreta-123';
+export const GOOGLE_CLIENT_ID = 'e2e-client.apps.googleusercontent.com';
 export const EMAIL = 'feriante@example.test';
 export const CHECKOUT_URL = 'https://www.mercadopago.test/checkout?pref=pref-1';
 export const SUBSCRIBE_URL = 'https://www.mercadopago.test/subscriptions?id=sub-1';
@@ -88,6 +88,35 @@ export const GOOGLE_CREDENTIALS = {
   wrongEmail: 'google-credential-wrong-email',
 } as const;
 
+/**
+ * Stand-in for https://accounts.google.com/gsi/client: `renderButton` draws a plain button that,
+ * when clicked, calls the registered callback with `window.__googleCredential`.
+ */
+export async function stubGoogle(page: Page, credential: string) {
+  await page.addInitScript((value) => {
+    (window as unknown as { __googleCredential: string }).__googleCredential = value;
+  }, credential);
+  await page.route('https://accounts.google.com/gsi/client', (route) =>
+    route.fulfill({
+      contentType: 'text/javascript',
+      body: `
+        (() => {
+          let callback;
+          window.google = { accounts: { id: {
+            initialize: (config) => { callback = config.callback; },
+            renderButton: (container, options) => {
+              const button = document.createElement('button');
+              button.type = 'button';
+              button.textContent = options.text === 'continue_with' ? 'Continuar con Google' : 'Ingresar con Google';
+              button.addEventListener('click', () => callback({ credential: window.__googleCredential }));
+              container.append(button);
+            },
+          } } };
+        })();`,
+    }),
+  );
+}
+
 export interface MockApi {
   /** Client id answered by `GET /auth/providers`; null hides "Ingresar con Google". */
   googleClientId: string | null;
@@ -151,12 +180,6 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
 
     if (path === '/health/live') return json(route, { status: 'ok' });
     if (path === '/auth/refresh') return api.signedIn ? json(route, SESSION) : problem(route, 401);
-    if (path === '/auth/login') {
-      const body = JSON.parse(raw ?? '{}') as { password?: string };
-      if (body.password !== PASSWORD) return problem(route, 401);
-      api.signedIn = true;
-      return json(route, SESSION);
-    }
     if (path === '/auth/providers')
       return json(route, {
         google: api.googleClientId ? { clientId: api.googleClientId } : null,

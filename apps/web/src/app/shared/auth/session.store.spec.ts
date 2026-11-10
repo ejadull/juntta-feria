@@ -22,9 +22,9 @@ function setup() {
 describe('SessionStore (CORE-02, P01)', () => {
   it('keeps the access token in memory only, never in web storage', () => {
     const { store, http } = setup();
-    store.login('feriante@example.test', 'secret').subscribe();
-    const req = http.expectOne('/api/v1/auth/login');
-    expect(req.request.body).toEqual({ email: 'feriante@example.test', password: 'secret' });
+    store.loginWithGoogle('id-token').subscribe();
+    const req = http.expectOne('/api/v1/auth/google');
+    expect(req.request.body).toEqual({ credential: 'id-token' });
     req.flush(SESSION);
 
     expect(store.accessToken()).toBe('access-1');
@@ -35,8 +35,8 @@ describe('SessionStore (CORE-02, P01)', () => {
 
   it('picks the exhibitor organization by itself and lets the user change it', () => {
     const { store, http } = setup();
-    store.login('a', 'b').subscribe();
-    http.expectOne('/api/v1/auth/login').flush(SESSION);
+    store.loginWithGoogle('id-token').subscribe();
+    http.expectOne('/api/v1/auth/google').flush(SESSION);
     expect(store.tenantId()).toBe('t-exh');
     store.selectTenant('t-owner');
     expect(store.tenantId()).toBe('t-owner');
@@ -73,8 +73,8 @@ describe('SessionStore (CORE-02, P01)', () => {
 
   it('forgets everything on logout, even if the server cannot be reached', () => {
     const { store, http } = setup();
-    store.login('a', 'b').subscribe();
-    http.expectOne('/api/v1/auth/login').flush(SESSION);
+    store.loginWithGoogle('id-token').subscribe();
+    http.expectOne('/api/v1/auth/google').flush(SESSION);
     store.logout().subscribe();
     http.expectOne('/api/v1/auth/logout').error(new ProgressEvent('error'));
     expect(store.user()).toBeNull();

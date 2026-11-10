@@ -13,7 +13,7 @@ import {
   verifyGoogleCredential,
   type GoogleVerifier,
 } from '../auth/google-sign-in.js';
-import { hashPassword } from '../auth/password.js';
+import { hashPassword, passwordDisabled } from '../auth/password.js';
 import {
   configuration,
   type AppConfiguration,
@@ -104,6 +104,7 @@ function summarize(
 export class InvitationsService {
   /** ponytail: the web origin is the first configured CORS origin; add APP_PUBLIC_URL if they diverge. */
   private readonly webOrigin: string;
+  private readonly passwordEnabled: boolean;
 
   constructor(
     private readonly database: DatabaseService,
@@ -112,6 +113,7 @@ export class InvitationsService {
     @Inject(GOOGLE_ID_TOKEN_VERIFIER) private readonly google: GoogleVerifier,
   ) {
     this.webOrigin = env.corsOrigins.find((origin) => origin !== '*') ?? '';
+    this.passwordEnabled = env.auth.passwordEnabled;
   }
 
   create(
@@ -210,6 +212,7 @@ export class InvitationsService {
     token: string,
     input: AcceptInvitationInput,
   ): Promise<{ user: { id: string; email: string }; tenantId: string }> {
+    if (!this.passwordEnabled) throw passwordDisabled();
     const target = await this.lookup(token);
     const passwordHash = await hashPassword(input.password);
     return this.consume(target, 'password', (invitation) => {

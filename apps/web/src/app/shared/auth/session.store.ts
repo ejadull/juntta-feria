@@ -12,7 +12,7 @@ export interface MembershipDto {
   readonly role: MembershipRole;
 }
 
-/** `POST /auth/login` and `POST /auth/refresh` (CORE-02): the refresh token only travels in a cookie. */
+/** `POST /auth/google` and `POST /auth/refresh` (CORE-02, CORE-05): the refresh token only travels in a cookie. */
 export interface SessionDto {
   readonly accessToken: string;
   readonly user: { readonly id: string; readonly email: string };
@@ -50,14 +50,7 @@ export class SessionStore {
     this.chosenTenant.set(tenantId);
   }
 
-  login(email: string, password: string): Observable<void> {
-    return this.http.post<SessionDto>(`${API_BASE}/auth/login`, { email, password }).pipe(
-      tap((session) => this.session.set(session)),
-      map(() => undefined),
-    );
-  }
-
-  /** Same session as `login`, from a Google ID token (CORE-05). */
+  /** Signs in with a Google ID token (CORE-05, ADR 0008: the only way in). */
   loginWithGoogle(credential: string): Observable<void> {
     return this.http.post<SessionDto>(`${API_BASE}/auth/google`, { credential }).pipe(
       tap((session) => this.session.set(session)),

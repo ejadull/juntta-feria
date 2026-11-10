@@ -25,7 +25,6 @@ interface InvitationDto {
   readonly name: string | null;
 }
 
-const MIN_PASSWORD = 10;
 const OFFLINE = 'No pudimos conectar con el servidor. Revisá tu conexión y probá de nuevo.';
 
 const ACCEPT_ERRORS: Readonly<Record<string, string>> = {
@@ -33,10 +32,9 @@ const ACCEPT_ERRORS: Readonly<Record<string, string>> = {
     'La cuenta de Google tiene otro email que el de la invitación. Elegí la cuenta con el email invitado.',
   GOOGLE_CREDENTIAL_INVALID: 'No pudimos verificar tu cuenta de Google. Probá de nuevo.',
   GOOGLE_SIGN_IN_UNAVAILABLE:
-    'Continuar con Google no está disponible por ahora. Creá tu cuenta con una contraseña.',
+    'Continuar con Google no está disponible por ahora. Probá de nuevo en unos minutos.',
 };
 const ACCEPT_STATUS: Readonly<Record<number, string>> = {
-  400: 'Revisá los datos: el nombre, el email y una contraseña de al menos 10 caracteres.',
   404: 'Este link de invitación no es válido, venció o ya se usó. Pedile uno nuevo al organizador.',
   409: 'Ya hay una cuenta con ese email. Ingresá con tu cuenta en lugar de crear otra.',
   503: 'No está disponible por un momento. Probá de nuevo en unos minutos.',
@@ -44,9 +42,7 @@ const ACCEPT_STATUS: Readonly<Record<number, string>> = {
 const SIGN_IN_AFTER_ACCEPT =
   'Tu cuenta quedó creada, pero no pudimos ingresarte. Entrá desde la pantalla de ingreso.';
 
-const valueOf = (event: Event): string => (event.target as HTMLInputElement).value;
-
-/** P20 (EXH-04): whoever holds the invitation link creates the exhibitor account. */
+/** P20 (EXH-04): whoever holds the invitation link creates the exhibitor account, with Google. */
 @Component({
   selector: 'app-invitation-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -64,7 +60,8 @@ const valueOf = (event: Event): string => (event.target as HTMLInputElement).val
       } @else if (invitation(); as inv) {
         <h1 class="mt-1 text-3xl font-semibold">Creá tu cuenta de feriante</h1>
         <p class="mt-2 text-text-muted">
-          {{ inv.organizationName }} te invitó a sumarte como feriante.
+          {{ inv.organizationName }} te invitó a sumarte como feriante. Continuá con tu cuenta de
+          Google.
         </p>
 
         @if (googleClientId(); as clientId) {
@@ -76,95 +73,19 @@ const valueOf = (event: Event): string => (event.target as HTMLInputElement).val
               (credential)="acceptWithGoogle($event)"
             />
           </div>
-          <div class="mt-6 flex items-center gap-3 text-sm text-text-muted" aria-hidden="true">
-            <span class="h-px flex-1 bg-border-strong"></span>
-            <span>o creá una contraseña</span>
-            <span class="h-px flex-1 bg-border-strong"></span>
-          </div>
+        } @else if (googleClientId() === null) {
+          <p role="alert" class="mt-6 rounded-lg bg-danger/10 p-3 text-sm">
+            {{ unavailable }}
+          </p>
         }
 
-        <form
-          class="card mt-6 flex flex-col gap-4"
-          (submit)="acceptWithPassword($event)"
-          novalidate
-        >
-          <div class="flex flex-col gap-1">
-            <label for="fullName" class="text-sm font-medium">Nombre y apellido</label>
-            <input
-              id="fullName"
-              name="fullName"
-              autocomplete="name"
-              class="field"
-              [value]="fullName()"
-              (input)="fullName.set(valueOf($event))"
-            />
-          </div>
-          <div class="flex flex-col gap-1">
-            <label for="email" class="text-sm font-medium">Correo electrónico</label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autocomplete="username"
-              class="field"
-              [readOnly]="!!inv.email"
-              [value]="email()"
-              (input)="email.set(valueOf($event))"
-            />
-          </div>
-          <div class="flex flex-col gap-1">
-            <label for="password" class="text-sm font-medium">Contraseña</label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autocomplete="new-password"
-              aria-describedby="password-hint"
-              class="field"
-              [value]="password()"
-              (input)="password.set(valueOf($event))"
-            />
-            <p id="password-hint" class="text-xs text-text-muted">Al menos 10 caracteres.</p>
-          </div>
-          <div class="flex flex-col gap-1">
-            <label for="phone" class="text-sm font-medium">Teléfono (opcional)</label>
-            <input
-              id="phone"
-              name="phone"
-              type="tel"
-              autocomplete="tel"
-              class="field"
-              [value]="phone()"
-              (input)="phone.set(valueOf($event))"
-            />
-          </div>
-
-          @if (error(); as message) {
-            <p id="invitation-error" role="alert" class="rounded-lg bg-danger/10 p-3 text-sm">
-              {{ message }}
-            </p>
-          }
-
-          <button type="submit" class="btn btn-primary justify-center" [disabled]="busy()">
-            {{ busy() ? 'Creando tu cuenta…' : 'Crear cuenta' }}
-          </button>
-        </form>
+        @if (error(); as message) {
+          <p id="invitation-error" role="alert" class="mt-4 rounded-lg bg-danger/10 p-3 text-sm">
+            {{ message }}
+          </p>
+        }
       }
     </section>
-  `,
-  styles: `
-    .field {
-      min-height: 2.75rem;
-      padding: 0 0.75rem;
-      border: 1px solid var(--color-border-strong);
-      border-radius: 0.5rem;
-      background: var(--color-surface);
-      color: var(--color-text);
-    }
-    .field:focus-visible {
-      outline: 2px solid var(--color-selected);
-      outline-offset: 1px;
-    }
   `,
 })
 export class InvitationPage implements OnInit {
@@ -176,20 +97,15 @@ export class InvitationPage implements OnInit {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly googleClientId = toSignal(inject(AuthProviders).googleClientId$, {
-    initialValue: null,
-  });
-  protected readonly valueOf = valueOf;
+  /** Undefined while the API answers; null when Google sign-in is not configured. */
+  protected readonly googleClientId = toSignal(inject(AuthProviders).googleClientId$);
+  protected readonly unavailable = ACCEPT_ERRORS['GOOGLE_SIGN_IN_UNAVAILABLE'];
   protected readonly invalidMessage = ACCEPT_STATUS[404];
   protected readonly invitation = signal<InvitationDto | null>(null);
   protected readonly loaded = signal(false);
   protected readonly status = computed(() =>
     this.invitation() ? 'ready' : this.loaded() ? 'invalid' : 'loading',
   );
-  protected readonly fullName = signal('');
-  protected readonly email = signal('');
-  protected readonly password = signal('');
-  protected readonly phone = signal('');
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
 
@@ -199,8 +115,6 @@ export class InvitationPage implements OnInit {
       .subscribe({
         next: (invitation) => {
           this.invitation.set(invitation);
-          this.fullName.set(invitation.name ?? '');
-          this.email.set(invitation.email ?? '');
           this.loaded.set(true);
         },
         error: () => this.loaded.set(true),
@@ -208,43 +122,17 @@ export class InvitationPage implements OnInit {
     this.destroyRef.onDestroy(() => sub.unsubscribe());
   }
 
-  protected acceptWithPassword(event: Event): void {
-    event.preventDefault();
-    if (this.busy()) return;
-    const email = this.email().trim();
-    const fullName = this.fullName().trim();
-    if (!fullName || !email || this.password().length < MIN_PASSWORD) {
-      this.error.set(ACCEPT_STATUS[400]);
-      return;
-    }
-    const password = this.password();
-    this.run({ fullName, email, password, ...this.phoneField() }, () =>
-      this.session.login(email, password),
-    );
-  }
-
+  /** Accepts with the Google ID token, then signs the new account in with the same token. */
   protected acceptWithGoogle(credential: string): void {
     if (this.busy()) return;
-    const fullName = this.fullName().trim();
-    this.run(
-      { googleCredential: credential, ...(fullName ? { fullName } : {}), ...this.phoneField() },
-      // The ID token is still valid and the account now exists: signing in with it is one more call.
-      () => this.session.loginWithGoogle(credential),
-    );
-  }
-
-  private phoneField(): { phone?: string } {
-    const phone = this.phone().trim();
-    return phone ? { phone } : {};
-  }
-
-  /** Accepts the invitation with `body`, then signs the new account in and enters the exhibitor area. */
-  private run(body: object, signIn: () => ReturnType<SessionStore['login']>): void {
     this.busy.set(true);
     this.error.set(null);
     this.http
-      .post(`${API_BASE}/public/invitations/${encodeURIComponent(this.token())}/accept`, body)
-      .pipe(switchMap(() => signIn()))
+      .post(`${API_BASE}/public/invitations/${encodeURIComponent(this.token())}/accept`, {
+        googleCredential: credential,
+      })
+      // The ID token is still valid and the account now exists: signing in with it is one more call.
+      .pipe(switchMap(() => this.session.loginWithGoogle(credential)))
       .subscribe({
         next: () => void this.router.navigateByUrl('/feriante/explorar'),
         error: (e: unknown) => {

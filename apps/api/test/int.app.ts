@@ -63,6 +63,8 @@ export async function startIntApp(
     AUTH_ACCESS_TOKEN_SECRET: 'int-access-secret-0123456789abcdef0123456789',
     AUTH_REFRESH_TOKEN_SECRET: 'int-refresh-secret-0123456789abcdef012345678',
     AUTH_REFRESH_COOKIE_NAME: COOKIE,
+    // Password sign-in is off by default (ADR 0008); the suites log in with passwords as fixtures.
+    AUTH_PASSWORD_ENABLED: 'true',
     MP_WEBHOOK_SECRET: WEBHOOK_SECRET,
     MP_NOTIFICATION_URL: NOTIFICATION_URL,
     MP_CLIENT_ID: 'int-client-id',

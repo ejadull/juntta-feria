@@ -1,39 +1,16 @@
-import { expect, test, type Page } from '@playwright/test';
-import { EMAIL, GOOGLE_CREDENTIALS, mockApi, seriousViolations } from './support/mock-api';
+import { expect, test } from '@playwright/test';
+import {
+  EMAIL,
+  GOOGLE_CLIENT_ID as CLIENT_ID,
+  GOOGLE_CREDENTIALS,
+  mockApi,
+  seriousViolations,
+  stubGoogle,
+} from './support/mock-api';
 
 /** CORE-05: "Ingresar con Google" and "Continuar con Google" against a mocked API and a stubbed GIS. */
 
-const CLIENT_ID = 'e2e-client.apps.googleusercontent.com';
 const TOKEN = 'T'.repeat(43);
-
-/**
- * Stand-in for https://accounts.google.com/gsi/client: `renderButton` draws a plain button that,
- * when clicked, calls the registered callback with `window.__googleCredential`.
- */
-async function stubGoogle(page: Page, credential: string) {
-  await page.addInitScript((value) => {
-    (window as unknown as { __googleCredential: string }).__googleCredential = value;
-  }, credential);
-  await page.route('https://accounts.google.com/gsi/client', (route) =>
-    route.fulfill({
-      contentType: 'text/javascript',
-      body: `
-        (() => {
-          let callback;
-          window.google = { accounts: { id: {
-            initialize: (config) => { callback = config.callback; },
-            renderButton: (container, options) => {
-              const button = document.createElement('button');
-              button.type = 'button';
-              button.textContent = options.text === 'continue_with' ? 'Continuar con Google' : 'Ingresar con Google';
-              button.addEventListener('click', () => callback({ credential: window.__googleCredential }));
-              container.append(button);
-            },
-          } } };
-        })();`,
-    }),
-  );
-}
 
 test('signs in with Google and lands where the user was heading', async ({ page }) => {
   const api = await mockApi(page, { signedIn: false, googleClientId: CLIENT_ID });
@@ -42,7 +19,7 @@ test('signs in with Google and lands where the user was heading', async ({ page 
 
   const group = page.getByRole('group', { name: 'Ingresar con Google' });
   await expect(group).toBeVisible();
-  await expect(page.getByLabel('Correo electrónico')).toBeVisible(); // the form stays usable
+  await expect(page.getByLabel('Correo electrónico')).toHaveCount(0); // Google is the only way in
   expect(await seriousViolations(page)).toEqual([]);
 
   await group.getByRole('button', { name: 'Ingresar con Google' }).click();
@@ -69,11 +46,12 @@ test('tells a Google user without an account to ask the organizer for an invitat
   expect(await seriousViolations(page)).toEqual([]);
 });
 
-test('hides the Google button when the API has no client id', async ({ page }) => {
+test('says Google sign-in is unavailable when the API has no client id', async ({ page }) => {
   await mockApi(page, { signedIn: false, googleClientId: null });
   await page.goto('/ingresar');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Entrá a tu cuenta');
   await expect(page.getByRole('group', { name: 'Ingresar con Google' })).toHaveCount(0);
+  await expect(page.getByRole('alert')).toContainText('no está disponible');
   expect(await seriousViolations(page)).toEqual([]);
 });
 
@@ -98,7 +76,6 @@ test('accepts an invitation with "Continuar con Google"', async ({ page }) => {
   const accept = api.requests.find((r) => r.path.endsWith('/accept'))!;
   expect(accept.body).toEqual({
     googleCredential: GOOGLE_CREDENTIALS.registered,
-    fullName: 'Nora',
   });
 });
 

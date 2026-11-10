@@ -3,17 +3,15 @@
 // Runs with the OWNER connection (DATABASE_MIGRATION_URL), like db-setup.mjs.
 // Usage (from the repo root):
 //   docker compose run --rm --no-deps db-migrate node apps/api/scripts/create-platform-admin.mjs \
-//     --email admin@example.com --name "Ada Admin" --password "<at least 12 characters>"
-// Idempotent: an existing account is only promoted (its password is NOT changed).
-// Refuses NODE_ENV=production unless --allow-production is passed. Never prints the password.
+//     --email admin@gmail.com [--name "Ada Admin"]
+// --email is the administrator's GOOGLE account (sign-in is Google-only, ADR 0008): the user is created
+// pending, without a password, and binds to Google on the first sign-in.
+// Idempotent: an existing account is only promoted.
+// Refuses NODE_ENV=production unless --allow-production is passed.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hash } from '@node-rs/argon2';
 import pg from 'pg';
 
-// Same Argon2id profile as src/auth/password.ts (OWASP minimum).
-const ARGON2 = { memoryCost: 19_456, timeCost: 2, parallelism: 1 };
-const MIN_PASSWORD_LENGTH = 12;
 const EMAIL = /^[^@\s]+@[^@\s]+$/;
 
 function fail(message) {
@@ -26,7 +24,7 @@ export function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--allow-production') options.allowProduction = true;
-    else if (['--email', '--name', '--password'].includes(arg)) {
+    else if (['--email', '--name'].includes(arg)) {
       const value = argv[(i += 1)];
       if (value === undefined || value.startsWith('--'))
         throw new Error(`${arg} needs a value.`);
@@ -44,21 +42,16 @@ export function validate(options, env) {
   const email = (options.email ?? '').trim().toLowerCase();
   if (!EMAIL.test(email) || email.length > 254)
     throw new Error('--email must be a valid email address.');
-  const name = (options.name ?? '').trim();
-  if (!name || name.length > 120)
-    throw new Error('--name is required (max 120 characters).');
-  const password = options.password ?? '';
-  if (password.length < MIN_PASSWORD_LENGTH || password.length > 256)
-    throw new Error(
-      `--password must have ${MIN_PASSWORD_LENGTH} to 256 characters.`,
-    );
+  const name = (options.name ?? '').trim() || null;
+  if (name && name.length > 120)
+    throw new Error('--name must have at most 120 characters.');
   const url = (env.DATABASE_MIGRATION_URL ?? '').trim();
   if (!url) throw new Error('DATABASE_MIGRATION_URL is required.');
-  return { email, name, password, url };
+  return { email, name, url };
 }
 
 /** Promotes the account if it exists, creates it otherwise. Returns what happened. */
-export async function ensurePlatformAdmin(client, { email, name, password }) {
+export async function ensurePlatformAdmin(client, { email, name }) {
   const { rows } = await client.query(
     'SELECT id FROM users WHERE lower(email) = $1',
     [email],
@@ -70,11 +63,10 @@ export async function ensurePlatformAdmin(client, { email, name, password }) {
     );
     return 'promoted';
   }
-  const passwordHash = await hash(password, ARGON2);
   await client.query(
-    `INSERT INTO users (email, password_hash, full_name, is_platform_admin, confirmed_at)
-     VALUES ($1, $2, $3, true, now())`,
-    [email, passwordHash, name],
+    `INSERT INTO users (email, full_name, is_platform_admin, confirmed_at)
+     VALUES ($1, $2, true, now())`,
+    [email, name],
   );
   return 'created';
 }
