@@ -59,12 +59,14 @@ export const MERCADO_PAGO_WALLET = new InjectionToken<
   (containerId: string, options: WalletOptions) => Promise<void>
 >('MercadoPagoWallet', {
   providedIn: 'root',
-  factory: () => async (containerId, { publicKey, preferenceId, marketplace }) => {
-    const MercadoPago = await loadSdk();
-    await new MercadoPago(publicKey, { locale: 'es-AR' })
-      .bricks()
-      .create('wallet', containerId, { initialization: { preferenceId, marketplace } });
-  },
+  factory:
+    () =>
+    async (containerId, { publicKey, preferenceId, marketplace }) => {
+      const MercadoPago = await loadSdk();
+      await new MercadoPago(publicKey, { locale: 'es-AR' })
+        .bricks()
+        .create('wallet', containerId, { initialization: { preferenceId, marketplace } });
+    },
 });
 
 let nextId = 0;
