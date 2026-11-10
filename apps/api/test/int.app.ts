@@ -45,6 +45,8 @@ export async function startIntApp(
   controllers: Type[] = [],
   /** Extra provider replacements, e.g. a fake PAYMENT_PROVIDER. */
   overrides: readonly (readonly [token: unknown, value: unknown])[] = [],
+  /** Extra environment variables, e.g. PLATFORM_SUBSCRIPTION_PRICE_CENTS (EXH-05). */
+  extraEnv: Readonly<Record<string, string>> = {},
 ): Promise<NestFastifyApplication> {
   const env = {
     NODE_ENV: 'test',
@@ -68,6 +70,7 @@ export async function startIntApp(
     MP_OAUTH_REDIRECT_URI: OAUTH_REDIRECT_URI,
     MP_TOKEN_ENCRYPTION_KEY: TOKEN_KEY,
     MP_PUBLIC_KEY: PUBLIC_KEY,
+    ...extraEnv,
   };
   for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
   let builder = Test.createTestingModule({

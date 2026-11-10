@@ -73,6 +73,12 @@ Sin credenciales, la API arranca igual y los pagos responden 503. La integració
 | 7. Pruebas | En *Cuentas de prueba* creá un **vendedor** (organizador, que vincula su cuenta en `/organizador/mercado-pago`) y un **comprador** (feriante). Pagá siempre con el comprador de prueba. |
 | 8. Producción | Activá las credenciales productivas, reemplazá Access Token/Public Key, `MP_ENVIRONMENT=production` y HTTPS obligatorio. |
 
+**Suscripción del feriante a la plataforma (`EXH-05`).** Se cobra en la cuenta de la plataforma con `preapproval` (no con el OAuth del organizador):
+
+- `PLATFORM_SUBSCRIPTION_PRICE_CENTS`: precio mensual en centavos de ARS (entero > 0). Sin él, `POST /api/v1/me/subscription` responde 503. Usa el `MP_ACCESS_TOKEN` de la plataforma en cualquier ambiente.
+- En el panel de la aplicación, además de *Pagos*, activá el webhook de **Suscripciones** (`subscription_preapproval` y `subscription_authorized_payment`) con la misma URL `/api/v1/webhooks/mercadopago` **sin** `?tenant=`; la firma se valida con `MP_WEBHOOK_SECRET`.
+- Sandbox: sin plan, Mercado Pago rechaza el cobro si la cuenta que paga no tiene el email del `payerEmail`. Enviá **el email del comprador de prueba** (`{ "payerEmail": "..." }`), no el de la cuenta Juntta. Para probar el flujo real: `bootstrap-sandbox.mjs --no-subscription`, luego `sandbox-checkout.mjs subscribe <email del comprador>` y, tras autorizar, `sandbox-checkout.mjs notify-subscription <preapproval_id>`.
+
 Los valores nunca se versionan ni se pegan en issues: sólo los nombres de las variables. `MP_TOKEN_ENCRYPTION_KEY` son 32 bytes en base64 (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`). Sin cuenta vinculada, `sandbox` usa `MP_ACCESS_TOKEN` y `production` deja los pagos apagados.
 
 ### 2. Con Docker Compose (recomendado)

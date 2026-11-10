@@ -39,9 +39,42 @@ export interface ProviderPayment {
   readonly approvedAt: Date | null;
 }
 
+/** Monthly subscription to the PLATFORM (EXH-05): charged in Juntta's own account, no tenant. */
+export interface SubscriptionRequest {
+  /** The subscriber's user id (our `platform_subscriptions` row). */
+  readonly externalReference: string;
+  readonly reason: string;
+  /** Mercado Pago validates that the paying account has this email. */
+  readonly payerEmail: string;
+  readonly amountCents: number;
+  readonly currency: string;
+  readonly backUrl: string;
+  /** Makes a retried create return the same preapproval. */
+  readonly idempotencyKey: string;
+}
+
+/** A preapproval as the provider reports it: `pending | authorized | paused | cancelled`. */
+export interface ProviderSubscription {
+  readonly id: string;
+  readonly status: string;
+  readonly externalReference: string | null;
+  readonly initPoint: string | null;
+  /** Next charge; the paid period lasts until then. */
+  readonly nextPaymentDate: Date | null;
+  readonly payerEmail: string | null;
+}
+
+/** One charge of a preapproval (`subscription_authorized_payment`). */
+export interface ProviderAuthorizedPayment {
+  readonly id: string;
+  readonly preapprovalId: string | null;
+  readonly status: string;
+}
+
 /**
- * Payment provider port (PAY-01, ADR 0006). Every call names the tenant: each organizer
- * charges in its own seller account (PAY-07). Writes take our own idempotency key.
+ * Payment provider port (PAY-01, ADR 0006). Every payment call names the tenant: each organizer
+ * charges in its own seller account (PAY-07). Writes take our own idempotency key. The
+ * subscription calls (EXH-05) are platform-level and always use the platform credentials.
  */
 export interface PaymentProvider {
   createCheckout(request: CheckoutRequest): Promise<Checkout>;
@@ -62,6 +95,13 @@ export interface PaymentProvider {
     paymentId: string,
     idempotencyKey: string,
   ): Promise<{ readonly status: string }>;
+  createSubscription(
+    request: SubscriptionRequest,
+  ): Promise<ProviderSubscription>;
+  getSubscription(id: string): Promise<ProviderSubscription>;
+  /** Irreversible at the provider. */
+  cancelSubscription(id: string): Promise<{ readonly status: string }>;
+  getAuthorizedPayment(id: string): Promise<ProviderAuthorizedPayment>;
 }
 
 export const PAYMENT_PROVIDER = Symbol('PaymentProvider');

@@ -4,7 +4,10 @@ import {
   type Checkout,
   type CheckoutRequest,
   type PaymentProvider,
+  type ProviderAuthorizedPayment,
   type ProviderPayment,
+  type ProviderSubscription,
+  type SubscriptionRequest,
 } from '../src/payments/payment-provider.js';
 
 /** In-memory PaymentProvider (PAY-01): records checkouts and can fail the next call. */
@@ -101,6 +104,72 @@ export class FakePaymentProvider implements PaymentProvider {
     if (payment)
       this.payments.set(paymentId, { ...payment, status: 'cancelled' });
     return Promise.resolve({ status: 'cancelled' });
+  }
+
+  /** Preapprovals the provider "has" (EXH-05), by id; tests move them like the payer would. */
+  readonly subscriptions = new Map<string, ProviderSubscription>();
+  readonly subscriptionRequests: SubscriptionRequest[] = [];
+  readonly authorizedPayments = new Map<string, ProviderAuthorizedPayment>();
+  readonly cancelledSubscriptions: string[] = [];
+  private subscriptionFailures = 0;
+
+  /** The next `count` subscription calls fail with the adapter's 502. */
+  failNextSubscription(count = 1): void {
+    this.subscriptionFailures = count;
+  }
+
+  createSubscription(
+    request: SubscriptionRequest,
+  ): Promise<ProviderSubscription> {
+    this.subscriptionRequests.push(request);
+    if (this.subscriptionFailed()) return Promise.reject(providerFailed());
+    const id = `preapproval-${randomUUID()}`;
+    const subscription: ProviderSubscription = {
+      id,
+      status: 'pending',
+      externalReference: request.externalReference,
+      initPoint: `https://sandbox.mp.test/subscriptions/${id}`,
+      nextPaymentDate: null,
+      payerEmail: request.payerEmail,
+    };
+    this.subscriptions.set(id, subscription);
+    return Promise.resolve(subscription);
+  }
+
+  getSubscription(id: string): Promise<ProviderSubscription> {
+    const subscription = this.subscriptions.get(id);
+    return subscription
+      ? Promise.resolve(subscription)
+      : Promise.reject(providerFailed());
+  }
+
+  /** What the payer or the provider did to the preapproval (authorize, pause, renew). */
+  updateSubscription(id: string, change: Partial<ProviderSubscription>): void {
+    const current = this.subscriptions.get(id);
+    if (!current) throw new Error(`Unknown preapproval ${id}`);
+    this.subscriptions.set(id, { ...current, ...change });
+  }
+
+  cancelSubscription(id: string): Promise<{ status: string }> {
+    if (this.subscriptionFailed()) return Promise.reject(providerFailed());
+    this.cancelledSubscriptions.push(id);
+    const current = this.subscriptions.get(id);
+    if (current)
+      this.subscriptions.set(id, { ...current, status: 'cancelled' });
+    return Promise.resolve({ status: 'cancelled' });
+  }
+
+  getAuthorizedPayment(id: string): Promise<ProviderAuthorizedPayment> {
+    const payment = this.authorizedPayments.get(id);
+    return payment
+      ? Promise.resolve(payment)
+      : Promise.reject(providerFailed());
+  }
+
+  private subscriptionFailed(): boolean {
+    if (this.subscriptionFailures === 0) return false;
+    this.subscriptionFailures -= 1;
+    return true;
   }
 
   private reversalFailed(): boolean {

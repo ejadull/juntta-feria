@@ -10,21 +10,26 @@ import { MercadoPagoProvider } from './mercadopago.provider.js';
 import { PaymentAccountController } from './payment-account.controller.js';
 import { PaymentIncidentsController } from './payment-incidents.controller.js';
 import { PAYMENT_PROVIDER } from './payment-provider.js';
+import { PlatformSubscriptionsController } from './platform-subscriptions.controller.js';
+import { PlatformSubscriptionsService } from './platform-subscriptions.service.js';
 import { ReconciliationService } from './reconciliation.service.js';
 import { SellerAccountsService } from './seller-accounts.service.js';
 
 /**
  * PAY-01: the PaymentProvider port bound to Mercado Pago (ADR 0006); PAY-03: its webhooks;
- * PAY-07: each organizer's seller account, linked by OAuth.
+ * PAY-07: each organizer's seller account, linked by OAuth; EXH-05: the exhibitor's subscription
+ * to the platform (same provider and webhook pipeline).
  */
 @Module({
   controllers: [
     MercadoPagoWebhooksController,
     PaymentIncidentsController,
     PaymentAccountController,
+    PlatformSubscriptionsController,
   ],
   providers: [
     MercadoPagoWebhooksService,
+    PlatformSubscriptionsService,
     ReconciliationService,
     SellerAccountsService,
     {

@@ -290,7 +290,12 @@ export class ReservationsService {
       })
       .from(platformSubscriptions)
       .where(eq(platformSubscriptions.userId, userId));
-    if (subscription?.status !== 'ACTIVE' || subscription.end <= now)
+    // EXH-05: ACTIVE, or CANCELLED while the paid period lasts. PENDING and PAST_DUE never qualify.
+    const paid =
+      !!subscription?.end &&
+      subscription.end > now &&
+      (subscription.status === 'ACTIVE' || subscription.status === 'CANCELLED');
+    if (!paid)
       throw fail(
         ForbiddenException,
         'SUBSCRIPTION_REQUIRED',

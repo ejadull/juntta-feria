@@ -613,6 +613,7 @@ export const exhibitorInvitations = pgTable(
 );
 
 export const SUBSCRIPTION_STATUSES = [
+  'PENDING',
   'ACTIVE',
   'PAST_DUE',
   'CANCELLED',
@@ -620,9 +621,10 @@ export const SUBSCRIPTION_STATUSES = [
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 
 /**
- * Platform subscription of an exhibitor (EXH-05 base, decision 2026-11-06): paid to Juntta, valid
- * in every organization, so it is global per user like `users` (no tenant, no RLS). Until the
- * Mercado Pago preapproval webhook exists it is activated by hand (see spec, RES-01).
+ * Platform subscription of an exhibitor (EXH-05, decision 2026-11-06): paid to Juntta through a
+ * Mercado Pago preapproval, valid in every organization, so it is global per user like `users`
+ * (no tenant, no RLS). `user_id` doubles as the preapproval's `external_reference`. PENDING
+ * (preapproval created, not authorized yet) never enables reserving; the webhook moves it on.
  */
 export const platformSubscriptions = pgTable(
   'platform_subscriptions',
@@ -631,8 +633,17 @@ export const platformSubscriptions = pgTable(
       .primaryKey()
       .references(() => users.id, { onDelete: 'cascade' }),
     status: text('status').$type<SubscriptionStatus>().notNull(),
-    currentPeriodEnd: instant('current_period_end'),
+    /** Null until the first authorization; the paid period ends here. */
+    currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
     providerSubscriptionId: text('provider_subscription_id'),
+    /** Where the payer authorizes the preapproval; only meaningful while PENDING. */
+    initPoint: text('init_point'),
+    /** Mercado Pago requires the paying account to have this email. */
+    payerEmail: text('payer_email'),
+    /** Last status read from the provider: pending | authorized | paused | cancelled. */
+    providerStatus: text('provider_status'),
+    /** Keys the provider create, so a retry returns the same preapproval. */
+    idempotencyKey: uuid('idempotency_key'),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -640,7 +651,10 @@ export const platformSubscriptions = pgTable(
   (t) => [
     check(
       'platform_subscriptions_status_check',
-      sql`${t.status} IN ('ACTIVE', 'PAST_DUE', 'CANCELLED')`,
+      sql`${t.status} IN ('PENDING', 'ACTIVE', 'PAST_DUE', 'CANCELLED')`,
+    ),
+    uniqueIndex('platform_subscriptions_provider_unique').on(
+      t.providerSubscriptionId,
     ),
   ],
 );

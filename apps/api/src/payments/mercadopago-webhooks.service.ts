@@ -1,4 +1,5 @@
 import {
+  HttpException,
   Inject,
   Injectable,
   Logger,
@@ -33,6 +34,10 @@ import {
   type PaymentProvider,
   type ProviderPayment,
 } from './payment-provider.js';
+import {
+  PlatformSubscriptionsService,
+  SUBSCRIPTION_TOPICS,
+} from './platform-subscriptions.service.js';
 
 export interface Notification {
   readonly signature: string | undefined;
@@ -61,6 +66,7 @@ export class MercadoPagoWebhooksService {
   constructor(
     private readonly database: DatabaseService,
     private readonly audit: AuditService,
+    private readonly subscriptions: PlatformSubscriptionsService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
     @Inject(configuration.KEY) env: AppConfiguration,
   ) {
@@ -90,8 +96,11 @@ export class MercadoPagoWebhooksService {
     this.logDrift(requestId, signature);
 
     const tenantId = isUuid(tenant) ? tenant : null;
-    const ignored =
-      topic !== 'payment'
+    // Payments need the tenant hint (PAY-07); subscriptions are platform-level (EXH-05) and
+    // come from the URL set in the Mercado Pago panel, which cannot carry one.
+    const ignored = SUBSCRIPTION_TOPICS.includes(topic)
+      ? null
+      : topic !== 'payment'
         ? 'UNSUPPORTED_TOPIC'
         : tenantId
           ? null
@@ -123,7 +132,10 @@ export class MercadoPagoWebhooksService {
         .select()
         .from(paymentWebhookInbox)
         .where(eq(paymentWebhookInbox.id, inboxId));
-      if (!entry?.tenantId || entry.status !== 'RECEIVED') return;
+      if (entry?.status !== 'RECEIVED') return;
+      if (SUBSCRIPTION_TOPICS.includes(entry.topic))
+        return await this.processSubscription(inboxId, entry);
+      if (!entry.tenantId) return;
       const tenantId = entry.tenantId;
       let payment: ProviderPayment;
       try {
@@ -146,6 +158,29 @@ export class MercadoPagoWebhooksService {
         () => undefined,
       );
     }
+  }
+
+  /** EXH-05: the notification only names the preapproval; its state is re-read from Mercado Pago. */
+  private async processSubscription(
+    inboxId: string,
+    entry: { topic: string; dataId: string },
+  ): Promise<void> {
+    let outcome: string;
+    try {
+      outcome = await this.subscriptions.sync(entry.topic, entry.dataId);
+    } catch (error) {
+      if (!(error instanceof HttpException)) throw error;
+      return await this.finish(inboxId, 'FAILED', 'PROVIDER_ERROR');
+    }
+    await this.finish(
+      inboxId,
+      outcome === 'UNKNOWN_SUBSCRIPTION'
+        ? 'IGNORED'
+        : outcome === 'MISSING_PERIOD'
+          ? 'FAILED'
+          : 'PROCESSED',
+      outcome,
+    );
   }
 
   /**

@@ -287,3 +287,190 @@ describe('MercadoPagoProvider (PAY-01)', () => {
     );
   });
 });
+
+describe('MercadoPagoProvider auto_return', () => {
+  const preference = { id: 'pref-1', sandbox_init_point: 'https://mp.test/s' };
+
+  it('sends auto_return approved only with https back_urls', async () => {
+    respond({ status: 201, body: preference });
+    await sandbox().createCheckout(checkout);
+    expect(sent[0].body).toMatchObject({ auto_return: 'approved' });
+  });
+
+  it('omits auto_return for http://localhost back_urls (invalid_auto_return)', async () => {
+    respond({ status: 201, body: preference });
+    await sandbox().createCheckout({
+      ...checkout,
+      backUrls: {
+        success: 'http://localhost:4200/checkout/success',
+        pending: 'http://localhost:4200/checkout/pending',
+        failure: 'http://localhost:4200/checkout/failure',
+      },
+    });
+    expect(sent[0].body).not.toHaveProperty('auto_return');
+    expect(sent[0].body).toMatchObject({
+      back_urls: { success: 'http://localhost:4200/checkout/success' },
+    });
+  });
+});
+
+describe('MercadoPagoProvider subscriptions (EXH-05)', () => {
+  const USER = '5b5b5b5b-5b5b-4b5b-8b5b-5b5b5b5b5b5b';
+  const KEY = '6c6c6c6c-6c6c-4c6c-8c6c-6c6c6c6c6c6c';
+  const request = {
+    externalReference: USER,
+    reason: 'Suscripción Juntta Feria',
+    payerEmail: 'comprador@test.com',
+    amountCents: 1_500_000,
+    currency: 'ARS',
+    backUrl: 'https://web.example.test/feriante/suscripcion',
+    idempotencyKey: KEY,
+  };
+
+  it('creates a pending preapproval with the platform token and no plan', async () => {
+    respond({
+      status: 201,
+      body: {
+        id: 'pre-1',
+        status: 'pending',
+        external_reference: USER,
+        init_point: 'https://mp.test/subscribe/pre-1',
+        payer_email: 'comprador@test.com',
+      },
+    });
+
+    const created = await sandbox().createSubscription(request);
+
+    expect(created).toEqual({
+      id: 'pre-1',
+      status: 'pending',
+      externalReference: USER,
+      initPoint: 'https://mp.test/subscribe/pre-1',
+      nextPaymentDate: null,
+      payerEmail: 'comprador@test.com',
+    });
+    const [sentRequest] = sent;
+    expect(sentRequest.url).toMatch(
+      /^https:\/\/api\.mercadopago\.com\/preapproval\/?$/,
+    );
+    expect(sentRequest.method).toBe('POST');
+    expect(sentRequest.headers.Authorization).toBe(`Bearer ${TOKEN}`);
+    expect(sentRequest.headers['X-Idempotency-Key']).toBe(KEY);
+    expect(sentRequest.body).toEqual({
+      reason: request.reason,
+      external_reference: USER,
+      payer_email: 'comprador@test.com',
+      auto_recurring: {
+        frequency: 1,
+        frequency_type: 'months',
+        transaction_amount: 15_000,
+        currency_id: 'ARS',
+      },
+      back_url: request.backUrl,
+      status: 'pending',
+    });
+  });
+
+  it('uses the platform token in production too, and answers 503 without one', async () => {
+    respond({
+      status: 201,
+      body: { id: 'pre-2', init_point: 'https://mp.test/x' },
+    });
+    const production = new MercadoPagoProvider({
+      environment: 'production',
+      accessToken: TOKEN,
+    });
+    await production.createSubscription(request);
+    expect(sent[0].headers.Authorization).toBe(`Bearer ${TOKEN}`);
+
+    respond();
+    const bare = new MercadoPagoProvider({
+      environment: 'production',
+      accessToken: undefined,
+    });
+    await expect(bare.createSubscription(request)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    await expect(bare.getSubscription('pre-1')).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    await expect(bare.getAuthorizedPayment('ap-1')).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(sent).toHaveLength(0);
+  });
+
+  it('maps a preapproval read: status, reference and next payment date', async () => {
+    respond({
+      status: 200,
+      body: {
+        id: 'pre-1',
+        status: 'authorized',
+        external_reference: USER,
+        next_payment_date: '2026-12-10T12:00:00.000-03:00',
+      },
+    });
+
+    const read = await sandbox().getSubscription('pre-1');
+
+    expect(read).toMatchObject({
+      id: 'pre-1',
+      status: 'authorized',
+      externalReference: USER,
+      initPoint: null,
+    });
+    expect(read.nextPaymentDate?.toISOString()).toBe(
+      '2026-12-10T15:00:00.000Z',
+    );
+    expect(new URL(sent[0].url).pathname).toBe('/preapproval/pre-1');
+    expect(sent[0].method).toBe('GET');
+  });
+
+  it('cancels with PUT status cancelled', async () => {
+    respond({ status: 200, body: { id: 'pre-1', status: 'cancelled' } });
+
+    const result = await sandbox().cancelSubscription('pre-1');
+
+    expect(result).toEqual({ status: 'cancelled' });
+    expect(sent[0].method).toBe('PUT');
+    expect(new URL(sent[0].url).pathname).toBe('/preapproval/pre-1');
+    expect(sent[0].body).toEqual({ status: 'cancelled' });
+  });
+
+  it('reads an authorized payment and its preapproval', async () => {
+    respond({
+      status: 200,
+      body: { id: 99, preapproval_id: 'pre-1', status: 'processed' },
+    });
+
+    const payment = await sandbox().getAuthorizedPayment('99');
+
+    expect(payment).toEqual({
+      id: '99',
+      preapprovalId: 'pre-1',
+      status: 'processed',
+    });
+    expect(sent[0].url).toBe(
+      'https://api.mercadopago.com/authorized_payments/99',
+    );
+    expect(sent[0].headers.authorization).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it('maps provider failures to a 502 without its body', async () => {
+    respond(
+      { status: 400, body: { message: 'payer_email mismatch', secret: 'x' } },
+      { status: 500, body: {} },
+    );
+
+    const failure = await sandbox()
+      .createSubscription(request)
+      .catch((e: unknown) => e);
+    expect(failure).toBeInstanceOf(BadGatewayException);
+    expect(
+      JSON.stringify((failure as BadGatewayException).getResponse()),
+    ).not.toContain('payer_email mismatch');
+    await expect(sandbox().getAuthorizedPayment('99')).rejects.toBeInstanceOf(
+      BadGatewayException,
+    );
+  });
+});

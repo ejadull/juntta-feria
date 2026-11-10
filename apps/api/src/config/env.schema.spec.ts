@@ -102,6 +102,26 @@ describe('parseEnvironment (FND-02)', () => {
     });
   });
 
+  it('reads the platform subscription price (EXH-05) and rejects a non-positive one', () => {
+    expect(
+      parseEnvironment({
+        ...valid(),
+        PLATFORM_SUBSCRIPTION_PRICE_CENTS: '1500000',
+      }).mercadoPago.subscriptionPriceCents,
+    ).toBe(1_500_000);
+    expect(
+      parseEnvironment({ ...valid(), PLATFORM_SUBSCRIPTION_PRICE_CENTS: '' })
+        .mercadoPago.subscriptionPriceCents,
+    ).toBeUndefined();
+    for (const bad of ['0', '-5', '12.5', 'abc'])
+      expect(() =>
+        parseEnvironment({
+          ...valid(),
+          PLATFORM_SUBSCRIPTION_PRICE_CENTS: bad,
+        }),
+      ).toThrow(/PLATFORM_SUBSCRIPTION_PRICE_CENTS/);
+  });
+
   const OAUTH = {
     MP_CLIENT_ID: '1234567890',
     MP_CLIENT_SECRET: 'fake-client-secret',

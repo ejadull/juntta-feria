@@ -2,7 +2,9 @@
 // DEV ONLY. Seeds what the HTTP API cannot create yet (tenant, users, subscription), mirroring
 // seed() in test/checkout.int-spec.ts, and writes .sandbox-state.json for sandbox-checkout.mjs.
 // Needs the OWNER connection, so run it through the db-migrate service:
-//   docker compose run --rm --no-deps db-migrate node apps/api/scripts/bootstrap-sandbox.mjs
+//   docker compose run --rm --no-deps db-migrate node apps/api/scripts/bootstrap-sandbox.mjs [--no-subscription]
+// By default the exhibitor gets an ACTIVE platform subscription (shortcut). With --no-subscription it
+// does not, so the real flow (sandbox-checkout.mjs subscribe) can be tested.
 // Never prints connection strings.
 import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -26,7 +28,8 @@ function fail(message) {
 }
 
 function assertNotProduction(env) {
-  if (env.NODE_ENV === 'production') fail('refusing to run with NODE_ENV=production.');
+  if (env.NODE_ENV === 'production')
+    fail('refusing to run with NODE_ENV=production.');
   if (env.MP_ENVIRONMENT && env.MP_ENVIRONMENT !== 'sandbox')
     fail('refusing to run unless MP_ENVIRONMENT is sandbox.');
 }
@@ -50,7 +53,7 @@ async function insertUser(client, email, passwordHash) {
   return rows[0].id;
 }
 
-async function seed(client, plan) {
+async function seed(client, plan, withSubscription) {
   const passwordHash = await hash(plan.owner.password, ARGON2);
   const tenant = await client.query(
     `INSERT INTO tenants (slug, name) VALUES ($1, $2) RETURNING id`,
@@ -67,7 +70,11 @@ async function seed(client, plan) {
     `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'OWNER')`,
     [tenantId, ownerId],
   );
-  const exhibitorId = await insertUser(client, plan.exhibitor.email, passwordHash);
+  const exhibitorId = await insertUser(
+    client,
+    plan.exhibitor.email,
+    passwordHash,
+  );
   await client.query(
     `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'EXHIBITOR')`,
     [tenantId, exhibitorId],
@@ -77,23 +84,31 @@ async function seed(client, plan) {
      VALUES ($1, $2, 'Feriante Sandbox', 'Feriante Sandbox', '20123456786', 'Textiles')`,
     [tenantId, exhibitorId],
   );
-  await client.query(
-    `INSERT INTO platform_subscriptions (user_id, status, current_period_end) VALUES ($1, 'ACTIVE', $2)`,
-    [exhibitorId, new Date(Date.now() + SUBSCRIPTION_DAYS * DAY_MS)],
-  );
+  if (withSubscription)
+    await client.query(
+      `INSERT INTO platform_subscriptions (user_id, status, current_period_end) VALUES ($1, 'ACTIVE', $2)`,
+      [exhibitorId, new Date(Date.now() + SUBSCRIPTION_DAYS * DAY_MS)],
+    );
   return { tenantId, venueId: venue.rows[0].id };
 }
 
 async function main() {
   assertNotProduction(process.env);
   const url = (process.env.DATABASE_MIGRATION_URL ?? '').trim();
-  if (!url) fail('DATABASE_MIGRATION_URL is required (run it via the db-migrate service).');
+  if (!url)
+    fail(
+      'DATABASE_MIGRATION_URL is required (run it via the db-migrate service).',
+    );
   const plan = newRun();
   const client = new pg.Client({ connectionString: url });
   await client.connect();
   try {
     await client.query('BEGIN');
-    const ids = await seed(client, plan);
+    const ids = await seed(
+      client,
+      plan,
+      !process.argv.includes('--no-subscription'),
+    );
     await client.query('COMMIT');
     const state = {
       createdAt: new Date().toISOString(),
@@ -105,12 +120,23 @@ async function main() {
     writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
     console.log(`Tenant: ${ids.tenantId} (${plan.slug})`);
     console.log(`Organizador: ${plan.owner.email} / ${plan.owner.password}`);
-    console.log(`Feriante:    ${plan.exhibitor.email} / ${plan.exhibitor.password}`);
+    console.log(
+      `Feriante:    ${plan.exhibitor.email} / ${plan.exhibitor.password}`,
+    );
     console.log('Estado guardado en apps/api/scripts/.sandbox-state.json');
-    console.log('Siguiente: docker compose exec api node apps/api/scripts/sandbox-checkout.mjs setup');
+    if (process.argv.includes('--no-subscription'))
+      console.log(
+        'Sin suscripcion: corre sandbox-checkout.mjs subscribe <email del comprador de prueba> antes de setup.',
+      );
+    else
+      console.log(
+        'Siguiente: docker compose exec api node apps/api/scripts/sandbox-checkout.mjs setup',
+      );
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
-    fail(`failed (${error?.code ?? error?.name ?? 'unknown error'}: ${error?.message ?? ''}).`);
+    fail(
+      `failed (${error?.code ?? error?.name ?? 'unknown error'}: ${error?.message ?? ''}).`,
+    );
   } finally {
     await client.end();
   }

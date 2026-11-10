@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // DEV ONLY. Drives a real Mercado Pago sandbox checkout through the public HTTP API.
 // Run inside the api container (after bootstrap-sandbox.mjs):
-//   docker compose exec api node apps/api/scripts/sandbox-checkout.mjs <setup|notify <payment_id>|status>
+//   docker compose exec api node apps/api/scripts/sandbox-checkout.mjs <setup|notify <payment_id>|status|
+//     subscribe [payerEmail]|notify-subscription <preapproval_id>>
 // State lives in .sandbox-state.json next to this file (gitignored). Never prints secrets.
 import { createHmac, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -28,7 +29,9 @@ function die(message) {
 // ---- state ----
 function loadState() {
   if (!existsSync(STATE_FILE))
-    die('No hay estado. Primero corre bootstrap-sandbox.mjs (ver README del script).');
+    die(
+      'No hay estado. Primero corre bootstrap-sandbox.mjs (ver README del script).',
+    );
   return JSON.parse(readFileSync(STATE_FILE, 'utf8'));
 }
 const saveState = (state) =>
@@ -143,12 +146,23 @@ async function createPublishedEvent(auth, state, layoutVersionId) {
 
 /** Opens (or replays) the checkout of an existing hold; safe to rerun after a provider failure. */
 async function openCheckout(state) {
-  const auth = { token: await login(state.exhibitor), tenantId: state.tenantId };
-  const reservation = await http('GET', `/reservations/${state.reservationId}`, auth);
-  const checkout = await http('POST', `/reservations/${state.reservationId}/checkout`, {
-    ...auth,
-    headers: { 'idempotency-key': randomUUID() },
-  });
+  const auth = {
+    token: await login(state.exhibitor),
+    tenantId: state.tenantId,
+  };
+  const reservation = await http(
+    'GET',
+    `/reservations/${state.reservationId}`,
+    auth,
+  );
+  const checkout = await http(
+    'POST',
+    `/reservations/${state.reservationId}/checkout`,
+    {
+      ...auth,
+      headers: { 'idempotency-key': randomUUID() },
+    },
+  );
   saveState({
     ...state,
     paymentAttemptId: checkout.paymentAttemptId,
@@ -235,12 +249,66 @@ async function notify(paymentId) {
   const headers = signedHeaders(paymentId, secret);
   const result = await http('POST', `/webhooks/mercadopago?${query}`, {
     headers,
-    body: { type: 'payment', action: 'payment.updated', data: { id: paymentId } },
+    body: {
+      type: 'payment',
+      action: 'payment.updated',
+      data: { id: paymentId },
+    },
   });
   console.log(
     `Webhook aceptado (request-id ${headers['x-request-id']}): ${JSON.stringify(result)}`,
   );
-  console.log('La API lo procesa en segundo plano; espera unos segundos y corre status.');
+  console.log(
+    'La API lo procesa en segundo plano; espera unos segundos y corre status.',
+  );
+}
+
+// ---- platform subscription (EXH-05) ----
+/** Starts the exhibitor's subscription to the platform and prints where to authorize it. */
+async function subscribe(payerEmail) {
+  const state = loadState();
+  const auth = { token: await login(state.exhibitor) };
+  const subscription = await http('POST', '/me/subscription', {
+    ...auth,
+    ...(payerEmail ? { body: { payerEmail } } : {}),
+    headers: { 'idempotency-key': randomUUID() },
+  });
+  console.log('\n=== Suscripcion ===');
+  console.log(`status: ${subscription.status}`);
+  console.log(`Abri en el navegador:\n  ${subscription.initPoint}\n`);
+  console.log(`Proximos pasos:
+  1. Autoriza con el usuario COMPRADOR de prueba cuyo email es el payerEmail
+     (Mercado Pago rechaza el cobro si la cuenta no coincide; el email de la cuenta Juntta
+     casi nunca es el del comprador de prueba).
+  2. Copia preapproval_id de la URL de retorno.
+  3. docker compose exec api node apps/api/scripts/sandbox-checkout.mjs notify-subscription <preapproval_id>
+  4. Despues corre setup para reservar.`);
+}
+
+async function notifySubscription(preapprovalId) {
+  if (!preapprovalId) die('Uso: notify-subscription <preapproval_id>');
+  const secret = process.env.MP_WEBHOOK_SECRET;
+  if (!secret) die('MP_WEBHOOK_SECRET no esta definido en el contenedor.');
+  // Platform-level topic: no `tenant` parameter, like the URL configured in the MP panel.
+  const query = new URLSearchParams({
+    'data.id': preapprovalId,
+    type: 'subscription_preapproval',
+  });
+  const headers = signedHeaders(preapprovalId, secret);
+  const result = await http('POST', `/webhooks/mercadopago?${query}`, {
+    headers,
+    body: {
+      type: 'subscription_preapproval',
+      action: 'updated',
+      data: { id: preapprovalId },
+    },
+  });
+  console.log(
+    `Webhook aceptado (request-id ${headers['x-request-id']}): ${JSON.stringify(result)}`,
+  );
+  console.log(
+    'La API lo procesa en segundo plano; consulta GET /me/subscription o corre subscribe.',
+  );
 }
 
 // ---- status ----
@@ -248,15 +316,23 @@ async function status() {
   const state = loadState();
   if (!state.reservationId) die('Corre setup antes de status.');
   const auth = { token: await login(state.owner), tenantId: state.tenantId };
-  const reservation = await http('GET', `/reservations/${state.reservationId}`, auth);
+  const reservation = await http(
+    'GET',
+    `/reservations/${state.reservationId}`,
+    auth,
+  );
   const stands = await http('GET', `/events/${state.eventId}/stands`, auth);
   const incidents = await http('GET', '/payment-incidents', auth);
 
   console.log('\n=== Reserva ===');
-  console.log(`status: ${reservation.status}  holdExpiresAt: ${reservation.holdExpiresAt}`);
+  console.log(
+    `status: ${reservation.status}  holdExpiresAt: ${reservation.holdExpiresAt}`,
+  );
   console.log(JSON.stringify(reservation, null, 2));
   const stand = stands.find((s) => s.id === state.standId);
-  console.log(`\n=== Stand ${state.standCode} ===\n${JSON.stringify(stand, null, 2)}`);
+  console.log(
+    `\n=== Stand ${state.standCode} ===\n${JSON.stringify(stand, null, 2)}`,
+  );
   console.log(`\n=== Incidentes de pago (${incidents.length}) ===`);
   console.log(JSON.stringify(incidents, null, 2));
   console.log(
@@ -266,7 +342,15 @@ async function status() {
 
 // ---- main ----
 const [command, arg] = process.argv.slice(2);
-const commands = { setup, notify: () => notify(arg), status };
+const commands = {
+  setup,
+  notify: () => notify(arg),
+  status,
+  subscribe: () => subscribe(arg),
+  'notify-subscription': () => notifySubscription(arg),
+};
 if (!commands[command])
-  die('Uso: sandbox-checkout.mjs <setup | notify <payment_id> | status>');
+  die(
+    'Uso: sandbox-checkout.mjs <setup | notify <payment_id> | status | subscribe [payerEmail] | notify-subscription <preapproval_id>>',
+  );
 await commands[command]();

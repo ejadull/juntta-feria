@@ -4,6 +4,7 @@ import {
   MercadoPagoError,
   Payment,
   PaymentRefund,
+  PreApproval,
   Preference,
 } from 'mercadopago';
 import {
@@ -12,7 +13,10 @@ import {
   type Checkout,
   type CheckoutRequest,
   type PaymentProvider,
+  type ProviderAuthorizedPayment,
   type ProviderPayment,
+  type ProviderSubscription,
+  type SubscriptionRequest,
 } from './payment-provider.js';
 
 export interface MercadoPagoSettings {
@@ -21,6 +25,7 @@ export interface MercadoPagoSettings {
 }
 
 const TIMEOUT_MS = 10_000;
+const API_URL = 'https://api.mercadopago.com';
 /** GETs and keyed writes retry; the SDK default is 3. */
 const RETRIES = 2;
 
@@ -49,6 +54,28 @@ const toPayment = (p: RawPayment): ProviderPayment => ({
   collectorId: p.collector_id === undefined ? null : String(p.collector_id),
   approvedAt: p.date_approved ? new Date(p.date_approved) : null,
 });
+
+/** Fields shared by `GET /preapproval/{id}` and the create/update responses. */
+interface RawPreapproval {
+  readonly id?: string;
+  readonly status?: string;
+  readonly external_reference?: string;
+  readonly init_point?: string;
+  readonly next_payment_date?: string;
+  readonly payer_email?: string;
+}
+
+const toSubscription = (p: RawPreapproval): ProviderSubscription => {
+  const next = p.next_payment_date ? new Date(p.next_payment_date) : null;
+  return {
+    id: String(p.id),
+    status: p.status ?? 'unknown',
+    externalReference: p.external_reference ?? null,
+    initPoint: p.init_point ?? null,
+    nextPaymentDate: next && !Number.isNaN(next.getTime()) ? next : null,
+    payerEmail: p.payer_email ?? null,
+  };
+};
 
 /** Mercado Pago wants ISO 8601 with an explicit offset. */
 const withOffset = (date: Date): string =>
@@ -86,7 +113,10 @@ export class MercadoPagoProvider implements PaymentProvider {
             ? { notification_url: request.notificationUrl }
             : {}),
           back_urls: request.backUrls,
-          auto_return: 'approved',
+          // Mercado Pago rejects auto_return with non-https back_urls (localhost): 400 invalid_auto_return.
+          ...(request.backUrls.success.startsWith('https://')
+            ? { auto_return: 'approved' }
+            : {}),
           binary_mode: false,
           expires: true,
           expiration_date_to: withOffset(request.expiresAt),
@@ -156,6 +186,124 @@ export class MercadoPagoProvider implements PaymentProvider {
       });
       return { status: payment.status ?? 'unknown' };
     });
+  }
+
+  /**
+   * EXH-05: a preapproval WITHOUT plan, charged in the platform's account (never a seller's).
+   * The payer authorizes it at `init_point`; the webhook then reports the outcome.
+   */
+  createSubscription(
+    request: SubscriptionRequest,
+  ): Promise<ProviderSubscription> {
+    return this.platformCall('createSubscription', async (config) => {
+      const created = await new PreApproval(config).create({
+        body: {
+          reason: request.reason,
+          external_reference: request.externalReference,
+          payer_email: request.payerEmail,
+          auto_recurring: {
+            frequency: 1,
+            frequency_type: 'months',
+            transaction_amount: toUnits(request.amountCents),
+            currency_id: request.currency,
+          },
+          back_url: request.backUrl,
+          status: 'pending',
+        },
+        requestOptions: {
+          idempotencyKey: request.idempotencyKey,
+          maxRetries: RETRIES,
+        },
+      });
+      if (!created.id || !created.init_point) throw providerFailed();
+      return toSubscription(created);
+    });
+  }
+
+  getSubscription(id: string): Promise<ProviderSubscription> {
+    return this.platformCall('getSubscription', async (config) =>
+      toSubscription(
+        await new PreApproval(config).get({
+          id,
+          requestOptions: { maxRetries: RETRIES },
+        }),
+      ),
+    );
+  }
+
+  cancelSubscription(id: string): Promise<{ status: string }> {
+    return this.platformCall('cancelSubscription', async (config) => {
+      const updated = await new PreApproval(config).update({
+        id,
+        body: { status: 'cancelled' },
+        requestOptions: { maxRetries: RETRIES },
+      });
+      return { status: updated.status ?? 'unknown' };
+    });
+  }
+
+  /** The SDK has no client for `/authorized_payments`: plain `fetch`, response never logged. */
+  async getAuthorizedPayment(id: string): Promise<ProviderAuthorizedPayment> {
+    const token = this.settings.accessToken;
+    if (!token) throw paymentsUnavailable();
+    try {
+      const response = await fetch(
+        `${API_URL}/authorized_payments/${encodeURIComponent(id)}`,
+        {
+          headers: {
+            authorization: `Bearer ${token}`,
+            accept: 'application/json',
+          },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        },
+      );
+      const body = (await response.json().catch(() => ({}))) as {
+        id?: string | number;
+        preapproval_id?: string | number;
+        status?: string;
+      };
+      if (!response.ok || body.id === undefined) {
+        this.logger.warn(
+          `Mercado Pago getAuthorizedPayment failed (${response.status})`,
+        );
+        throw providerFailed();
+      }
+      return {
+        id: String(body.id),
+        preapprovalId:
+          body.preapproval_id === undefined
+            ? null
+            : String(body.preapproval_id),
+        status: body.status ?? 'unknown',
+      };
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      this.logger.warn('Mercado Pago getAuthorizedPayment failed (network)');
+      throw providerFailed();
+    }
+  }
+
+  /** Platform-level call (EXH-05): the platform token in every environment, 503 without one. */
+  private async platformCall<T>(
+    operation: string,
+    run: (config: MercadoPagoConfig) => Promise<T>,
+  ): Promise<T> {
+    const token = this.settings.accessToken;
+    if (!token) throw paymentsUnavailable();
+    try {
+      return await run(
+        new MercadoPagoConfig({
+          accessToken: token,
+          options: { timeout: TIMEOUT_MS },
+        }),
+      );
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      const status =
+        error instanceof MercadoPagoError ? error.status : 'network';
+      this.logger.warn(`Mercado Pago ${operation} failed (${status})`);
+      throw providerFailed();
+    }
   }
 
   /** Resolves the seller credentials and maps provider failures to a 502 without its body. */

@@ -62,6 +62,8 @@ export type AppEnvironment = Readonly<{
     tokenKey: string | undefined;
     /** Platform public key for the Wallet Brick (Checkout Pro); without it the web redirects to init_point. */
     publicKey: string | undefined;
+    /** EXH-05: monthly price (ARS cents) of the platform subscription; unset → subscribing answers 503. */
+    subscriptionPriceCents: number | undefined;
   }>;
 }>;
 
@@ -251,6 +253,14 @@ const schema = z
         .optional(),
     ),
     MP_PUBLIC_KEY: z.preprocess(blankAsUndefined, z.string().trim().optional()),
+    PLATFORM_SUBSCRIPTION_PRICE_CENTS: z.preprocess(
+      (v) => (blankAsUndefined(v) === undefined ? undefined : Number(v)),
+      z
+        .number({ error: 'must be a number' })
+        .int({ error: 'must be an integer' })
+        .positive({ error: 'must be > 0' })
+        .optional(),
+    ),
     MP_TOKEN_ENCRYPTION_KEY: z.preprocess(
       blankAsUndefined,
       z
@@ -349,6 +359,7 @@ export function parseEnvironment(input: NodeJS.ProcessEnv): AppEnvironment {
       oauthRedirectUri: e.MP_OAUTH_REDIRECT_URI,
       tokenKey: e.MP_TOKEN_ENCRYPTION_KEY,
       publicKey: e.MP_PUBLIC_KEY,
+      subscriptionPriceCents: e.PLATFORM_SUBSCRIPTION_PRICE_CENTS,
     },
   };
 }
