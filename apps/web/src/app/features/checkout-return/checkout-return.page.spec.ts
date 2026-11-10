@@ -31,13 +31,12 @@ class ScriptedRepository extends ReservationPaymentRepository {
     const next = this.script[Math.min(this.reads++, this.script.length - 1)];
     return next instanceof Error ? throwError(() => next) : of(next);
   }
-  checkout = vi.fn(
-    (): Observable<CheckoutDto> =>
-      of({
-        checkoutUrl: 'https://mp.example/checkout',
-        preferenceId: 'pref-1',
-        wallet: { publicKey: 'TEST-pk', marketplace: true },
-      }),
+  checkout = vi.fn((): Observable<CheckoutDto> =>
+    of({
+      checkoutUrl: 'https://mp.example/checkout',
+      preferenceId: 'pref-1',
+      wallet: { publicKey: 'TEST-pk', marketplace: true },
+    }),
   );
 }
 

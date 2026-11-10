@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
-import { throwError } from 'rxjs';
+import { provideRouter } from '@angular/router';
+import { of, throwError } from 'rxjs';
 import { InMemoryPublicCatalogRepository } from './data/in-memory-public-catalog.repository';
 import { PublicCatalogRepository } from './data/public-catalog.repository';
 import { ExploreStandsPage } from './explore-stands.page';
@@ -8,7 +9,7 @@ const plain = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').t
 
 async function render(repo: PublicCatalogRepository = new InMemoryPublicCatalogRepository()) {
   TestBed.configureTestingModule({
-    providers: [{ provide: PublicCatalogRepository, useValue: repo }],
+    providers: [provideRouter([]), { provide: PublicCatalogRepository, useValue: repo }],
   });
   const fixture = TestBed.createComponent(ExploreStandsPage);
   await fixture.whenStable();
@@ -76,11 +77,19 @@ describe('ExploreStandsPage (PUB-UI-04)', () => {
     expect(detail).toContain(`Stand ${code}`);
     expect(detail).toMatch(/\d+ m²/);
     expect(detail).toMatch(/\$\s?\d/);
-    const reserve = [...host.querySelectorAll<HTMLButtonElement>('.stand-detail button')].find(
-      (b) => b.textContent?.includes('Reservar'),
-    )!;
-    expect(reserve.disabled).toBe(true);
-    expect(detail).toContain('RES-01');
+    const reserve = host.querySelector<HTMLAnchorElement>('.stand-detail a')!;
+    expect(plain(reserve.textContent)).toBe(`Reservar el stand ${code}`);
+    const url = new URL(reserve.href);
+    expect(url.pathname).toBe('/feriante/reservas/nueva');
+    expect(url.searchParams.get('feria')).toBe('patagonia-emprende-2026');
+    expect(url.searchParams.get('stand')).toBeTruthy();
+  });
+
+  it('shows a notice when there is no event on sale', async () => {
+    const repo = new InMemoryPublicCatalogRepository();
+    repo.listEvents = () => of([]);
+    const { host } = await render(repo);
+    expect(plain(host.textContent)).toContain('No hay ferias con venta de stands abierta');
   });
 
   it('shows a non-available stand picked on the plan without the reserve action', async () => {
@@ -89,7 +98,7 @@ describe('ExploreStandsPage (PUB-UI-04)', () => {
     const detail = plain(host.querySelector('.stand-detail')?.textContent);
     expect(detail).toContain('Stand D09');
     expect(detail).toContain('Bloqueado');
-    expect(host.querySelector('.stand-detail button')).toBeNull();
+    expect(host.querySelector('.stand-detail a, .stand-detail button')).toBeNull();
   });
 
   it('shows an error when the plan cannot load', async () => {

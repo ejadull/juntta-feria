@@ -74,7 +74,8 @@ type View = 'loading' | 'confirmed' | 'waiting' | 'rejected' | 'expired' | 'clos
                 Si elegiste pagar en efectivo (Rapipago o Pago Fácil), el pago se acredita cuando
                 pagás el cupón.
                 @if (holdUntil(); as until) {
-                  El stand queda reservado para vos hasta las <strong>{{ until }}</strong>.
+                  El stand queda reservado para vos hasta las <strong>{{ until }}</strong
+                  >.
                 }
                 Pagalo antes: después el cupón vence y el stand se libera.
               </p>
@@ -87,8 +88,8 @@ type View = 'loading' | 'confirmed' | 'waiting' | 'rejected' | 'expired' | 'clos
                 Mercado Pago nos avisó que el pago salió bien. Esperamos su confirmación para
                 reservar el stand; suele tardar unos segundos.
               } @else {
-                Todavía no llegó la confirmación de Mercado Pago. Volvé a consultar en un rato:
-                no hace falta pagar de nuevo.
+                Todavía no llegó la confirmación de Mercado Pago. Volvé a consultar en un rato: no
+                hace falta pagar de nuevo.
               }
             </p>
           }
@@ -98,7 +99,8 @@ type View = 'loading' | 'confirmed' | 'waiting' | 'rejected' | 'expired' | 'clos
           @if (holdUntil(); as until) {
             <p class="mt-6 text-text">
               No se cobró nada. Podés intentar con otro medio de pago hasta las
-              <strong>{{ until }}</strong>, mientras el stand siga reservado para vos.
+              <strong>{{ until }}</strong
+              >, mientras el stand siga reservado para vos.
             </p>
             @if (retryCheckout(); as checkout) {
               <div class="mt-4"><app-mercado-pago-wallet [checkout]="checkout" /></div>

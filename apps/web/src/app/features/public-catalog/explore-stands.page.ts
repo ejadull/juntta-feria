@@ -1,8 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router, RouterLink } from '@angular/router';
+import { catchError, filter, of, switchMap } from 'rxjs';
 import { formatArs } from '../../shared/money';
-import { DEMO_CONTEXT } from '../../shared/demo-context';
-import { DEMO_EVENT_SLUG } from './data/in-memory-public-catalog.repository';
 import { PublicCatalogRepository, STATUS_LABEL } from './data/public-catalog.repository';
 import {
   areaOptions,
@@ -39,19 +39,37 @@ function chips<K extends keyof StandFilter>(
 /** P07 feriante "Elegí tu stand" (pub-ui-catalog D5): plan + equivalent list + detail. */
 @Component({
   selector: 'app-explore-stands-page',
-  imports: [StandMap],
+  imports: [StandMap, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 lg:px-8">
       <header>
-        <p class="text-sm font-semibold tracking-wider text-primary">FERIANTE · {{ eventName }}</p>
+        <p class="text-sm font-semibold tracking-wider text-primary">
+          FERIANTE · {{ eventName() }}
+        </p>
         <h1 class="mt-1 text-3xl font-semibold">Elegí tu stand</h1>
         <p class="mt-1 text-text-muted">
           Filtrá por sector, superficie y precio. El precio es final, en pesos argentinos.
         </p>
+        @if (events(); as list) {
+          @if (list.length > 1) {
+            <label class="mt-3 flex flex-wrap items-center gap-2 text-sm">
+              <span class="font-semibold">Feria</span>
+              <select class="event-select" (change)="chooseEvent($event)">
+                @for (e of list; track e.slug) {
+                  <option [value]="e.slug" [selected]="e.slug === current()">{{ e.name }}</option>
+                }
+              </select>
+            </label>
+          }
+        }
       </header>
 
-      @if (error(); as message) {
+      @if (events() !== null && !current()) {
+        <p class="card text-text-muted">
+          No hay ferias con venta de stands abierta por ahora. Volvé a mirar más adelante.
+        </p>
+      } @else if (error(); as message) {
         <p role="alert" class="card text-danger">{{ message }}</p>
       } @else if (map(); as m) {
         <div class="flex flex-col gap-3">
@@ -100,17 +118,14 @@ function chips<K extends keyof StandFilter>(
                   <dd class="font-semibold">{{ formatArs(s.priceCents) }}</dd>
                 </dl>
                 @if (s.status === 'AVAILABLE') {
-                  <button
-                    type="button"
+                  <a
                     class="btn btn-primary mt-4 w-full justify-center"
-                    disabled
-                    aria-describedby="reserve-note"
+                    routerLink="/feriante/reservas/nueva"
+                    [queryParams]="{ stand: s.id, feria: current() }"
+                    >Reservar el stand {{ s.code }}</a
                   >
-                    Reservar
-                  </button>
-                  <p id="reserve-note" class="mt-2 text-xs text-text-muted">
-                    La reserva se habilita con <strong>RES-01</strong> (hold y pago con Mercado
-                    Pago).
+                  <p class="mt-2 text-xs text-text-muted">
+                    Lo retenemos para vos unos minutos mientras pagás con Mercado Pago.
                   </p>
                 } @else {
                   <p class="mt-3 text-sm text-text-muted">
@@ -164,6 +179,14 @@ function chips<K extends keyof StandFilter>(
     </section>
   `,
   styles: `
+    .event-select {
+      min-height: 2.25rem;
+      padding: 0 0.5rem;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 0.5rem;
+      background: var(--color-surface);
+      color: var(--color-text);
+    }
     .chip {
       min-height: 2.25rem;
       padding: 0 0.875rem;
@@ -207,15 +230,33 @@ function chips<K extends keyof StandFilter>(
   `,
 })
 export class ExploreStandsPage {
-  protected readonly eventName = DEMO_CONTEXT.event.name;
   protected readonly statusLabel = STATUS_LABEL;
   protected readonly formatArs = formatArs;
 
-  // ponytail: demo event fixed until the feriante picks one (session CORE-02 + catalog).
+  /** Optional `:slug` of the route; without it the first event on sale is shown. */
+  readonly slug = input<string | undefined>();
+
+  private readonly repository = inject(PublicCatalogRepository);
+  private readonly router = inject(Router);
+  /** `null` while loading; an empty list when there is nothing on sale (or the read failed). */
+  protected readonly events = toSignal(
+    this.repository.listEvents().pipe(catchError(() => of([]))),
+    { initialValue: null },
+  );
+  protected readonly current = computed(() => this.slug() ?? this.events()?.[0]?.slug ?? null);
+  protected readonly eventName = computed(
+    () => this.events()?.find((e) => e.slug === this.current())?.name ?? '',
+  );
+
   private readonly state = toSignal(
-    inject(PublicCatalogRepository)
-      .getMap(DEMO_EVENT_SLUG)
-      .pipe(toLoaded('No se pudo cargar el plano. Probá de nuevo en unos minutos.')),
+    toObservable(this.current).pipe(
+      filter((slug): slug is string => slug !== null),
+      switchMap((slug) =>
+        this.repository
+          .getMap(slug)
+          .pipe(toLoaded('No se pudo cargar el plano. Probá de nuevo en unos minutos.')),
+      ),
+    ),
     { initialValue: null },
   );
   protected readonly map = computed(() => dataOf(this.state()));
@@ -262,6 +303,10 @@ export class ExploreStandsPage {
       },
     ];
   });
+
+  protected chooseEvent(event: Event): void {
+    void this.router.navigate(['/feriante/explorar', (event.target as HTMLSelectElement).value]);
+  }
 
   protected applyFilter(patch: Partial<StandFilter>): void {
     this.filter.update((current) => ({ ...current, ...patch }));

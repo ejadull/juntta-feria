@@ -31,7 +31,11 @@ import {
   type EventSector,
   type EventStand,
 } from './event-inventory.service.js';
-import { EVENT_NOT_FOUND, EventsService, type Event } from './events.service.js';
+import {
+  EVENT_NOT_FOUND,
+  EventsService,
+  type Event,
+} from './events.service.js';
 
 /** A malformed id is just another resource that does not exist (uniform 404). */
 function id(value: string, message = EVENT_NOT_FOUND): string {
@@ -44,6 +48,11 @@ const found = (event: Event | null): Event => {
   return event;
 };
 
+/** Exhibitors browse events that are on sale; drafts and closed events stay organizer-only. */
+const SELLING = ['PUBLISHED', 'ACTIVE'];
+const visibleTo = (request: TenantRequest, event: Event): boolean =>
+  request.tenant.role !== 'EXHIBITOR' || SELLING.includes(event.status);
+
 /** EVT-01 (§5): events, their priced stands and their sectors (ADR 0002). */
 @Controller('events')
 export class EventsController {
@@ -53,9 +62,21 @@ export class EventsController {
   ) {}
 
   @Get()
-  @TenantScoped(...MANAGERS)
-  list(@Req() request: TenantRequest): Promise<Event[]> {
-    return this.events.list(request.tenant.id);
+  @TenantScoped(...MANAGERS, 'EXHIBITOR')
+  async list(@Req() request: TenantRequest): Promise<Event[]> {
+    const all = await this.events.list(request.tenant.id);
+    return all.filter((event) => visibleTo(request, event));
+  }
+
+  private async visible(
+    request: TenantRequest,
+    eventId: string,
+  ): Promise<string> {
+    const target = id(eventId);
+    const event = found(await this.events.get(request.tenant.id, target));
+    if (!visibleTo(request, event))
+      throw new NotFoundException(EVENT_NOT_FOUND);
+    return target;
   }
 
   @Post()
@@ -66,9 +87,15 @@ export class EventsController {
   }
 
   @Get(':id')
-  @TenantScoped(...MANAGERS)
-  async get(@Req() request: TenantRequest, @Param('id') eventId: string): Promise<Event> {
-    return found(await this.events.get(request.tenant.id, id(eventId)));
+  @TenantScoped(...MANAGERS, 'EXHIBITOR')
+  async get(
+    @Req() request: TenantRequest,
+    @Param('id') eventId: string,
+  ): Promise<Event> {
+    const event = found(await this.events.get(request.tenant.id, id(eventId)));
+    if (!visibleTo(request, event))
+      throw new NotFoundException(EVENT_NOT_FOUND);
+    return event;
   }
 
   @Patch(':id')
@@ -80,20 +107,36 @@ export class EventsController {
   ): Promise<Event> {
     const target = id(eventId);
     const patch = parseBody(updateEventInput, body, 'event');
-    return found(await this.events.update(request.tenant.id, request.user.id, target, patch));
+    return found(
+      await this.events.update(
+        request.tenant.id,
+        request.user.id,
+        target,
+        patch,
+      ),
+    );
   }
 
   @Post(':id/publish')
   @HttpCode(HttpStatus.OK)
   @TenantScoped(...OWNERS)
-  publish(@Req() request: TenantRequest, @Param('id') eventId: string): Promise<Event> {
+  publish(
+    @Req() request: TenantRequest,
+    @Param('id') eventId: string,
+  ): Promise<Event> {
     return this.events.publish(request.tenant.id, request.user.id, id(eventId));
   }
 
   @Get(':id/stands')
-  @TenantScoped(...MANAGERS)
-  stands(@Req() request: TenantRequest, @Param('id') eventId: string): Promise<EventStand[]> {
-    return this.inventory.listStands(request.tenant.id, id(eventId));
+  @TenantScoped(...MANAGERS, 'EXHIBITOR')
+  async stands(
+    @Req() request: TenantRequest,
+    @Param('id') eventId: string,
+  ): Promise<EventStand[]> {
+    return this.inventory.listStands(
+      request.tenant.id,
+      await this.visible(request, eventId),
+    );
   }
 
   @Patch(':id/stands')
@@ -105,13 +148,24 @@ export class EventsController {
   ): Promise<EventStand[]> {
     const target = id(eventId);
     const patch = parseBody(updateStandsInput, body, 'stands update');
-    return this.inventory.updateStands(request.tenant.id, request.user.id, target, patch);
+    return this.inventory.updateStands(
+      request.tenant.id,
+      request.user.id,
+      target,
+      patch,
+    );
   }
 
   @Get(':id/sectors')
-  @TenantScoped(...MANAGERS)
-  sectors(@Req() request: TenantRequest, @Param('id') eventId: string): Promise<EventSector[]> {
-    return this.inventory.listSectors(request.tenant.id, id(eventId));
+  @TenantScoped(...MANAGERS, 'EXHIBITOR')
+  async sectors(
+    @Req() request: TenantRequest,
+    @Param('id') eventId: string,
+  ): Promise<EventSector[]> {
+    return this.inventory.listSectors(
+      request.tenant.id,
+      await this.visible(request, eventId),
+    );
   }
 
   @Post(':id/sectors')
@@ -123,7 +177,12 @@ export class EventsController {
   ): Promise<EventSector> {
     const target = id(eventId);
     const input = parseBody(createSectorInput, body, 'sector');
-    return this.inventory.createSector(request.tenant.id, request.user.id, target, input);
+    return this.inventory.createSector(
+      request.tenant.id,
+      request.user.id,
+      target,
+      input,
+    );
   }
 
   @Patch(':id/sectors/:sectorId')
@@ -136,7 +195,13 @@ export class EventsController {
   ): Promise<EventSector> {
     const [event, sector] = [id(eventId), id(sectorId, 'Sector not found.')];
     const patch = parseBody(updateSectorInput, body, 'sector');
-    return this.inventory.updateSector(request.tenant.id, request.user.id, event, sector, patch);
+    return this.inventory.updateSector(
+      request.tenant.id,
+      request.user.id,
+      event,
+      sector,
+      patch,
+    );
   }
 
   @Delete(':id/sectors/:sectorId')
@@ -148,6 +213,11 @@ export class EventsController {
     @Param('sectorId') sectorId: string,
   ): Promise<void> {
     const [event, sector] = [id(eventId), id(sectorId, 'Sector not found.')];
-    return this.inventory.removeSector(request.tenant.id, request.user.id, event, sector);
+    return this.inventory.removeSector(
+      request.tenant.id,
+      request.user.id,
+      event,
+      sector,
+    );
   }
 }

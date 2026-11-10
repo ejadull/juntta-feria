@@ -3,6 +3,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { ApiStatusService, type ApiStatus } from '../../shared/api/api-status.service';
+import { SessionStore } from '../../shared/auth/session.store';
 import { DEMO_CONTEXT } from '../../shared/demo-context';
 
 type AreaId = 'organizador' | 'feriante' | 'visitante';
@@ -92,16 +93,16 @@ const AREAS: readonly Area[] = [
         icon: ICON.search,
       },
       {
-        label: 'Reserva y pago',
-        link: '/feriante/reserva',
-        active: exactly('/feriante/reserva'),
-        icon: ICON.card,
-      },
-      {
         label: 'Mis reservas',
         link: '/feriante/reservas',
         active: under('/feriante/reservas'),
         icon: ICON.ticket,
+      },
+      {
+        label: 'Suscripción',
+        link: '/feriante/suscripcion',
+        active: under('/feriante/suscripcion'),
+        icon: ICON.card,
       },
     ],
   },
@@ -124,11 +125,12 @@ const AREAS: readonly Area[] = [
 
 function areaOf(url: string): Area {
   const path = pathOf(url);
-  const id: AreaId = path.startsWith('/feriante')
-    ? 'feriante'
-    : path.startsWith('/ferias')
-      ? 'visitante'
-      : 'organizador';
+  const id: AreaId =
+    path.startsWith('/feriante') || path.startsWith('/ingresar')
+      ? 'feriante'
+      : path.startsWith('/ferias')
+        ? 'visitante'
+        : 'organizador';
   return AREAS.find((a) => a.id === id)!;
 }
 
@@ -216,9 +218,38 @@ function areaOf(url: string): Area {
         </ul>
       </nav>
 
-      <p class="mt-auto hidden rounded-xl bg-primary/10 p-3 text-xs text-primary lg:block">
-        <strong>Demo de UX.</strong> Datos ficticios; no se procesa ningún pago real.
-      </p>
+      <div class="mt-auto flex flex-col gap-3">
+        @if (session.user(); as user) {
+          <div class="rounded-xl border border-border bg-surface p-3 text-sm">
+            <p class="text-xs font-semibold tracking-wider text-text-muted">SESIÓN</p>
+            <p class="truncate font-medium" data-testid="session-email">{{ user.email }}</p>
+            @if (session.memberships().length > 1) {
+              <label class="mt-2 block text-xs text-text-muted">
+                Organización
+                <select class="org-select" (change)="chooseTenant($event)">
+                  @for (m of session.memberships(); track m.tenantId) {
+                    <option [value]="m.tenantId" [selected]="m.tenantId === session.tenantId()">
+                      {{ m.tenantName }}
+                    </option>
+                  }
+                </select>
+              </label>
+            }
+            <button type="button" class="btn mt-2 w-full justify-center" (click)="logout()">
+              Salir
+            </button>
+          </div>
+        } @else {
+          <a class="btn w-full justify-center" routerLink="/ingresar">Ingresar</a>
+        }
+        <p class="hidden rounded-xl bg-primary/10 p-3 text-xs text-primary lg:block">
+          @if (area().id === 'feriante') {
+            <strong>Entorno de prueba.</strong> Los pagos se hacen en el sandbox de Mercado Pago.
+          } @else {
+            <strong>Demo de UX.</strong> Datos ficticios; no se procesa ningún pago real.
+          }
+        </p>
+      </div>
     </aside>
 
     <main class="min-h-0 min-w-0 flex-1 overflow-y-auto">
@@ -226,6 +257,15 @@ function areaOf(url: string): Area {
     </main>
   `,
   styles: `
+    .org-select {
+      width: 100%;
+      min-height: 2.25rem;
+      margin-top: 0.25rem;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 0.5rem;
+      background: var(--color-surface);
+      color: var(--color-text);
+    }
     .api-status {
       display: inline-flex;
       align-items: center;
@@ -298,6 +338,7 @@ function areaOf(url: string): Area {
 })
 export class AppShell {
   protected readonly org = DEMO_CONTEXT.organization;
+  protected readonly session = inject(SessionStore);
   protected readonly areas = AREAS;
 
   private readonly router = inject(Router);
@@ -320,6 +361,14 @@ export class AppShell {
     up: 'conectada',
     down: 'sin conexión',
   } as const;
+
+  protected chooseTenant(event: Event): void {
+    this.session.selectTenant((event.target as HTMLSelectElement).value);
+  }
+
+  protected logout(): void {
+    this.session.logout().subscribe(() => void this.router.navigateByUrl('/ingresar'));
+  }
 
   protected go(home: string): void {
     void this.router.navigateByUrl(home);

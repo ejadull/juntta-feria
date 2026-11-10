@@ -1,8 +1,13 @@
 import { expect, test } from '@playwright/test';
+import { mockApi } from './support/mock-api';
 
-/** PUB-UI-06: delta-spec scenarios of `public-catalog` end to end. */
+/**
+ * PUB-UI-06: delta-spec scenarios of `public-catalog` end to end. The visitor portal still uses
+ * demo data; the exhibitor area reads the real API, mocked here.
+ */
 
 test('"Ver como" switches between the three areas', async ({ page }) => {
+  await mockApi(page);
   await page.goto('/organizador/panel');
   const seeAs = page.getByRole('group', { name: /Ver como/ });
   await seeAs.getByRole('button', { name: 'Feriante' }).click();
@@ -18,23 +23,23 @@ test('"Ver como" switches between the three areas', async ({ page }) => {
 });
 
 test('feriante filters by sector and picks a stand from the list', async ({ page }) => {
+  await mockApi(page);
   await page.goto('/feriante/explorar');
-  await expect(page.locator('.stand-list-heading')).toHaveText(/12 stands disponibles/);
+  await expect(page.locator('.stand-list-heading')).toHaveText(/2 stands disponibles/);
 
   await page
     .getByRole('group', { name: 'Sector' })
-    .getByRole('button', { name: 'Producción regional' })
+    .getByRole('button', { name: 'Diseño y moda' })
     .click();
   const items = page.locator('.stand-list button');
-  await expect(items.first()).toContainText('Producción regional');
-  for (const text of await items.allInnerTexts()) expect(text).toContain('Producción regional');
-  await expect(page.locator('app-stand-map [data-code="A01"]')).toHaveClass(/dimmed/);
+  await expect(items).toHaveCount(2);
+  await expect(items.first()).toContainText('Diseño y moda');
 
   const code = await items.first().getAttribute('data-code');
   await items.first().click();
   await expect(page.locator(`app-stand-map [data-code="${code}"]`)).toHaveClass(/selected/);
   await expect(page.locator('.stand-detail')).toContainText(`Stand ${code}`);
-  await expect(page.getByRole('button', { name: 'Reservar' })).toBeDisabled();
+  await expect(page.getByRole('link', { name: `Reservar el stand ${code}` })).toBeEnabled();
 });
 
 test('visitor finds a fair without accents and sees only public exhibitors', async ({ page }) => {

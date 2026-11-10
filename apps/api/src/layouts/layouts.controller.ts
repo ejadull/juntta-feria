@@ -48,9 +48,16 @@ export class LayoutTemplatesController {
   /** Creates the template and its first draft, which is what the editor opens. */
   @Post()
   @TenantScoped(...MANAGERS)
-  create(@Req() request: TenantRequest, @Body() body: unknown): Promise<LayoutVersionDto> {
+  create(
+    @Req() request: TenantRequest,
+    @Body() body: unknown,
+  ): Promise<LayoutVersionDto> {
     const input = parseBody(createTemplateInput, body, 'layout template');
-    return this.layouts.createTemplate(request.tenant.id, request.user.id, input);
+    return this.layouts.createTemplate(
+      request.tenant.id,
+      request.user.id,
+      input,
+    );
   }
 
   @Post(':id/versions')
@@ -61,8 +68,17 @@ export class LayoutTemplatesController {
     @Body() body: unknown,
   ): Promise<LayoutVersionDto> {
     const templateId = layoutId(id);
-    const { sourceVersionId } = parseBody(cloneVersionInput, body, 'layout version');
-    return this.layouts.cloneVersion(request.tenant.id, request.user.id, templateId, sourceVersionId);
+    const { sourceVersionId } = parseBody(
+      cloneVersionInput,
+      body,
+      'layout version',
+    );
+    return this.layouts.cloneVersion(
+      request.tenant.id,
+      request.user.id,
+      templateId,
+      sourceVersionId,
+    );
   }
 }
 
@@ -70,11 +86,22 @@ export class LayoutTemplatesController {
 export class LayoutVersionsController {
   constructor(private readonly layouts: LayoutsService) {}
 
+  /** Exhibitors read the plan of a published version (stand map); drafts stay organizer-only. */
   @Get(':id')
-  @TenantScoped(...MANAGERS)
-  async get(@Req() request: TenantRequest, @Param('id') id: string): Promise<LayoutVersionDto> {
-    const version = await this.layouts.getVersion(request.tenant.id, layoutId(id));
-    if (!version) throw new NotFoundException('Layout not found.');
+  @TenantScoped(...MANAGERS, 'EXHIBITOR')
+  async get(
+    @Req() request: TenantRequest,
+    @Param('id') id: string,
+  ): Promise<LayoutVersionDto> {
+    const version = await this.layouts.getVersion(
+      request.tenant.id,
+      layoutId(id),
+    );
+    if (
+      !version ||
+      (request.tenant.role === 'EXHIBITOR' && version.status !== 'PUBLISHED')
+    )
+      throw new NotFoundException('Layout not found.');
     return version;
   }
 
@@ -87,13 +114,25 @@ export class LayoutVersionsController {
   ): Promise<LayoutVersionDto> {
     const versionId = layoutId(id);
     const { objects } = parseBody(saveObjectsInput, body, 'layout');
-    return this.layouts.saveObjects(request.tenant.id, request.user.id, versionId, objects);
+    return this.layouts.saveObjects(
+      request.tenant.id,
+      request.user.id,
+      versionId,
+      objects,
+    );
   }
 
   @Post(':id/publish')
   @HttpCode(HttpStatus.OK)
   @TenantScoped(...OWNERS)
-  publish(@Req() request: TenantRequest, @Param('id') id: string): Promise<LayoutVersionDto> {
-    return this.layouts.publish(request.tenant.id, request.user.id, layoutId(id));
+  publish(
+    @Req() request: TenantRequest,
+    @Param('id') id: string,
+  ): Promise<LayoutVersionDto> {
+    return this.layouts.publish(
+      request.tenant.id,
+      request.user.id,
+      layoutId(id),
+    );
   }
 }

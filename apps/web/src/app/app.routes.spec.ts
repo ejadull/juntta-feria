@@ -5,13 +5,15 @@ import { Title } from '@angular/platform-browser';
 import { provideRouter, Router, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from './app.routes';
+import { signedInAs } from './shared/auth/testing';
 
-async function open(url: string) {
+async function open(url: string, { signedIn = false }: { signedIn?: boolean } = {}) {
   TestBed.configureTestingModule({
     providers: [
       provideRouter(routes, withComponentInputBinding()),
       provideHttpClient(),
       provideHttpClientTesting(),
+      ...(signedIn ? [signedInAs()] : []),
     ],
   });
   const harness = await RouterTestingHarness.create(url);
@@ -87,12 +89,34 @@ describe('areas and "Ver como" (PUB-UI-01)', () => {
     );
 
   it('shows the feriante area with its navigation (spec: "Ver como")', async () => {
-    const { host, current } = await open('/feriante/explorar');
+    const { host, current } = await open('/feriante/explorar', { signedIn: true });
     expect(pressed(host)).toEqual(['Feriante']);
     const items = [...host.querySelectorAll('nav a')].map((a) => a.textContent!.trim());
-    expect(items).toEqual(['Explorar stands', 'Reserva y pago', 'Mis reservas']);
+    expect(items).toEqual(['Explorar stands', 'Mis reservas', 'Suscripción']);
     expect(current()).toEqual(['Explorar stands']);
     expect(host.querySelector('main h1')?.textContent).toContain('Elegí tu stand');
+  });
+
+  it('sends anonymous visitors to sign in and remembers where they were going (P01)', async () => {
+    const { router, host } = await open('/feriante/reservas');
+    expect(router.url).toBe('/ingresar?volver=%2Fferiante%2Freservas');
+    expect(host.querySelector('main h1')?.textContent).toContain('Entrá a tu cuenta');
+    expect(pressed(host)).toEqual(['Feriante']);
+  });
+
+  it('keeps the visitor pages public', async () => {
+    const { router } = await open('/ferias');
+    expect(router.url).toBe('/ferias');
+  });
+
+  it('opens the subscription screen, the back_url of the preapproval (EXH-05)', async () => {
+    const { current, harness, host } = await open('/feriante/suscripcion', { signedIn: true });
+    expect(current()).toEqual(['Suscripción']);
+    // The page reads on a timer.
+    const http = TestBed.inject(HttpTestingController);
+    await vi.waitFor(() => http.expectOne('/api/v1/me/subscription').flush({ status: 'NONE' }));
+    await harness.fixture.whenStable();
+    expect(host.querySelector('main h1')?.textContent).toContain('Suscripción');
   });
 
   it('switches area from the demo selector', async () => {
@@ -115,27 +139,37 @@ describe('areas and "Ver como" (PUB-UI-01)', () => {
   });
 
   it('opens the checkout returns of Mercado Pago back_urls, and only those (P19, PAY-04)', async () => {
-    const { host, current } = await open('/feriante/reservas/demo-rechazada/pago/rechazado');
+    const { host, current, harness } = await open('/feriante/reservas/r-1/pago/rechazado', {
+      signedIn: true,
+    });
     expect(TestBed.inject(Title).getTitle()).toBe('Pago de tu reserva · Juntta Feria');
     expect(current()).toEqual(['Mis reservas']);
-    // The page reads the reservation on a timer.
+    const http = TestBed.inject(HttpTestingController);
     await vi.waitFor(() =>
-      expect(host.querySelector('main h1')?.textContent).toContain('El pago fue rechazado'),
+      http.expectOne('/api/v1/reservations/r-1').flush({
+        id: 'r-1',
+        status: 'HELD',
+        holdExpiresAt: new Date(Date.now() + 600_000).toISOString(),
+        amount: { currency: 'ARS', valueCents: 1_000_000 },
+        stand: { id: 's', code: 'S2', areaM2: 9 },
+        eventId: 'e',
+      }),
     );
+    await harness.fixture.whenStable();
+    expect(host.querySelector('main h1')?.textContent).toContain('El pago fue rechazado');
 
     TestBed.resetTestingModule();
-    const other = await open('/feriante/reservas/demo-rechazada/pago/cualquiera');
+    const other = await open('/feriante/reservas/r-1/pago/cualquiera', { signedIn: true });
     expect(other.host.textContent).toContain('Página no encontrada');
   });
 
-  it('shows reservation placeholders without simulated data (spec: "Marcadores de reserva")', async () => {
-    for (const path of ['/feriante/reserva', '/feriante/reservas']) {
-      TestBed.resetTestingModule();
-      const { host } = await open(path);
-      expect(host.querySelector('main h1')?.textContent?.trim()).not.toBe('');
-      expect(host.querySelector('main')?.textContent).toContain('RES-01');
-      expect(host.querySelector('main')?.textContent).not.toMatch(/\$\s?\d/);
-    }
+  it('opens the reservation summary (P18) and the exhibitor list inside the area', async () => {
+    const reserve = await open('/feriante/reservas/nueva?stand=s1&feria=f', { signedIn: true });
+    expect(TestBed.inject(Title).getTitle()).toBe('Reserva y pago · Juntta Feria');
+    expect(reserve.current()).toEqual(['Mis reservas']);
+    TestBed.resetTestingModule();
+    const list = await open('/feriante/reservas', { signedIn: true });
+    expect(list.host.querySelector('main h1')?.textContent).toContain('Mis reservas');
   });
 });
 
