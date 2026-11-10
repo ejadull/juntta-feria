@@ -790,6 +790,33 @@ export const paymentAttempts = pgTable(
   ],
 );
 
+/**
+ * The organizer's Mercado Pago seller account, linked by OAuth (PAY-07, ADR 0006 §2). One per
+ * tenant. Tokens are AES-256-GCM ciphertext (`TokenCipher`) named by `key_id`; never in clear.
+ */
+export const sellerAccounts = pgTable(
+  'seller_accounts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    /** Mercado Pago `user_id` of the seller: the expected collector of every payment. */
+    sellerId: text('seller_id').notNull(),
+    liveMode: boolean('live_mode').notNull(),
+    accessTokenSealed: text('access_token_sealed').notNull(),
+    refreshTokenSealed: text('refresh_token_sealed').notNull(),
+    keyId: text('key_id').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    linkedBy: uuid('linked_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    linkedAt: timestamp('linked_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    refreshedAt: timestamp('refreshed_at', { withTimezone: true }),
+  },
+  (t) => [unique('seller_accounts_tenant_unique').on(t.tenantId)],
+);
+
 export const PAYMENT_REFUND_KINDS = ['REFUND', 'CANCEL'] as const;
 export type PaymentRefundKind = (typeof PAYMENT_REFUND_KINDS)[number];
 export const PAYMENT_REFUND_STATUSES = ['PENDING', 'SUCCEEDED'] as const;

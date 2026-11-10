@@ -126,6 +126,31 @@ describe('MercadoPagoProvider (PAY-01)', () => {
     expect(sent).toHaveLength(0);
   });
 
+  it("uses the organizer's linked seller token, in production too (PAY-07)", async () => {
+    respond({ status: 200, body: { id: 1, status: 'approved' } });
+    const tenants: string[] = [];
+    const provider = new MercadoPagoProvider(
+      { environment: 'production', accessToken: undefined },
+      (tenantId) => {
+        tenants.push(tenantId);
+        return Promise.resolve('APP_USR-seller-token');
+      },
+    );
+    await provider.getPayment(TENANT, '1');
+    expect(tenants).toEqual([TENANT]);
+    expect(sent[0].headers.Authorization).toBe('Bearer APP_USR-seller-token');
+  });
+
+  it('prefers the linked seller token over the sandbox platform token', async () => {
+    respond({ status: 200, body: { id: 1, status: 'approved' } });
+    const provider = new MercadoPagoProvider(
+      { environment: 'sandbox', accessToken: TOKEN },
+      () => Promise.resolve('APP_USR-seller-token'),
+    );
+    await provider.getPayment(TENANT, '1');
+    expect(sent[0].headers.Authorization).toBe('Bearer APP_USR-seller-token');
+  });
+
   it('fails explicitly without credentials and never calls the provider (§13.1)', async () => {
     respond();
     const provider = new MercadoPagoProvider({

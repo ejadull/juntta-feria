@@ -13,6 +13,7 @@ const INCIDENTS: Readonly<Record<string, string>> = {
   'payment.late_conflict': 'LATE_PAYMENT_CONFLICT',
   'payment.mismatch': 'AMOUNT_MISMATCH',
   'payment.charged_back': 'CHARGEBACK',
+  'payment.collector_mismatch': 'COLLECTOR_MISMATCH',
 };
 const LIMIT = 200;
 

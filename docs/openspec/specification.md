@@ -201,7 +201,9 @@ Autenticación de panel `Authorization: Bearer <token>` (access token JWT, [ADR 
 | GET | /api/v1/reservations/:id | propietario/admin | Estado de reserva |
 | POST | /api/v1/reservations/:id/cancel | propietario/admin | Cancelar según política |
 | POST | /api/v1/webhooks/mercadopago | proveedor | Recibir eventos firmados (`PAY-03`); 401 si la firma no verifica |
-| GET | /api/v1/payment-incidents | owner/admin | Incidencias de cobro para P10: `LATE_PAYMENT_CONFLICT`, `AMOUNT_MISMATCH` (`PAY-05`), `CHARGEBACK` (`PAY-06`); cada una trae el `reservationId` a devolver |
+| GET | /api/v1/payment-incidents | owner/admin | Incidencias de cobro para P10: `LATE_PAYMENT_CONFLICT`, `AMOUNT_MISMATCH` (`PAY-05`), `CHARGEBACK` (`PAY-06`); `COLLECTOR_MISMATCH` (`PAY-07`); cada una trae el `reservationId` a devolver |
+| GET/DELETE | /api/v1/payment-account | owner/admin | Estado de la cuenta vendedora de Mercado Pago (`NOT_LINKED`/`LINKED`/`EXPIRED`, entorno, `sellerId`), nunca tokens; `DELETE` desvincula (`PAY-07`) |
+| POST | /api/v1/payment-account/authorization · /link | owner/admin | Inicia el OAuth con PKCE (devuelve `authorizationUrl`) y canjea `{ code, state }` del retorno (`PAY-07`) |
 | POST | /api/v1/reservations/{id}/refunds | owner/admin | Con `Idempotency-Key`. Reembolsa los pagos aprobados y cancela los pendientes; `{ "amountCents" }` opcional para un reembolso parcial (`PAY-06`). 201 nuevo, 200 replay |
 | GET | /api/v1/events/:id/metrics | operator | KPIs, incluido `occupancyBySector` ([ADR 0002](../adr/0002-sectores-por-evento.md)) (modelo de lectura: D2 de [`org-ui-shell`](changes/archive/2026-10-30-org-ui-shell/design.md)) |
 | GET | /api/v1/exhibitors | owner/admin/operator | Expositores del tenant con datos privados y estado de documentación (D4 de [`org-ui-shell`](changes/archive/2026-10-30-org-ui-shell/design.md)); nunca para vistas públicas |
@@ -462,7 +464,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `PAY-04` Retorno de checkout (P19) | `PAY-02`, `PUB-UI-01..06` | pantallas aprobado/pendiente/rechazado sin confiar en query params | `PENDING` |
 | `PAY-05` Conciliación y pago tardío | `PAY-03` | job de reconciliación, `LATE_PAYMENT_CONFLICT`, P10 — [detalle](#pay-05--conciliación-y-pago-tardío); falta la pantalla P10 y la prueba en sandbox | `IN_PROGRESS` |
 | `PAY-06` Reembolsos, cancelaciones y contracargos | `PAY-05` | refund total/parcial, cancelación de pendientes, chargebacks | `IN_PROGRESS` |
-| `PAY-07` Configuración Mercado Pago (P12) | `PAY-01`, `CORE-03` | vincular cuenta vendedora del organizador sin secretos en claro | `PENDING` |
+| `PAY-07` Configuración Mercado Pago (P12) | `PAY-01`, `CORE-03` | vincular cuenta vendedora del organizador sin secretos en claro | `IN_PROGRESS` |
 | `SUB-01` Suscripción SaaS del organizador | `CORE-03`, `PAY-00` | planes (`preapproval_plan`) y suscripciones (`preapproval`); **fuera del MVP** | `PENDING` |
 | `PUB-01` Portal público | `EVT-01`, `EXH-01`, `RES-01` | catálogo, mapa, disponibilidad y accesibilidad | `PENDING` |
 | `REP-01` Reportes | `PAY-05` | ocupación, GMV y exportaciones CSV | `PENDING` |
@@ -663,7 +665,7 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
   - SDK `mercadopago` fijado en `3.6.1` (ADR 0006, R-MP-8).
   - **Un `MercadoPagoConfig` nuevo por llamada:** el SDK mezcla `requestOptions` dentro del config compartido, así que reusarlo arrastraría la idempotency key o `maxRetries: 0` a la llamada siguiente.
   - Reintentos: crear preferencia **0** (Preferences no tiene clave idempotente); `GET`, reembolso y cancelación **2**, con clave propia. Timeout 10 s.
-  - **Credenciales interinas:** `MP_ACCESS_TOKEN` de plataforma para todos los tenants y **sólo en `sandbox`**. Con `MP_ENVIRONMENT=production` los pagos responden 503 hasta que `PAY-07` vincule la cuenta vendedora de cada organizador (OAuth, ADR 0006 §2); así nunca se cobra a nombre de la plataforma por error.
+  - **Credenciales:** desde `PAY-07`, el token de la cuenta vendedora que el organizador vinculó por OAuth (ADR 0006 §2). Sin cuenta vinculada, `MP_ACCESS_TOKEN` de plataforma **sólo en `sandbox`**; en `production` los pagos responden 503, así nunca se cobra a nombre de la plataforma por error.
 - [x] Validar `MP_ENVIRONMENT` (`sandbox`|`production`, por defecto `sandbox`), `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` y `MP_NOTIFICATION_URL` (https) en el esquema de entorno. Sin Public Key: no hay SDK de frontend.
 - [x] Cliente con timeouts, reintentos acotados sólo en operaciones idempotentes y errores mapeados a problem+json (503/502) sin filtrar datos del proveedor; el log registra sólo operación, status y tenant.
 - [x] Credenciales de prueba y usuarios de prueba comprador/vendedor documentados (sin valores) en el README.
@@ -725,7 +727,7 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 - [x] Validar `x-signature` (`ts`, `v1`) con `x-request-id` y `data.id` de la query, según PAY-00 (`WebhookSignatureValidator` del SDK).
 - [x] Topic `payment`; `merchant_order` y los no suscriptos se responden 200 y se ignoran (Checkout Pro manda ambos, y `payment` alcanza).
 - [x] Transiciones monotónicas: un evento viejo no revierte un estado más avanzado.
-- [ ] Cotejo del **cobrador**: llega con `PAY-07`, cuando el id del vendedor sale de la vinculación OAuth. Hoy en sandbox hay una sola cuenta.
+- [x] Cotejo del **cobrador** (`PAY-07`): con cuenta vinculada, `collector_id` distinto del vendedor → `COLLECTOR_MISMATCH`.
 - [x] Mapear `refunded`/`charged_back` (`PAY-06`).
 - [ ] Verificar la lista vigente de `status`/`status_detail` en sandbox.
 - [ ] Prueba con el simulador del panel; confirmar que Mercado Pago conserva el query `tenant` de la `notification_url`.
@@ -804,11 +806,31 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 
 ##### PAY-07 — Configuración Mercado Pago (P12)
 
-- **Estado:** `PENDING`
+- **Estado:** `IN_PROGRESS` (API lista; falta la pantalla P12 en la web y la prueba en sandbox con cuentas de prueba)
 - **Dependencias:** `PAY-01`, `CORE-03`
-- **Entrega:** pantalla del organizador para vincular y verificar su cuenta vendedora según PAY-00.
+- **Entrega:** vinculación OAuth de la cuenta vendedora del organizador según ADR 0006 §2. `GET /api/v1/payment-account`, `POST /payment-account/authorization`, `POST /payment-account/link` y `DELETE /payment-account` (OWNER/ADMIN). Tabla `seller_accounts` (migración `0013_seller_accounts`, RLS), una por tenant.
 - **Aceptación:** sólo owner/administrador; los secretos nunca vuelven al navegador; estado de vinculación y entorno visibles.
 - **Evidencia requerida:** tests de autorización, de página y axe.
+  - 2026-11-10: `test:int` → 171/171 (8 en `test/payment-account.int-spec.ts` con servidor OAuth falso, 1 de cobrador en `test/checkout.int-spec.ts`), repetido 3 veces sin fallos:
+    - Sin vincular → `NOT_LINKED` con el entorno; feriante → 403.
+    - Vinculación con PKCE: el verifier cumple `S256` con el challenge enviado y no viaja en el `state`; la respuesta y la auditoría no contienen tokens; en base sólo hay texto cifrado con el `key_id` de la clave.
+    - `state` adulterado, de otro usuario o de otra organización → 400 `INVALID_OAUTH_STATE`, sin canjear el código.
+    - Lejos del vencimiento se usa el token guardado; tres llamadas concurrentes cerca del vencimiento → **una sola** renovación y se guarda el refresh token rotado.
+    - Renovación fallida con el token vigente → se sigue usando; vencido → 503 y estado `EXPIRED` (revincular).
+    - Revincular reemplaza la cuenta; desvincular → `NOT_LINKED`. Sin tenant (RLS) no se ve ninguna fila.
+    - Pago cobrado por otra cuenta que la vinculada → `COLLECTOR_MISMATCH`, incidencia, sin confirmar.
+  - 2026-11-10: `npm test` 124/124 (`TokenCipher`, `MercadoPagoOAuth` con `fetch` simulado, provider con el token del vendedor, contrato de entorno), `test:e2e` 7/7, `tsc` y `oxlint` OK.
+- **Flujo:**
+  1. `POST /payment-account/authorization` arma la URL de `auth.mercadopago.com/authorization` con `client_id`, `platform_id=mp`, `redirect_uri` estática, `code_challenge` (S256) y un `state` **cifrado con AES-256-GCM** que lleva tenant, usuario, verifier y vencimiento (10 min, lo que dura el código). No hace falta tabla de autorizaciones en curso.
+  2. Mercado Pago vuelve a `MP_OAUTH_REDIRECT_URI` (pantalla P12 de la web) con `code` y `state`; la web llama `POST /payment-account/link` con su sesión y el `X-Tenant-Id`. La API exige que el `state` sea de ese tenant y de ese usuario (anti-CSRF) y canjea el código con el verifier (`POST /oauth/token`, `test_token` en sandbox).
+  3. Se guardan cifrados access y refresh token, `seller_id` (`user_id` del vendedor), `live_mode`, `expires_at` y `key_id`. Se audita `payment_account.linked`/`unlinked` sin secretos.
+- **Uso de las credenciales:** el provider pide el token por tenant. Con cuenta vinculada usa la del organizador (también en `production`); sin cuenta, `sandbox` cae al `MP_ACCESS_TOKEN` de plataforma para desarrollo y `production` responde 503.
+- **Renovación:** 7 días antes de vencer (el token dura 180). Serializada con `SELECT … FOR UPDATE` sobre la fila del tenant durante la llamada, porque cada refresh rota el refresh token. Si falla y el token sigue vigente, se usa y se avisa en el log; vencido → 503 y la pantalla pide revincular.
+- **Cobrador (§6.7):** con cuenta vinculada, un pago cuyo `collector_id` no es el `seller_id` → `payment.collector_mismatch` (incidencia `COLLECTOR_MISMATCH`) y no se confirma.
+- [ ] Pantalla P12 en la web (estado, entorno, botón vincular/revincular/desvincular, página de retorno), con tests de página y axe.
+- [ ] Prueba en sandbox con cuentas de prueba: confirmar los campos de `/oauth/token` (`user_id`, `live_mode`, `expires_in`) y el comportamiento del refresh (R-MP-4).
+- [ ] Ponytail: la clave de cifrado sale de `MP_TOKEN_ENCRYPTION_KEY`. Envolverla con KMS/vault antes de producción; la rotación re-cifra las filas del `key_id` viejo.
+- [ ] Ponytail: la renovación sólo ocurre cuando se usa el token. Sumar al job de conciliación una renovación proactiva y una alerta para cuentas sin uso cerca del vencimiento.
 
 ##### SUB-01 — Suscripción SaaS del organizador
 
@@ -859,7 +881,7 @@ Estructura `apps/api` (NestJS), `apps/web` (Angular), `docker-compose.yml`, `.en
 | `APP_DB_PASSWORD`, `DATABASE_MIGRATION_URL` | `CORE-01`: contraseña del rol `juntta_app` (generada por `scripts/init-local-env.mjs`) y conexión del rol dueño, usada **sólo** por `npm run db:setup` / el servicio `db-migrate`. La API nunca recibe la URL ni la contraseña del dueño (Compose las vacía en el servicio `api`). |
 | `REDIS_URL` | Redis local para BullMQ, jobs y cache. |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_FORCE_PATH_STYLE` | LocalStack emula S3 en desarrollo con credenciales públicas de simulación; en producción se requiere un proveedor S3 y credenciales de mínimo privilegio administradas fuera de Git. |
-| `MP_ENVIRONMENT`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `MP_NOTIFICATION_URL` | Mercado Pago usa `sandbox` localmente (valor por defecto). Las credenciales pueden quedar vacías para flujos que no son de pago; los pagos responden 503 hasta configurarlas, y en `production` hasta que `PAY-07` vincule la cuenta del organizador. `MP_NOTIFICATION_URL` (https, opcional) es la URL pública del webhook; sin ella rige la configurada en el panel de Mercado Pago. |
+| `MP_ENVIRONMENT`, `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `MP_NOTIFICATION_URL`, `MP_CLIENT_ID`, `MP_CLIENT_SECRET`, `MP_OAUTH_REDIRECT_URI`, `MP_TOKEN_ENCRYPTION_KEY` | Mercado Pago usa `sandbox` localmente (valor por defecto). Las credenciales pueden quedar vacías para flujos que no son de pago; los pagos responden 503 hasta configurarlas, y en `production` hasta que `PAY-07` vincule la cuenta del organizador. `MP_NOTIFICATION_URL` (https, opcional) es la URL pública del webhook; sin ella rige la configurada en el panel de Mercado Pago. `PAY-07`: credenciales de la aplicación OAuth y `redirect_uri` estática (la pantalla P12); con `MP_CLIENT_ID` se exigen las otras tres. `MP_TOKEN_ENCRYPTION_KEY` son 32 bytes aleatorios en base64 para cifrar los tokens de los vendedores (AES-256-GCM); cambiarla obliga a revincular. |
 | `AUTH_ACCESS_TOKEN_SECRET`, `AUTH_REFRESH_TOKEN_SECRET`, `AUTH_ACCESS_TOKEN_TTL_SECONDS`, `AUTH_REFRESH_TOKEN_TTL_SECONDS`, `AUTH_REFRESH_COOKIE_NAME`, `AUTH_COOKIE_SECURE`, `AUTH_COOKIE_SAME_SITE` | `CORE-02` ([ADR 0004](../adr/0004-contrato-de-entorno-y-autenticacion.md)): secretos de ≥ 32 caracteres y distintos entre sí (generados por `scripts/init-local-env.mjs`); TTL por defecto 900 s / 14 días; cookie `juntta_rt`, `Secure` y `SameSite=Strict` por defecto. En producción `AUTH_COOKIE_SECURE=false` se rechaza. |
 | `SENTRY_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT` | Integraciones opcionales de observabilidad; pueden quedar vacías localmente. |
 

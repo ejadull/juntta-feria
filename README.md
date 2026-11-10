@@ -66,7 +66,7 @@ Sin credenciales, la API arranca igual y los pagos responden 503. Para probar el
 2. En *Cuentas de prueba* creá un usuario **vendedor** y uno **comprador**. Pagá siempre logueado con el comprador de prueba, nunca con tu cuenta real.
 3. La firma secreta de webhooks va en `MP_WEBHOOK_SECRET`. `MP_NOTIFICATION_URL` es la URL pública https del webhook; en local, un túnel (por ejemplo `cloudflared`) a `/api/v1/webhooks/mercadopago`.
 
-Los valores nunca se versionan ni se pegan en issues: sólo los nombres de las variables. Con `MP_ENVIRONMENT=production` los pagos quedan apagados hasta `PAY-07` (cada organizador vincula su propia cuenta).
+Los valores nunca se versionan ni se pegan en issues: sólo los nombres de las variables. Cada organizador vincula su propia cuenta vendedora por OAuth (`PAY-07`): en la aplicación configurá la URL de redirección igual a `MP_OAUTH_REDIRECT_URI` y completá `MP_CLIENT_ID`, `MP_CLIENT_SECRET` y `MP_TOKEN_ENCRYPTION_KEY` (32 bytes en base64: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`). Sin cuenta vinculada, `sandbox` usa `MP_ACCESS_TOKEN` y `production` deja los pagos apagados.
 
 ### 2. Con Docker Compose (recomendado)
 

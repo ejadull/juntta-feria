@@ -957,3 +957,44 @@ describe('refunds, cancellations and chargebacks (PAY-06)', () => {
     );
   });
 });
+
+describe('collector check (PAY-07, §6.7)', () => {
+  it("never applies a payment collected by another account than the organizer's", async () => {
+    await owner((c) =>
+      c.query(
+        `INSERT INTO seller_accounts (tenant_id, seller_id, live_mode, access_token_sealed, refresh_token_sealed, key_id, expires_at)
+         VALUES ($1, '1', false, 'sealed', 'sealed', 'k', now() + interval '90 days')`,
+        [T],
+      ),
+    );
+    const reservation = await hold('gabi', 'C5');
+    expect((await checkout('gabi', reservation)).statusCode).toBe(201);
+    const gabi = await attemptOf('gabi', 'C5');
+    provider.payments.set('9800', {
+      id: '9800',
+      status: 'approved',
+      statusDetail: null,
+      externalReference: gabi.attemptId,
+      amountCents: PRICE,
+      currency: 'ARS',
+      collectorId: '2',
+      approvedAt: new Date(),
+    });
+
+    const { requestId, response } = notify('9800');
+    await response;
+
+    expect(await settled(requestId)).toEqual({
+      status: 'PROCESSED',
+      outcome: 'COLLECTOR_MISMATCH',
+    });
+    expect(await statusOf('gabi', reservation)).toBe('PAYMENT_PENDING');
+    const codes = (await call('GET', '/payment-incidents', 'owner'))
+      .json()
+      .map((i: { code: string }) => i.code);
+    expect(codes).toContain('COLLECTOR_MISMATCH');
+    await owner((c) =>
+      c.query(`DELETE FROM seller_accounts WHERE tenant_id = $1`, [T]),
+    );
+  });
+});

@@ -15,7 +15,12 @@ export const ORIGIN = 'http://localhost:4200';
 export const COOKIE = 'juntta_rt';
 /** Fictitious Mercado Pago settings (PAY-03): nothing here reaches the provider. */
 export const WEBHOOK_SECRET = 'int-webhook-secret-0123456789abcdef';
-export const NOTIFICATION_URL = 'https://api.example.test/api/v1/webhooks/mercadopago?source=juntta';
+export const NOTIFICATION_URL =
+  'https://api.example.test/api/v1/webhooks/mercadopago?source=juntta';
+/** Fictitious OAuth app and token key (PAY-07). */
+export const TOKEN_KEY = Buffer.alloc(32, 9).toString('base64');
+export const OAUTH_REDIRECT_URI =
+  'http://localhost:4200/organizador/mercado-pago/vincular';
 
 /** Map-backed counters: the throttling logic is real, only Redis is replaced. */
 class MemoryCounterStore implements CounterStore {
@@ -56,6 +61,10 @@ export async function startIntApp(
     AUTH_REFRESH_COOKIE_NAME: COOKIE,
     MP_WEBHOOK_SECRET: WEBHOOK_SECRET,
     MP_NOTIFICATION_URL: NOTIFICATION_URL,
+    MP_CLIENT_ID: 'int-client-id',
+    MP_CLIENT_SECRET: 'int-client-secret',
+    MP_OAUTH_REDIRECT_URI: OAUTH_REDIRECT_URI,
+    MP_TOKEN_ENCRYPTION_KEY: TOKEN_KEY,
   };
   for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
   let builder = Test.createTestingModule({

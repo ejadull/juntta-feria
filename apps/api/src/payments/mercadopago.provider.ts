@@ -62,7 +62,11 @@ const withOffset = (date: Date): string =>
 export class MercadoPagoProvider implements PaymentProvider {
   private readonly logger = new Logger(MercadoPagoProvider.name);
 
-  constructor(private readonly settings: MercadoPagoSettings) {}
+  constructor(
+    private readonly settings: MercadoPagoSettings,
+    /** The tenant's linked seller access token, or null when it has none (PAY-07). */
+    private readonly sellerToken?: (tenantId: string) => Promise<string | null>,
+  ) {}
 
   createCheckout(request: CheckoutRequest): Promise<Checkout> {
     return this.call('createCheckout', request.tenantId, async (config) => {
@@ -160,7 +164,7 @@ export class MercadoPagoProvider implements PaymentProvider {
     tenantId: string,
     run: (config: MercadoPagoConfig) => Promise<T>,
   ): Promise<T> {
-    const config = this.configFor(tenantId);
+    const config = await this.configFor(tenantId);
     try {
       return await run(config);
     } catch (error) {
@@ -176,14 +180,17 @@ export class MercadoPagoProvider implements PaymentProvider {
   }
 
   /**
-   * ponytail: one platform token for every tenant, sandbox only. Production needs each
-   * organizer's OAuth-linked seller account (PAY-07, ADR 0006 §2); until then it refuses.
+   * The organizer's OAuth-linked seller token (PAY-07, ADR 0006 §2). Without one, sandbox falls
+   * back to the platform token for development; production refuses (never charge as Juntta).
    */
-  private configFor(_tenantId: string): MercadoPagoConfig {
+  private async configFor(tenantId: string): Promise<MercadoPagoConfig> {
     const { accessToken, environment } = this.settings;
-    if (!accessToken || environment !== 'sandbox') throw paymentsUnavailable();
+    const linked = await this.sellerToken?.(tenantId);
+    const token =
+      linked ?? (environment === 'sandbox' ? accessToken : undefined);
+    if (!token) throw paymentsUnavailable();
     return new MercadoPagoConfig({
-      accessToken,
+      accessToken: token,
       options: { timeout: TIMEOUT_MS },
     });
   }

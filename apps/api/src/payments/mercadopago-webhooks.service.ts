@@ -23,6 +23,7 @@ import {
   paymentAttempts,
   paymentWebhookInbox,
   reservations,
+  sellerAccounts,
   type WebhookInboxStatus,
 } from '../db/schema.js';
 import { AuditService } from '../tenancy/audit.service.js';
@@ -167,7 +168,27 @@ export class MercadoPagoWebhooksService {
       .where(eq(paymentAttempts.id, payment.externalReference))
       .for('update');
     if (!attempt) return 'UNKNOWN_ATTEMPT';
-    // ponytail: the collector check arrives with PAY-07, where the seller id comes from the OAuth link.
+    // §6.7, PAY-07: the money must land in the organizer's linked seller account.
+    const [seller] = await tx
+      .select({ id: sellerAccounts.sellerId })
+      .from(sellerAccounts);
+    if (seller && payment.collectorId !== seller.id) {
+      this.logger.warn(
+        `Payment ${payment.id} was not collected by the linked seller`,
+      );
+      await this.audit.record(tx, {
+        actorId: null,
+        action: 'payment.collector_mismatch',
+        entityType: 'payment_attempt',
+        entityId: attempt.id,
+        after: {
+          paymentId: payment.id,
+          collectorId: payment.collectorId,
+          sellerId: seller.id,
+        },
+      });
+      return 'COLLECTOR_MISMATCH';
+    }
     if (
       payment.amountCents !== attempt.amountCents ||
       payment.currency !== attempt.currency

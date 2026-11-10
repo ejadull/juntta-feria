@@ -54,6 +54,12 @@ export type AppEnvironment = Readonly<{
     webhookSecret: string | undefined;
     /** Public HTTPS webhook URL; when unset, the one configured in the Mercado Pago panel applies. */
     notificationUrl: string | undefined;
+    /** PAY-07 OAuth app (ADR 0006 §2): each organizer links its own seller account. */
+    clientId: string | undefined;
+    clientSecret: string | undefined;
+    oauthRedirectUri: string | undefined;
+    /** Base64 of 32 bytes: AES-256-GCM key for the sellers' tokens. */
+    tokenKey: string | undefined;
   }>;
 }>;
 
@@ -206,20 +212,65 @@ const schema = z
     MP_ENVIRONMENT: z.preprocess(
       blankAsUndefined,
       z
-        .enum(MP_ENVIRONMENTS, { error: `must be one of ${MP_ENVIRONMENTS.join(', ')}` })
+        .enum(MP_ENVIRONMENTS, {
+          error: `must be one of ${MP_ENVIRONMENTS.join(', ')}`,
+        })
         .default('sandbox'),
     ),
-    MP_ACCESS_TOKEN: z.preprocess(blankAsUndefined, z.string().trim().optional()),
-    MP_WEBHOOK_SECRET: z.preprocess(blankAsUndefined, z.string().trim().optional()),
+    MP_ACCESS_TOKEN: z.preprocess(
+      blankAsUndefined,
+      z.string().trim().optional(),
+    ),
+    MP_WEBHOOK_SECRET: z.preprocess(
+      blankAsUndefined,
+      z.string().trim().optional(),
+    ),
     MP_NOTIFICATION_URL: z.preprocess(
       blankAsUndefined,
       z
         .string()
-        .refine((v) => hasProtocol(v, ['https:']), { error: 'must be an https URL' })
+        .refine((v) => hasProtocol(v, ['https:']), {
+          error: 'must be an https URL',
+        })
+        .optional(),
+    ),
+    MP_CLIENT_ID: z.preprocess(blankAsUndefined, z.string().trim().optional()),
+    MP_CLIENT_SECRET: z.preprocess(
+      blankAsUndefined,
+      z.string().trim().optional(),
+    ),
+    MP_OAUTH_REDIRECT_URI: z.preprocess(
+      blankAsUndefined,
+      z
+        .string()
+        .refine((v) => hasProtocol(v, ['https:', 'http:']), {
+          error: 'must be an http(s) URL',
+        })
+        .optional(),
+    ),
+    MP_TOKEN_ENCRYPTION_KEY: z.preprocess(
+      blankAsUndefined,
+      z
+        .string()
+        .refine((v) => Buffer.from(v, 'base64').length === 32, {
+          error: 'must be 32 bytes in base64',
+        })
         .optional(),
     ),
   })
   .superRefine((env, ctx) => {
+    if (env.MP_CLIENT_ID)
+      for (const key of [
+        'MP_CLIENT_SECRET',
+        'MP_OAUTH_REDIRECT_URI',
+        'MP_TOKEN_ENCRYPTION_KEY',
+      ] as const)
+        if (!env[key])
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'is required with MP_CLIENT_ID',
+          });
     if (env.AUTH_ACCESS_TOKEN_SECRET === env.AUTH_REFRESH_TOKEN_SECRET)
       ctx.addIssue({
         code: 'custom',
@@ -290,6 +341,10 @@ export function parseEnvironment(input: NodeJS.ProcessEnv): AppEnvironment {
       accessToken: e.MP_ACCESS_TOKEN,
       webhookSecret: e.MP_WEBHOOK_SECRET,
       notificationUrl: e.MP_NOTIFICATION_URL,
+      clientId: e.MP_CLIENT_ID,
+      clientSecret: e.MP_CLIENT_SECRET,
+      oauthRedirectUri: e.MP_OAUTH_REDIRECT_URI,
+      tokenKey: e.MP_TOKEN_ENCRYPTION_KEY,
     },
   };
 }

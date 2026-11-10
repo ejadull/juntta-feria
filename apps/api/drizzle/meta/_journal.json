@@ -92,6 +92,13 @@
       "when": 1794266592439,
       "tag": "0012_payment_refunds",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794271537428,
+      "tag": "0013_seller_accounts",
+      "breakpoints": true
     }
   ]
 }

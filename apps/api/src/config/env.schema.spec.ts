@@ -70,6 +70,10 @@ describe('parseEnvironment (FND-02)', () => {
         accessToken: undefined,
         webhookSecret: undefined,
         notificationUrl: undefined,
+        clientId: undefined,
+        clientSecret: undefined,
+        oauthRedirectUri: undefined,
+        tokenKey: undefined,
       },
     });
   });
@@ -80,14 +84,52 @@ describe('parseEnvironment (FND-02)', () => {
       MP_ENVIRONMENT: 'production',
       MP_ACCESS_TOKEN: 'fake-mp-token',
       MP_WEBHOOK_SECRET: 'fake-mp-webhook-secret',
-      MP_NOTIFICATION_URL: 'https://api.example.test/api/v1/webhooks/mercadopago',
+      MP_NOTIFICATION_URL:
+        'https://api.example.test/api/v1/webhooks/mercadopago',
     });
     expect(env.mercadoPago).toEqual({
       environment: 'production',
       accessToken: 'fake-mp-token',
       webhookSecret: 'fake-mp-webhook-secret',
       notificationUrl: 'https://api.example.test/api/v1/webhooks/mercadopago',
+      clientId: undefined,
+      clientSecret: undefined,
+      oauthRedirectUri: undefined,
+      tokenKey: undefined,
     });
+  });
+
+  const OAUTH = {
+    MP_CLIENT_ID: '1234567890',
+    MP_CLIENT_SECRET: 'fake-client-secret',
+    MP_OAUTH_REDIRECT_URI:
+      'https://app.example.test/organizador/mercado-pago/vincular',
+    MP_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
+  };
+
+  it('reads the OAuth app and the token key (PAY-07)', () => {
+    const env = parseEnvironment({ ...valid(), ...OAUTH });
+    expect(env.mercadoPago).toMatchObject({
+      clientId: '1234567890',
+      clientSecret: 'fake-client-secret',
+      oauthRedirectUri: OAUTH.MP_OAUTH_REDIRECT_URI,
+      tokenKey: OAUTH.MP_TOKEN_ENCRYPTION_KEY,
+    });
+  });
+
+  it.each([
+    'MP_CLIENT_SECRET',
+    'MP_OAUTH_REDIRECT_URI',
+    'MP_TOKEN_ENCRYPTION_KEY',
+  ])('requires %s when MP_CLIENT_ID is set', (key) => {
+    expect(failure({ ...valid(), ...OAUTH, [key]: '' })).toContain(key);
+  });
+
+  it('rejects a token key that is not 32 bytes of base64', () => {
+    const short = Buffer.alloc(16, 7).toString('base64');
+    expect(
+      failure({ ...valid(), ...OAUTH, MP_TOKEN_ENCRYPTION_KEY: short }),
+    ).toContain('MP_TOKEN_ENCRYPTION_KEY');
   });
 
   it.each([
@@ -228,9 +270,9 @@ describe('parseEnvironment (FND-02)', () => {
     });
 
     it('rejects a refresh cookie without Secure', () => {
-      expect(failure({ ...production(), AUTH_COOKIE_SECURE: 'false' })).toContain(
-        'AUTH_COOKIE_SECURE',
-      );
+      expect(
+        failure({ ...production(), AUTH_COOKIE_SECURE: 'false' }),
+      ).toContain('AUTH_COOKIE_SECURE');
     });
 
     it('accepts an explicit allowlist without Swagger', () => {
