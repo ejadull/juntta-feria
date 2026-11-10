@@ -147,3 +147,5 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+# Local sandbox checkout state (credentials of throwaway test users)
+apps/api/scripts/.sandbox-state.json
