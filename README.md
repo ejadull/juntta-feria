@@ -60,23 +60,23 @@ El script completa los marcadores `GENERATE_LOCAL_HEX_64` con valores aleatorios
 
 #### Mercado Pago: Checkout Pro (`PAY-01..07`)
 
-Sin credenciales, la API arranca igual y los pagos responden 503. La integración sigue las [etapas de Checkout Pro](https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-preferences/create-application):
+Sin credenciales, la API arranca igual y los pagos responden 503. La integración sigue las [etapas de Checkout Pro vía Orders API](https://www.mercadopago.com.ar/developers/es/docs/checkout-pro-orders/create-application) (ADR 0007):
 
 | Etapa | Dónde |
 |---|---|
 | 1. Crear aplicación | En [Tus integraciones](https://www.mercadopago.com.ar/developers/panel/app): *Pagos online* → *Checkout Pro*. Activá OAuth con la URL de redirección igual a `MP_OAUTH_REDIRECT_URI`. |
-| 2. Configurar ambiente | Credenciales de prueba: Access Token `TEST-…` → `MP_ACCESS_TOKEN`, Public Key → `MP_PUBLIC_KEY`, Client ID/Secret → `MP_CLIENT_ID`/`MP_CLIENT_SECRET`, `MP_ENVIRONMENT=sandbox`. SDK `mercadopago` en la API. |
-| 3. Preferencia | `POST /reservations/{id}/checkout` (PAY-02): monto congelado, `external_reference`, vencimiento del hold, `binary_mode: false`. |
-| 4. URLs de retorno | `back_urls` a `/feriante/reservas/{id}/pago/{aprobado\|pendiente\|rechazado}` y `auto_return` (PAY-04). |
-| 5. SDK en el frontend | Wallet Brick (`sdk.mercadopago.com/js/v2`) con `preferenceId`, la Public Key de la plataforma y `marketplace: true` si el organizador vinculó su cuenta. Sin `MP_PUBLIC_KEY`, o si el SDK no carga, la web redirige a `init_point`. |
-| 6. Notificaciones | Webhook *Pagos* → `MP_NOTIFICATION_URL` (https; en local, un túnel como `cloudflared` a `/api/v1/webhooks/mercadopago`) con la clave en `MP_WEBHOOK_SECRET` (PAY-03). |
+| 2. Configurar ambiente | Credenciales de prueba de la aplicación (selector *Prueba*): Access Token → `MP_ACCESS_TOKEN`, Public Key → `MP_PUBLIC_KEY` (el checkout ya no la usa), Client ID/Secret → `MP_CLIENT_ID`/`MP_CLIENT_SECRET`, `MP_ENVIRONMENT=sandbox`. SDK `mercadopago` en la API. |
+| 3. Order | `POST /reservations/{id}/checkout` (PAY-02) crea una order (`POST /v1/orders`, `type: online`, `processing_mode: manual`) con monto congelado, `external_reference`, `payer` (el feriante logueado), `expiration_time` = lo que resta del hold y `X-Idempotency-Key` = id del intento: un reintento tras un timeout devuelve la misma order. `retries.allowed: true`: tras un rechazo se reintenta sobre la misma order. |
+| 4. URLs de retorno | `config.online.{success,pending,failure}_url` a `/feriante/reservas/{id}/pago/{aprobado\|pendiente\|rechazado}`; `auto_return` solo con `success_url` https (PAY-04). |
+| 5. Redirección | La web redirige al `checkout_url` de la order (`checkoutUrl`); `wallet` es siempre `null`: no hay Wallet Brick. |
+| 6. Notificaciones | En *Webhooks* activá el evento **Order (Mercado Pago)** (topic `order`/`orders`) con la URL https de `/api/v1/webhooks/mercadopago` (en local, un túnel como `cloudflared`) y la clave en `MP_WEBHOOK_SECRET` (PAY-03). La URL no lleva `?tenant=`: el tenant sale de nuestro `order id`. El topic `payment` ya no se procesa; `MP_NOTIFICATION_URL` queda sin uso. |
 | 7. Pruebas | En *Cuentas de prueba* creá un **vendedor** (organizador, que vincula su cuenta en `/organizador/mercado-pago`) y un **comprador** (feriante). Pagá siempre con el comprador de prueba. |
 | 8. Producción | Activá las credenciales productivas, reemplazá Access Token/Public Key, `MP_ENVIRONMENT=production` y HTTPS obligatorio. |
 
 **Suscripción del feriante a la plataforma (`EXH-05`).** Se cobra en la cuenta de la plataforma con `preapproval` (no con el OAuth del organizador):
 
 - `PLATFORM_SUBSCRIPTION_PRICE_CENTS`: precio mensual en centavos de ARS (entero > 0). Sin él, `POST /api/v1/me/subscription` responde 503. Usa el `MP_ACCESS_TOKEN` de la plataforma en cualquier ambiente.
-- En el panel de la aplicación, además de *Pagos*, activá el webhook de **Suscripciones** (`subscription_preapproval` y `subscription_authorized_payment`) con la misma URL `/api/v1/webhooks/mercadopago` **sin** `?tenant=`; la firma se valida con `MP_WEBHOOK_SECRET`.
+- En el panel de la aplicación, además de *Order (Mercado Pago)*, activá el webhook de **Suscripciones** (`subscription_preapproval` y `subscription_authorized_payment`) con la misma URL `/api/v1/webhooks/mercadopago` **sin** `?tenant=`; la firma se valida con `MP_WEBHOOK_SECRET`.
 - Sandbox: sin plan, Mercado Pago rechaza el cobro si la cuenta que paga no tiene el email del `payerEmail`. Enviá **el email del comprador de prueba** (`{ "payerEmail": "..." }`), no el de la cuenta Juntta. Para probar el flujo real: `bootstrap-sandbox.mjs --no-subscription`, luego `sandbox-checkout.mjs subscribe <email del comprador>` y, tras autorizar, `sandbox-checkout.mjs notify-subscription <preapproval_id>`.
 
 Los valores nunca se versionan ni se pegan en issues: sólo los nombres de las variables. `MP_TOKEN_ENCRYPTION_KEY` son 32 bytes en base64 (`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`). Sin cuenta vinculada, `sandbox` usa `MP_ACCESS_TOKEN` y `production` deja los pagos apagados.

@@ -49,6 +49,7 @@ export interface ReconciliationSummary {
 interface Overdue {
   readonly reservationId: string;
   readonly attemptId: string;
+  readonly checkoutId: string | null;
   readonly amountCents: number;
   readonly currency: string;
 }
@@ -172,6 +173,7 @@ export class ReconciliationService
         .select({
           reservationId: reservations.id,
           attemptId: paymentAttempts.id,
+          checkoutId: paymentAttempts.providerCheckoutId,
           amountCents: paymentAttempts.amountCents,
           currency: paymentAttempts.currency,
         })
@@ -201,9 +203,11 @@ export class ReconciliationService
     item: Overdue,
     deadline: Date,
   ): Promise<Settlement> {
+    // A PAYMENT_PENDING reservation always has its order; without one there is nothing to ask.
+    if (!item.checkoutId) return 'kept';
     let payments: ProviderPayment[];
     try {
-      payments = await this.provider.findPayments(tenantId, item.attemptId);
+      payments = await this.provider.getPayments(tenantId, item.checkoutId);
     } catch {
       return 'unreachable';
     }

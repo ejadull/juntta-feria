@@ -2,10 +2,8 @@ import { HttpException, Logger } from '@nestjs/common';
 import {
   MercadoPagoConfig,
   MercadoPagoError,
-  Payment,
-  PaymentRefund,
+  Order,
   PreApproval,
-  Preference,
 } from 'mercadopago';
 import {
   paymentsUnavailable,
@@ -30,30 +28,67 @@ const API_URL = 'https://api.mercadopago.com';
 const RETRIES = 2;
 
 const toUnits = (cents: number): number => cents / 100;
-const toCents = (units: number | undefined): number =>
-  Math.round((units ?? 0) * 100);
-/** Fields shared by `GET /v1/payments/{id}` and the search results. */
-interface RawPayment {
-  readonly id?: string | number;
-  readonly status?: string;
-  readonly status_detail?: string;
-  readonly external_reference?: string;
-  readonly transaction_amount?: number;
-  readonly currency_id?: string;
-  readonly collector_id?: string | number;
-  readonly date_approved?: string;
-}
+type OrderResponse = Awaited<ReturnType<Order['get']>>;
+/** Orders speak decimal strings ("45000.50"), never floats. */
+const toAmount = (cents: number): string => (cents / 100).toFixed(2);
+const toCents = (amount: string | undefined): number =>
+  Math.round(Number(amount ?? 0) * 100);
 
-const toPayment = (p: RawPayment): ProviderPayment => ({
-  id: String(p.id),
-  status: p.status ?? 'unknown',
-  statusDetail: p.status_detail ?? null,
-  externalReference: p.external_reference ?? null,
-  amountCents: toCents(p.transaction_amount),
-  currency: p.currency_id ?? '',
-  collectorId: p.collector_id === undefined ? null : String(p.collector_id),
-  approvedAt: p.date_approved ? new Date(p.date_approved) : null,
-});
+/**
+ * Orders (ADR 0007) report `created | processed | action_required | failed | processing |
+ * canceled | refunded | expired`; the rest of the API keeps one payment vocabulary.
+ * Anything unknown is `pending`, never `approved`.
+ */
+const PAYMENT_STATUS: Readonly<Record<string, string>> = {
+  processed: 'approved',
+  approved: 'approved',
+  refunded: 'refunded',
+  charged_back: 'charged_back',
+  failed: 'rejected',
+  rejected: 'rejected',
+  canceled: 'cancelled',
+  cancelled: 'cancelled',
+  expired: 'cancelled',
+  processing: 'in_process',
+  in_process: 'in_process',
+};
+const PAID: readonly string[] = ['approved', 'refunded', 'charged_back'];
+
+/** ISO 8601 duration (`PT14M30S`): the order lives as long as the hold, never longer. */
+export const toDuration = (from: Date, until: Date): string => {
+  const total = Math.max(
+    1,
+    Math.floor((until.getTime() - from.getTime()) / 1000),
+  );
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const h = hours ? `${hours}H` : '';
+  const m = minutes ? `${minutes}M` : '';
+  const sec = seconds || !(hours || minutes) ? `${seconds}S` : '';
+  return `PT${h}${m}${sec}`;
+};
+
+/** The payments of an order, in the port's vocabulary. */
+export const toPayments = (
+  order: Omit<OrderResponse, 'api_response'>,
+): ProviderPayment[] => {
+  const created = order.created_date ? new Date(order.created_date) : null;
+  return (order.transactions?.payments ?? []).map((p) => {
+    const status = PAYMENT_STATUS[p.status ?? ''] ?? 'pending';
+    return {
+      id: String(p.id),
+      status,
+      statusDetail: p.status_detail ?? null,
+      externalReference: order.external_reference ?? null,
+      amountCents: toCents(p.amount),
+      currency: order.currency ?? '',
+      collectorId: order.user_id === undefined ? null : String(order.user_id),
+      // Payments land inside the hold window, so the order creation is a stable stand-in.
+      approvedAt: PAID.includes(status) ? created : null,
+    };
+  });
+};
 
 /** Fields shared by `GET /preapproval/{id}` and the create/update responses. */
 interface RawPreapproval {
@@ -77,10 +112,6 @@ const toSubscription = (p: RawPreapproval): ProviderSubscription => {
   };
 };
 
-/** Mercado Pago wants ISO 8601 with an explicit offset. */
-const withOffset = (date: Date): string =>
-  date.toISOString().replace('Z', '+00:00');
-
 /**
  * Mercado Pago adapter (PAY-01, ADR 0006) over the official SDK.
  * A fresh SDK config per call: the SDK merges `requestOptions` into the shared config, so a
@@ -97,94 +128,125 @@ export class MercadoPagoProvider implements PaymentProvider {
 
   createCheckout(request: CheckoutRequest): Promise<Checkout> {
     return this.call('createCheckout', request.tenantId, async (config) => {
-      const preference = await new Preference(config).create({
+      const amount = toAmount(request.amountCents);
+      const { payer } = request;
+      const order = await new Order(config).create({
         body: {
+          type: 'online',
+          processing_mode: 'manual',
+          total_amount: amount,
+          currency: request.currency,
+          external_reference: request.externalReference,
+          description: request.title,
           items: [
             {
-              id: request.externalReference,
               title: request.title,
+              unit_price: amount,
               quantity: 1,
-              unit_price: toUnits(request.amountCents),
-              currency_id: request.currency,
+              external_code: request.externalReference,
             },
           ],
-          external_reference: request.externalReference,
-          ...(request.notificationUrl
-            ? { notification_url: request.notificationUrl }
-            : {}),
-          back_urls: request.backUrls,
-          // Mercado Pago rejects auto_return with non-https back_urls (localhost): 400 invalid_auto_return.
-          ...(request.backUrls.success.startsWith('https://')
-            ? { auto_return: 'approved' }
-            : {}),
-          binary_mode: false,
-          expires: true,
-          expiration_date_to: withOffset(request.expiresAt),
+          payer: {
+            email: payer.email,
+            ...(payer.firstName ? { first_name: payer.firstName } : {}),
+            ...(payer.lastName ? { last_name: payer.lastName } : {}),
+          },
+          expiration_time: toDuration(new Date(), request.expiresAt),
+          config: {
+            online: {
+              success_url: request.backUrls.success,
+              pending_url: request.backUrls.pending,
+              failure_url: request.backUrls.failure,
+              // Mercado Pago rejects auto_return with non-https URLs (localhost) in Preferences;
+              // the same guard stays until the Orders sandbox shows otherwise.
+              ...(request.backUrls.success.startsWith('https://')
+                ? { auto_return: 'approved' as const }
+                : {}),
+              // A rejected card does not end the order: P19 "Reintentar el pago" reuses it.
+              retries: { allowed: true },
+            },
+          },
         },
-        // Preferences has no idempotency key: a retry could create a second preference.
-        requestOptions: { maxRetries: 0 },
+        // The attempt id is the idempotency key: a retried create returns the same order.
+        requestOptions: {
+          idempotencyKey: request.externalReference,
+          maxRetries: RETRIES,
+        },
       });
-      const checkoutUrl =
-        this.settings.environment === 'sandbox'
-          ? preference.sandbox_init_point
-          : preference.init_point;
-      if (!preference.id || !checkoutUrl) throw providerFailed();
-      return { preferenceId: preference.id, checkoutUrl };
+      if (!order.id || !order.checkout_url) throw providerFailed();
+      return { checkoutId: order.id, checkoutUrl: order.checkout_url };
     });
   }
 
-  getPayment(tenantId: string, paymentId: string): Promise<ProviderPayment> {
-    return this.call('getPayment', tenantId, async (config) => {
-      const p = await new Payment(config).get({
-        id: paymentId,
-        requestOptions: { maxRetries: RETRIES },
-      });
-      return toPayment(p);
-    });
-  }
-
-  findPayments(
+  getPayments(
     tenantId: string,
-    externalReference: string,
+    checkoutId: string,
   ): Promise<ProviderPayment[]> {
-    return this.call('findPayments', tenantId, async (config) => {
-      const found = await new Payment(config).search({
-        options: { external_reference: externalReference },
-        requestOptions: { maxRetries: RETRIES },
-      });
-      return (found.results ?? []).map(toPayment);
-    });
+    return this.call('getPayments', tenantId, async (config) =>
+      toPayments(
+        await new Order(config).get({
+          id: checkoutId,
+          requestOptions: { maxRetries: RETRIES },
+        }),
+      ),
+    );
   }
 
+  /** Total refund without a body; partial with the payment transaction and the amount. */
   refund(
     tenantId: string,
+    checkoutId: string,
     paymentId: string,
     idempotencyKey: string,
     amountCents?: number,
   ): Promise<{ id: string; status: string }> {
     return this.call('refund', tenantId, async (config) => {
-      const refund = await new PaymentRefund(config).create({
-        payment_id: paymentId,
+      const order = await new Order(config).refund({
+        id: checkoutId,
         ...(amountCents === undefined
           ? {}
-          : { body: { amount: toUnits(amountCents) } }),
+          : {
+              body: {
+                transactions: [
+                  { id: paymentId, amount: toAmount(amountCents) },
+                ],
+              },
+            }),
         requestOptions: { idempotencyKey, maxRetries: RETRIES },
       });
-      return { id: String(refund.id), status: refund.status ?? 'unknown' };
+      const refund = order.transactions?.refunds?.at(-1);
+      return {
+        id: String(refund?.id ?? checkoutId),
+        status: refund?.status ?? order.status ?? 'unknown',
+      };
     });
   }
 
+  /** Orders only cancel while `created` or `action_required`; an already canceled one is a success. */
   cancel(
     tenantId: string,
-    paymentId: string,
+    checkoutId: string,
     idempotencyKey: string,
   ): Promise<{ status: string }> {
     return this.call('cancel', tenantId, async (config) => {
-      const payment = await new Payment(config).cancel({
-        id: paymentId,
-        requestOptions: { idempotencyKey, maxRetries: RETRIES },
-      });
-      return { status: payment.status ?? 'unknown' };
+      const orders = new Order(config);
+      try {
+        const order = await orders.cancel({
+          id: checkoutId,
+          requestOptions: { idempotencyKey, maxRetries: RETRIES },
+        });
+        return { status: PAYMENT_STATUS[order.status ?? ''] ?? 'unknown' };
+      } catch (error) {
+        if (!(error instanceof MercadoPagoError) || error.status !== 409)
+          throw error;
+        // 409 order_already_canceled (a replay or a concurrent cancel): confirm, never assume.
+        const order = await orders.get({
+          id: checkoutId,
+          requestOptions: { maxRetries: RETRIES },
+        });
+        if (PAYMENT_STATUS[order.status ?? ''] !== 'cancelled') throw error;
+        return { status: 'cancelled' };
+      }
     });
   }
 

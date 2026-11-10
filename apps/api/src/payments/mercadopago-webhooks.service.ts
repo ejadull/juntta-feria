@@ -5,7 +5,7 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   InvalidWebhookSignatureError,
   WebhookSignatureValidator,
@@ -44,9 +44,10 @@ export interface Notification {
   readonly requestId: string | undefined;
   readonly dataId: string;
   readonly topic: string;
-  /** Unsigned hint we put in `notification_url` (PAY-02). */
-  readonly tenant: string | undefined;
 }
+
+/** Orders notifications: `type=order` on the Checkout Pro page, topic `orders` in the panel. */
+const ORDER_TOPICS: readonly string[] = ['order', 'orders'];
 
 /** States that still own the stand and can be confirmed (§4.5). */
 const CONFIRMABLE: readonly string[] = ['HELD', 'PAYMENT_PENDING'];
@@ -76,42 +77,24 @@ export class MercadoPagoWebhooksService {
   /** Returns the inbox id to process, or null for a duplicate or an ignored notification. */
   async receive(notification: Notification): Promise<string | null> {
     if (!this.secret) throw paymentsUnavailable();
-    const { signature, requestId, dataId, topic, tenant } = notification;
+    const { signature, requestId, dataId, topic } = notification;
     if (!requestId)
       throw new UnauthorizedException('Invalid webhook signature.');
-    try {
-      WebhookSignatureValidator.validate({
-        xSignature: signature,
-        xRequestId: requestId,
-        dataId,
-        secret: this.secret,
-      });
-    } catch (error) {
-      if (!(error instanceof InvalidWebhookSignatureError)) throw error;
-      this.logger.warn(
-        `Rejected Mercado Pago webhook ${requestId}: ${error.reason}`,
-      );
-      throw new UnauthorizedException('Invalid webhook signature.');
-    }
+    this.verify(signature, requestId, dataId);
     this.logDrift(requestId, signature);
 
-    const tenantId = isUuid(tenant) ? tenant : null;
-    // Payments need the tenant hint (PAY-07); subscriptions are platform-level (EXH-05) and
-    // come from the URL set in the Mercado Pago panel, which cannot carry one.
-    const ignored = SUBSCRIPTION_TOPICS.includes(topic)
-      ? null
-      : topic !== 'payment'
-        ? 'UNSUPPORTED_TOPIC'
-        : tenantId
-          ? null
-          : 'MISSING_TENANT';
+    // Orders and subscriptions come from the one URL set in the Mercado Pago panel, which cannot
+    // carry a tenant: `process` finds the tenant of an order from our own stored order id.
+    const ignored =
+      SUBSCRIPTION_TOPICS.includes(topic) || ORDER_TOPICS.includes(topic)
+        ? null
+        : 'UNSUPPORTED_TOPIC';
     const [row] = await this.database.db
       .insert(paymentWebhookInbox)
       .values({
         requestId,
         topic,
         dataId,
-        tenantId,
         status: ignored ? 'IGNORED' : 'RECEIVED',
         outcome: ignored,
         processedAt: ignored ? new Date() : null,
@@ -135,20 +118,7 @@ export class MercadoPagoWebhooksService {
       if (entry?.status !== 'RECEIVED') return;
       if (SUBSCRIPTION_TOPICS.includes(entry.topic))
         return await this.processSubscription(inboxId, entry);
-      if (!entry.tenantId) return;
-      const tenantId = entry.tenantId;
-      let payment: ProviderPayment;
-      try {
-        payment = await this.provider.getPayment(tenantId, entry.dataId);
-      } catch {
-        return await this.finish(inboxId, 'FAILED', 'PROVIDER_ERROR');
-      }
-      const outcome = await this.applyPayment(tenantId, payment);
-      await this.finish(
-        inboxId,
-        outcome === 'UNKNOWN_ATTEMPT' ? 'IGNORED' : 'PROCESSED',
-        outcome,
-      );
+      await this.processOrder(inboxId, entry.dataId);
     } catch (error) {
       this.logger.error(
         `Mercado Pago webhook ${inboxId} failed`,
@@ -157,6 +127,85 @@ export class MercadoPagoWebhooksService {
       await this.finish(inboxId, 'FAILED', 'INTERNAL_ERROR').catch(
         () => undefined,
       );
+    }
+  }
+
+  /**
+   * PAY-03: the notification only names the order. Its tenant comes from OUR attempt (an unknown
+   * order is somebody else's); its payments are re-read with that tenant's seller credentials.
+   */
+  private async processOrder(inboxId: string, orderId: string): Promise<void> {
+    const tenantId = await this.tenantOf(orderId);
+    if (!tenantId)
+      return await this.finish(inboxId, 'IGNORED', 'UNKNOWN_ORDER');
+    await this.database.db
+      .update(paymentWebhookInbox)
+      .set({ tenantId })
+      .where(eq(paymentWebhookInbox.id, inboxId));
+    let payments: ProviderPayment[];
+    try {
+      payments = await this.provider.getPayments(tenantId, orderId);
+    } catch {
+      return await this.finish(inboxId, 'FAILED', 'PROVIDER_ERROR');
+    }
+    // An order with no payment yet (created, expired, canceled) changes nothing.
+    if (payments.length === 0)
+      return await this.finish(inboxId, 'PROCESSED', 'NO_PAYMENT');
+    const outcomes: string[] = [];
+    for (const payment of payments)
+      outcomes.push(await this.applyPayment(tenantId, payment));
+    const outcome = outcomes.includes('CONFIRMED')
+      ? 'CONFIRMED'
+      : (outcomes.at(-1) ?? 'NO_PAYMENT');
+    await this.finish(
+      inboxId,
+      outcomes.every((o) => o === 'UNKNOWN_ATTEMPT') ? 'IGNORED' : 'PROCESSED',
+      outcome,
+    );
+  }
+
+  /** The only cross-tenant read: RLS hides attempts until the tenant is known (migration 0016). */
+  private async tenantOf(orderId: string): Promise<string | null> {
+    const { rows } = await this.database.db.execute<{
+      tenant_id: string | null;
+    }>(sql`SELECT payment_attempt_tenant(${orderId}) AS tenant_id`);
+    const tenantId = rows[0]?.tenant_id;
+    return isUuid(tenantId) ? tenantId : null;
+  }
+
+  /**
+   * Mercado Pago signs `id:<data.id>`; for alphanumeric ids (order ULIDs) its documented
+   * convention is lowercase, so the id as received is tried first and then lowercased.
+   */
+  private verify(
+    signature: string | undefined,
+    requestId: string,
+    dataId: string,
+  ): void {
+    const validate = (id: string) =>
+      WebhookSignatureValidator.validate({
+        xSignature: signature,
+        xRequestId: requestId,
+        dataId: id,
+        secret: this.secret ?? '',
+      });
+    try {
+      try {
+        validate(dataId);
+      } catch (error) {
+        if (
+          !(error instanceof InvalidWebhookSignatureError) ||
+          dataId === dataId.toLowerCase()
+        )
+          throw error;
+        validate(dataId.toLowerCase());
+      }
+    } catch (error) {
+      if (!(error instanceof InvalidWebhookSignatureError)) throw error;
+      this.logger.warn(
+        `Rejected Mercado Pago webhook ${requestId}: ${error.reason}`,
+      );
+      throw new UnauthorizedException('Invalid webhook signature.');
     }
   }
 
@@ -258,7 +307,7 @@ export class MercadoPagoWebhooksService {
         updatedAt: new Date(),
       })
       .where(eq(paymentAttempts.id, attempt.id));
-    // pending / in_process / rejected / cancelled: the preference stays payable until it expires.
+    // pending / in_process / rejected / cancelled: the order stays payable (retries allowed) until it expires.
     if (!approved) return `PAYMENT_${payment.status.toUpperCase()}`;
     return this.confirm(tx, attempt.reservationId, payment.id);
   }

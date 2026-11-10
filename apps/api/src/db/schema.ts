@@ -752,7 +752,7 @@ export type PaymentAttemptStatus = (typeof PAYMENT_ATTEMPT_STATUSES)[number];
 /**
  * One checkout of a reservation (PAY-02, ADR 0006 §4). Its id is the provider
  * `external_reference`; the amount is the reservation snapshot (INV-05). At most one PENDING
- * attempt per reservation, so retrying the checkout never opens a second preference.
+ * attempt per reservation, so retrying the checkout never opens a second order.
  */
 export const paymentAttempts = pgTable(
   'payment_attempts',
@@ -766,8 +766,8 @@ export const paymentAttempts = pgTable(
       .default('PENDING'),
     amountCents: bigint('amount_cents', { mode: 'number' }).notNull(),
     currency: char('currency', { length: 3 }).notNull(),
-    /** Set once, when the provider answers; null while the preference is not created. */
-    preferenceId: text('preference_id'),
+    /** Provider order id (Checkout Pro via Orders API); set once, null until the order exists. */
+    providerCheckoutId: text('provider_checkout_id'),
     checkoutUrl: text('checkout_url'),
     /** Last payment the provider reported for this attempt (PAY-03); refunds need its id. */
     paymentId: text('payment_id'),
@@ -786,6 +786,9 @@ export const paymentAttempts = pgTable(
       t.reservationId,
       t.idempotencyKey,
     ),
+    uniqueIndex('payment_attempts_provider_checkout_unique')
+      .on(t.providerCheckoutId)
+      .where(sql`${t.providerCheckoutId} IS NOT NULL`),
     uniqueIndex('payment_attempts_one_pending_per_reservation')
       .on(t.reservationId)
       .where(sql`${t.status} = 'PENDING'`),
@@ -801,7 +804,7 @@ export const paymentAttempts = pgTable(
     check('payment_attempts_amount_check', sql`${t.amountCents} >= 0`),
     check(
       'payment_attempts_checkout_check',
-      sql`(${t.preferenceId} IS NULL) = (${t.checkoutUrl} IS NULL)`,
+      sql`(${t.providerCheckoutId} IS NULL) = (${t.checkoutUrl} IS NULL)`,
     ),
   ],
 );

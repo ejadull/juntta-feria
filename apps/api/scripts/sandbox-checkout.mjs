@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // DEV ONLY. Drives a real Mercado Pago sandbox checkout through the public HTTP API.
 // Run inside the api container (after bootstrap-sandbox.mjs):
-//   docker compose exec api node apps/api/scripts/sandbox-checkout.mjs <setup|notify <payment_id>|status|
+//   docker compose exec api node apps/api/scripts/sandbox-checkout.mjs <setup|notify [order_id]|status|
 //     subscribe [payerEmail]|notify-subscription <preapproval_id>>
 // State lives in .sandbox-state.json next to this file (gitignored). Never prints secrets.
 import { createHmac, randomUUID } from 'node:crypto';
@@ -166,7 +166,7 @@ async function openCheckout(state) {
   saveState({
     ...state,
     paymentAttemptId: checkout.paymentAttemptId,
-    preferenceId: checkout.preferenceId,
+    orderId: checkout.preferenceId, // the order id since ADR 0007 (historical field name)
     checkoutUrl: checkout.checkoutUrl,
   });
   printSetup(reservation, checkout, state.standCode, state.eventId);
@@ -221,8 +221,8 @@ function printSetup(reservation, checkout, standCode, eventId) {
   1. Paga con un usuario COMPRADOR de prueba de Mercado Pago (no el vendedor).
   2. Tarjeta de prueba: Mastercard 5031 7557 3453 0604, CVV 123, vto 11/30,
      titular "APRO" (aprobado).
-  3. Al volver, copia payment_id de la URL de retorno.
-  4. docker compose exec api node apps/api/scripts/sandbox-checkout.mjs notify <payment_id>
+  3. Vuelve a la web (las URLs de retorno no confirman nada).
+  4. docker compose exec api node apps/api/scripts/sandbox-checkout.mjs notify   (simula la notificacion de la order)
   5. docker compose exec api node apps/api/scripts/sandbox-checkout.mjs status`);
 }
 
@@ -236,23 +236,23 @@ function signedHeaders(dataId, secret) {
   return { 'x-request-id': requestId, 'x-signature': `ts=${ts},v1=${v1}` };
 }
 
-async function notify(paymentId) {
-  if (!/^\d+$/.test(paymentId ?? '')) die('Uso: notify <payment_id numerico>');
+/** Simulates the Orders notification (topic order): it names the order, never the tenant. */
+async function notify(orderIdArg) {
   const secret = process.env.MP_WEBHOOK_SECRET;
   if (!secret) die('MP_WEBHOOK_SECRET no esta definido en el contenedor.');
   const state = loadState();
-  const query = new URLSearchParams({
-    'data.id': paymentId,
-    type: 'payment',
-    tenant: state.tenantId,
-  });
-  const headers = signedHeaders(paymentId, secret);
+  const orderId = orderIdArg ?? state.orderId;
+  if (!orderId)
+    die('Uso: notify [order_id] (sin argumento usa la order de setup)');
+  const query = new URLSearchParams({ 'data.id': orderId, type: 'order' });
+  // Mercado Pago signs the lowercased id for alphanumeric ids; the API accepts both.
+  const headers = signedHeaders(orderId.toLowerCase(), secret);
   const result = await http('POST', `/webhooks/mercadopago?${query}`, {
     headers,
     body: {
-      type: 'payment',
-      action: 'payment.updated',
-      data: { id: paymentId },
+      type: 'order',
+      action: 'order.processed',
+      data: { id: orderId },
     },
   });
   console.log(
@@ -351,6 +351,6 @@ const commands = {
 };
 if (!commands[command])
   die(
-    'Uso: sandbox-checkout.mjs <setup | notify <payment_id> | status | subscribe [payerEmail] | notify-subscription <preapproval_id>>',
+    'Uso: sandbox-checkout.mjs <setup | notify [order_id] | status | subscribe [payerEmail] | notify-subscription <preapproval_id>>',
   );
 await commands[command]();

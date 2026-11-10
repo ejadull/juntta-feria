@@ -6,28 +6,42 @@ import {
 /** Checkout for one payment attempt; the amount is the server snapshot (INV-05). */
 export interface CheckoutRequest {
   readonly tenantId: string;
-  /** Payment attempt id, sent as `external_reference` (ADR 0006 §4). */
+  /**
+   * Payment attempt id, sent as `external_reference` (ADR 0006 §4) and as the provider
+   * idempotency key (ADR 0007): a retry after a timeout returns the same order, never a second one.
+   */
   readonly externalReference: string;
   readonly title: string;
   readonly amountCents: number;
   readonly currency: string;
-  /** ≤ the hold expiry (PAY-02). */
+  /** ≤ the hold expiry (PAY-02): the order expires with it. */
   readonly expiresAt: Date;
   readonly backUrls: {
     readonly success: string;
     readonly pending: string;
     readonly failure: string;
   };
-  readonly notificationUrl?: string;
+  /** The logged-in exhibitor, read server-side (never from the request body). */
+  readonly payer: {
+    readonly email: string;
+    readonly firstName?: string;
+    readonly lastName?: string;
+  };
 }
 
 export interface Checkout {
-  readonly preferenceId: string;
+  /** The provider's order id (Checkout Pro via Orders API, ADR 0007). */
+  readonly checkoutId: string;
   readonly checkoutUrl: string;
 }
 
-/** A payment as the provider reports it server-to-server (§6.7). */
+/**
+ * A payment of a checkout as the provider reports it server-to-server (§6.7). `status` uses one
+ * vocabulary whatever the provider says: `approved | pending | in_process | rejected | cancelled |
+ * refunded | charged_back`.
+ */
 export interface ProviderPayment {
+  /** The payment transaction id inside the order; refunds name it. */
   readonly id: string;
   readonly status: string;
   readonly statusDetail: string | null;
@@ -72,27 +86,25 @@ export interface ProviderAuthorizedPayment {
 }
 
 /**
- * Payment provider port (PAY-01, ADR 0006). Every payment call names the tenant: each organizer
+ * Payment provider port (PAY-01, ADR 0006, ADR 0007). Every payment call names the tenant: each organizer
  * charges in its own seller account (PAY-07). Writes take our own idempotency key. The
  * subscription calls (EXH-05) are platform-level and always use the platform credentials.
  */
 export interface PaymentProvider {
   createCheckout(request: CheckoutRequest): Promise<Checkout>;
-  getPayment(tenantId: string, paymentId: string): Promise<ProviderPayment>;
-  /** Every payment made against one attempt (PAY-05), whether or not it was ever notified. */
-  findPayments(
-    tenantId: string,
-    externalReference: string,
-  ): Promise<ProviderPayment[]>;
+  /** Every payment made against one checkout (PAY-03, PAY-05, PAY-06), re-read from the provider. */
+  getPayments(tenantId: string, checkoutId: string): Promise<ProviderPayment[]>;
   refund(
     tenantId: string,
+    checkoutId: string,
     paymentId: string,
     idempotencyKey: string,
     amountCents?: number,
   ): Promise<{ readonly id: string; readonly status: string }>;
+  /** Cancels the whole checkout (only while unpaid); `status` is `cancelled` once it is. */
   cancel(
     tenantId: string,
-    paymentId: string,
+    checkoutId: string,
     idempotencyKey: string,
   ): Promise<{ readonly status: string }>;
   createSubscription(

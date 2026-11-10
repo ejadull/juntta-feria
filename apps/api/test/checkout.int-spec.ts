@@ -7,13 +7,7 @@ import { DatabaseService } from '../src/db/database.service.js';
 import { PAYMENT_PROVIDER } from '../src/payments/payment-provider.js';
 import { ReconciliationService } from '../src/payments/reconciliation.service.js';
 import { FakePaymentProvider } from './fake-payment-provider.js';
-import {
-  NOTIFICATION_URL,
-  ORIGIN,
-  PUBLIC_KEY,
-  WEBHOOK_SECRET,
-  startIntApp,
-} from './int.app.js';
+import { ORIGIN, WEBHOOK_SECRET, startIntApp } from './int.app.js';
 import { ownerTestUrl } from './int.env.js';
 
 /**
@@ -63,8 +57,8 @@ async function seed(): Promise<void> {
     );
     for (const who of PEOPLE) {
       const user = await c.query<{ id: string }>(
-        `INSERT INTO users (email, password_hash, confirmed_at) VALUES ($1, $2, now()) RETURNING id`,
-        [`${who}@checkout.test`, hash],
+        `INSERT INTO users (email, password_hash, confirmed_at, full_name) VALUES ($1, $2, now(), $3) RETURNING id`,
+        [`${who}@checkout.test`, hash, `Persona ${who} de Prueba`],
       );
       const id = user.rows[0].id;
       await c.query(
@@ -211,10 +205,7 @@ describe('checkout (PAY-02)', () => {
   let anaAttempt = '';
   let anaUrl = '';
   let anaPreference = '';
-  /** Wallet Brick settings: platform public key; marketplace only with a linked seller (PAY-07). */
-  const wallet = { publicKey: PUBLIC_KEY, marketplace: false };
-
-  it('creates a payment attempt and a preference from the reservation snapshot (201)', async () => {
+  it('creates a payment attempt and an order from the reservation snapshot (201)', async () => {
     anaReservation = await hold('ana', 'C1');
     // The stand price changes after the hold: the checkout keeps the frozen one (INV-05).
     await call('PATCH', `/events/${eventId}/stands`, 'owner', {
@@ -232,8 +223,9 @@ describe('checkout (PAY-02)', () => {
       checkoutUrl: expect.stringMatching(
         /^https:\/\/sandbox\.mp\.test\/checkout\//,
       ),
-      preferenceId: expect.any(String),
-      wallet,
+      // The provider's order id under its historical name (ADR 0007); no Wallet Brick for Orders.
+      preferenceId: expect.stringMatching(/^ORDTST/),
+      wallet: null,
       status: 'PENDING',
     });
     anaAttempt = body.paymentAttemptId;
@@ -250,7 +242,12 @@ describe('checkout (PAY-02)', () => {
       amountCents: PRICE,
       currency: 'ARS',
       expiresAt: new Date(reservation.holdExpiresAt),
-      notificationUrl: `${NOTIFICATION_URL}&tenant=${T}`,
+      // Read server-side from the logged-in user (never from the request body).
+      payer: {
+        email: 'ana@checkout.test',
+        firstName: 'Persona',
+        lastName: 'ana de Prueba',
+      },
       backUrls: {
         success: `${ORIGIN}/feriante/reservas/${anaReservation}/pago/aprobado`,
         pending: `${ORIGIN}/feriante/reservas/${anaReservation}/pago/pendiente`,
@@ -270,7 +267,7 @@ describe('checkout (PAY-02)', () => {
         paymentAttemptId: anaAttempt,
         checkoutUrl: anaUrl,
         preferenceId: anaPreference,
-        wallet,
+        wallet: null,
         status: 'PENDING',
       });
     }
@@ -404,21 +401,31 @@ const sign = (
 
 interface Notify {
   requestId?: string;
-  tenant?: string | null;
   topic?: string;
   signature?: string | null;
+  /** Signs the lowercased id, as Mercado Pago does for alphanumeric ids. */
+  lowercase?: boolean;
 }
 
-const notify = (dataId: string, options: Notify = {}) => {
-  const { requestId = randomUUID(), tenant = T, topic = 'payment' } = options;
+/**
+ * An Orders notification names the ORDER. Tests think in payments: a known payment id is
+ * translated to the order its attempt opened; anything else is sent as it is.
+ */
+const orderIdFor = (dataId: string): string => {
+  const reference = provider.payments.get(dataId)?.externalReference;
+  return (reference && provider.orderOf(reference)) || dataId;
+};
+
+const notify = (id: string, options: Notify = {}) => {
+  const { requestId = randomUUID(), topic = 'order' } = options;
+  const dataId = topic === 'order' ? orderIdFor(id) : id;
   const signature =
     options.signature === undefined
-      ? sign(dataId, requestId)
+      ? sign(options.lowercase ? dataId.toLowerCase() : dataId, requestId)
       : options.signature;
   const query = new URLSearchParams({
     'data.id': dataId,
     type: topic,
-    ...(tenant ? { tenant } : {}),
   });
   return {
     requestId,
@@ -429,7 +436,7 @@ const notify = (dataId: string, options: Notify = {}) => {
         'x-request-id': requestId,
         ...(signature ? { 'x-signature': signature } : {}),
       },
-      payload: { type: topic, action: 'payment.updated', data: { id: dataId } },
+      payload: { type: topic, action: 'order.processed', data: { id: dataId } },
     }),
   };
 };
@@ -526,9 +533,10 @@ describe('Mercado Pago webhooks (PAY-03)', () => {
       status: 'PROCESSED',
       outcome: 'CONFIRMED',
     });
+    // Re-read from the API with the tenant found from OUR stored order id (never from the body).
     expect(provider.paymentReads.at(-1)).toEqual({
       tenantId: T,
-      paymentId: '9100',
+      checkoutId: provider.orderOf(beto.attemptId),
     });
     expect(
       (await call('GET', `/reservations/${beto.reservationId}`, 'beto')).json()
@@ -621,30 +629,42 @@ describe('Mercado Pago webhooks (PAY-03)', () => {
     );
   });
 
-  it('acknowledges but ignores other topics, a missing tenant and foreign references', async () => {
-    const order = notify('9400', { topic: 'merchant_order' });
-    expect((await order.response).statusCode).toBe(200);
-    expect(await inbox(order.requestId)).toEqual([
-      { status: 'IGNORED', outcome: 'UNSUPPORTED_TOPIC' },
-    ]);
+  it('acknowledges but ignores other topics, including the old payment topic', async () => {
+    for (const topic of ['merchant_order', 'payment']) {
+      const ignored = notify('9400', { topic });
+      expect((await ignored.response).statusCode).toBe(200);
+      expect(await inbox(ignored.requestId)).toEqual([
+        { status: 'IGNORED', outcome: 'UNSUPPORTED_TOPIC' },
+      ]);
+    }
+  });
 
-    const anonymous = notify('9401', { tenant: null });
-    expect((await anonymous.response).statusCode).toBe(200);
-    expect(await inbox(anonymous.requestId)).toEqual([
-      { status: 'IGNORED', outcome: 'MISSING_TENANT' },
-    ]);
-
-    pay('9402', randomUUID(), 'approved');
-    const foreign = notify('9402');
-    await foreign.response;
-    expect(await settled(foreign.requestId)).toEqual({
+  it('ignores an order that is not ours: no attempt, so no tenant to read it with', async () => {
+    const unknown = notify('ORDTST01NOTOURS');
+    expect((await unknown.response).statusCode).toBe(200);
+    expect(await settled(unknown.requestId)).toEqual({
       status: 'IGNORED',
-      outcome: 'UNKNOWN_ATTEMPT',
+      outcome: 'UNKNOWN_ORDER',
     });
   });
 
+  it('accepts the plural topic and a signature over the lowercased order id', async () => {
+    const beto = await attemptOf('beto', 'C2');
+    const { requestId, response } = notify(provider.orderOf(beto.attemptId)!, {
+      topic: 'orders',
+      lowercase: true,
+    });
+    expect((await response).statusCode).toBe(200);
+    // The 'orders' topic is not translated: the real order id is sent as it is.
+    expect(await settled(requestId)).toMatchObject({ status: 'PROCESSED' });
+  });
+
   it('answers 200 and records FAILED when the payment cannot be read', async () => {
-    const { requestId, response } = notify('9999');
+    const reservation = await hold('ana', 'C6');
+    expect((await checkout('ana', reservation)).statusCode).toBe(201);
+    const ana = await attemptOf('ana', 'C6');
+    provider.unreadable.add(provider.orderOf(ana.attemptId)!);
+    const { requestId, response } = notify(provider.orderOf(ana.attemptId)!);
     failedRequestId = requestId;
     expect((await response).statusCode).toBe(200);
     expect(await settled(requestId)).toEqual({
@@ -728,9 +748,9 @@ describe('reconciliation (PAY-05)', () => {
   it('retries a failed webhook until the payment can be read', async () => {
     const [before] = await inbox(failedRequestId);
     expect(before.status).toBe('FAILED');
-    const reservation = await hold('ana', 'C6');
-    expect((await checkout('ana', reservation)).statusCode).toBe(201);
     const ana = await attemptOf('ana', 'C6');
+    const reservation = ana.reservationId;
+    provider.unreadable.clear();
     pay('9999', ana.attemptId, 'approved');
 
     const summary = await reconcile();
@@ -752,6 +772,15 @@ describe('reconciliation (PAY-05)', () => {
       )
     ).rows[0].id;
     expect((await checkout('dani', dani)).statusCode).toBe(201);
+    // An order nobody paid yet: the notification is recorded and changes nothing.
+    const unpaid = await attemptOf('dani', 'C3');
+    const created = notify(provider.orderOf(unpaid.attemptId)!);
+    await created.response;
+    expect(await settled(created.requestId)).toEqual({
+      status: 'PROCESSED',
+      outcome: 'NO_PAYMENT',
+    });
+    expect(await statusOf('dani', dani)).toBe('PAYMENT_PENDING');
     await setReservation(dani, minutesAgo(10));
 
     await Promise.all([reconcile(), reconcile()]);
@@ -979,11 +1008,8 @@ describe('collector check (PAY-07, §6.7)', () => {
     const reservation = await hold('gabi', 'C5');
     const opened = await checkout('gabi', reservation);
     expect(opened.statusCode).toBe(201);
-    // A linked seller collects: the Wallet Brick runs in marketplace mode.
-    expect(opened.json().wallet).toEqual({
-      publicKey: PUBLIC_KEY,
-      marketplace: true,
-    });
+    // An Orders checkout is a redirect, linked seller or not: there is no Wallet Brick.
+    expect(opened.json().wallet).toBeNull();
     const gabi = await attemptOf('gabi', 'C5');
     provider.payments.set('9800', {
       id: '9800',

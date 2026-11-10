@@ -154,18 +154,23 @@ export class RefundsService {
         .where(eq(reservations.id, reservationId));
       if (!reservation) throw new NotFoundException('Reservation not found.');
       return tx
-        .select({ id: paymentAttempts.id })
+        .select({
+          id: paymentAttempts.id,
+          checkoutId: paymentAttempts.providerCheckoutId,
+        })
         .from(paymentAttempts)
         .where(
           and(
             eq(paymentAttempts.reservationId, reservationId),
-            isNotNull(paymentAttempts.preferenceId),
+            isNotNull(paymentAttempts.providerCheckoutId),
           ),
         );
     });
     const targets: Target[] = [];
-    for (const { id } of attempts)
-      for (const payment of await this.provider.findPayments(tenantId, id))
+    for (const { id, checkoutId } of attempts)
+      for (const payment of checkoutId
+        ? await this.provider.getPayments(tenantId, checkoutId)
+        : [])
         if (
           payment.status === 'approved' ||
           CANCELLABLE.includes(payment.status)
@@ -253,12 +258,29 @@ export class RefundsService {
     });
   }
 
+  /** The provider order of the attempt a row reverts (Orders refund and cancel address the order). */
+  private async checkoutOf(
+    tenantId: string,
+    attemptId: string,
+  ): Promise<string> {
+    const [attempt] = await this.database.withTenant(tenantId, (tx) =>
+      tx
+        .select({ checkoutId: paymentAttempts.providerCheckoutId })
+        .from(paymentAttempts)
+        .where(eq(paymentAttempts.id, attemptId)),
+    );
+    if (!attempt?.checkoutId) throw providerFailed();
+    return attempt.checkoutId;
+  }
+
   /** The row id is the provider idempotency key; a failure leaves it PENDING (502). */
   private async send(tenantId: string, row: Row): Promise<void> {
     let providerRefundId: string | null = null;
+    const checkoutId = await this.checkoutOf(tenantId, row.attemptId);
     if (row.kind === 'REFUND') {
       const refund = await this.provider.refund(
         tenantId,
+        checkoutId,
         row.paymentId,
         row.id,
         row.amountCents ?? undefined,
@@ -267,7 +289,7 @@ export class RefundsService {
     } else {
       const { status } = await this.provider.cancel(
         tenantId,
-        row.paymentId,
+        checkoutId,
         row.id,
       );
       if (status !== 'cancelled') throw providerFailed();

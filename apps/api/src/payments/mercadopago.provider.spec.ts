@@ -2,7 +2,11 @@ import {
   BadGatewayException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { MercadoPagoProvider } from './mercadopago.provider.js';
+import {
+  MercadoPagoProvider,
+  toDuration,
+  toPayments,
+} from './mercadopago.provider.js';
 import type { CheckoutRequest } from './payment-provider.js';
 
 /** Fictitious credential: nothing here reaches Mercado Pago. */
@@ -45,73 +49,125 @@ const checkout: CheckoutRequest = {
   title: 'Stand A01 — Feria de prueba',
   amountCents: 4_500_050,
   currency: 'ARS',
-  expiresAt: new Date('2026-11-07T15:15:00.000Z'),
+  expiresAt: new Date(Date.now() + 870_000),
   backUrls: {
     success: 'https://web.example.test/checkout/success',
     pending: 'https://web.example.test/checkout/pending',
     failure: 'https://web.example.test/checkout/failure',
   },
-  notificationUrl: 'https://api.example.test/api/v1/webhooks/mercadopago',
+  payer: { email: 'ana@feriante.test', firstName: 'Ana', lastName: 'Pérez' },
 };
 
 const sandbox = () =>
   new MercadoPagoProvider({ environment: 'sandbox', accessToken: TOKEN });
 
+const order = {
+  id: 'ORDTST01ABC',
+  status: 'created',
+  checkout_url:
+    'https://www.mercadopago.com.ar/checkout/v1/redirect?order_id=ORDTST01ABC',
+};
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('MercadoPagoProvider (PAY-01)', () => {
-  it('creates a Checkout Pro preference from the server amount (PAY-02, ADR 0006)', async () => {
-    respond({
-      status: 201,
-      body: {
-        id: 'pref-1',
-        init_point: 'https://mp.test/live',
-        sandbox_init_point: 'https://mp.test/sandbox',
-      },
-    });
+describe('toDuration', () => {
+  const from = new Date('2026-11-10T12:00:00.000Z');
+  it.each([
+    [870_000, 'PT14M30S'],
+    [60_000, 'PT1M'],
+    [3_600_000, 'PT1H'],
+    [5_400_000, 'PT1H30M'],
+    [45_000, 'PT45S'],
+    [0, 'PT1S'],
+  ])('formats %i ms as %s', (ms, expected) => {
+    expect(toDuration(from, new Date(from.getTime() + ms))).toBe(expected);
+  });
+});
+
+describe('MercadoPagoProvider (PAY-01, ADR 0007)', () => {
+  it('creates a Checkout Pro order from the server amount, idempotent by attempt (PAY-02)', async () => {
+    respond({ status: 201, body: order });
 
     const result = await sandbox().createCheckout(checkout);
 
     expect(result).toEqual({
-      preferenceId: 'pref-1',
-      checkoutUrl: 'https://mp.test/sandbox',
+      checkoutId: 'ORDTST01ABC',
+      checkoutUrl: order.checkout_url,
     });
     const [request] = sent;
     expect(request.url).toMatch(
-      /^https:\/\/api\.mercadopago\.com\/checkout\/preferences\/?$/,
+      /^https:\/\/api\.mercadopago\.com\/v1\/orders\/?$/,
     );
     expect(request.method).toBe('POST');
     expect(request.headers.Authorization).toBe(`Bearer ${TOKEN}`);
+    expect(request.headers['X-Idempotency-Key']).toBe(
+      checkout.externalReference,
+    );
     expect(request.body).toMatchObject({
-      items: [
-        {
-          title: checkout.title,
-          quantity: 1,
-          unit_price: 45_000.5,
-          currency_id: 'ARS',
-        },
-      ],
+      type: 'online',
+      processing_mode: 'manual',
+      total_amount: '45000.50',
+      currency: 'ARS',
       external_reference: checkout.externalReference,
-      notification_url: checkout.notificationUrl,
-      back_urls: checkout.backUrls,
-      auto_return: 'approved',
-      binary_mode: false,
-      expires: true,
-      expiration_date_to: '2026-11-07T15:15:00.000+00:00',
+      items: [{ title: checkout.title, unit_price: '45000.50', quantity: 1 }],
+      payer: {
+        email: 'ana@feriante.test',
+        first_name: 'Ana',
+        last_name: 'Pérez',
+      },
+      config: {
+        online: {
+          success_url: checkout.backUrls.success,
+          pending_url: checkout.backUrls.pending,
+          failure_url: checkout.backUrls.failure,
+          auto_return: 'approved',
+          retries: { allowed: true },
+        },
+      },
+    });
+    expect(request.body).not.toHaveProperty('marketplace_fee');
+  });
+
+  it('expires the order with the hold, as an ISO 8601 duration', async () => {
+    respond({ status: 201, body: order });
+    await sandbox().createCheckout({
+      ...checkout,
+      expiresAt: new Date(Date.now() + 870_000),
+    });
+    const { expiration_time: expiration } = sent[0].body as {
+      expiration_time: string;
+    };
+    expect(expiration).toMatch(/^PT14M(29|30)S$/);
+  });
+
+  it('sends only the payer fields it has', async () => {
+    respond({ status: 201, body: order });
+    await sandbox().createCheckout({
+      ...checkout,
+      payer: { email: 'solo@feriante.test' },
+    });
+    expect((sent[0].body as { payer: unknown }).payer).toEqual({
+      email: 'solo@feriante.test',
     });
   });
 
-  it('never retries a preference creation: Preferences has no idempotency key (ADR 0006 §4)', async () => {
-    respond(
-      { status: 503 },
-      { status: 201, body: { id: 'pref-2', sandbox_init_point: 'x' } },
+  it('retries a failed creation: the idempotency key makes it safe', async () => {
+    respond({ status: 503 }, { status: 201, body: order });
+    const result = await sandbox().createCheckout(checkout);
+    expect(result.checkoutId).toBe('ORDTST01ABC');
+    expect(sent).toHaveLength(2);
+    expect(sent[1].headers['X-Idempotency-Key']).toBe(
+      sent[0].headers['X-Idempotency-Key'],
     );
+  });
+
+  it('fails when the order has no checkout_url', async () => {
+    respond({ status: 201, body: { id: 'ORDTST01ABC' } });
     await expect(sandbox().createCheckout(checkout)).rejects.toBeInstanceOf(
       BadGatewayException,
     );
-    expect(sent).toHaveLength(1);
   });
 
   it('refuses the platform token in production until PAY-07 links the organizer account', async () => {
@@ -127,7 +183,7 @@ describe('MercadoPagoProvider (PAY-01)', () => {
   });
 
   it("uses the organizer's linked seller token, in production too (PAY-07)", async () => {
-    respond({ status: 200, body: { id: 1, status: 'approved' } });
+    respond({ status: 200, body: { id: 'ORD1', status: 'processed' } });
     const tenants: string[] = [];
     const provider = new MercadoPagoProvider(
       { environment: 'production', accessToken: undefined },
@@ -136,18 +192,18 @@ describe('MercadoPagoProvider (PAY-01)', () => {
         return Promise.resolve('APP_USR-seller-token');
       },
     );
-    await provider.getPayment(TENANT, '1');
+    await provider.getPayments(TENANT, 'ORD1');
     expect(tenants).toEqual([TENANT]);
     expect(sent[0].headers.Authorization).toBe('Bearer APP_USR-seller-token');
   });
 
   it('prefers the linked seller token over the sandbox platform token', async () => {
-    respond({ status: 200, body: { id: 1, status: 'approved' } });
+    respond({ status: 200, body: { id: 'ORD1', status: 'processed' } });
     const provider = new MercadoPagoProvider(
       { environment: 'sandbox', accessToken: TOKEN },
       () => Promise.resolve('APP_USR-seller-token'),
     );
-    await provider.getPayment(TENANT, '1');
+    await provider.getPayments(TENANT, 'ORD1');
     expect(sent[0].headers.Authorization).toBe('Bearer APP_USR-seller-token');
   });
 
@@ -177,128 +233,170 @@ describe('MercadoPagoProvider (PAY-01)', () => {
     ).not.toContain(TOKEN);
   });
 
-  it('reads a payment server-to-server in cents (PAY-03)', async () => {
+  it('reads the payments of an order server-to-server, in cents and one vocabulary (PAY-03)', async () => {
     respond({
       status: 200,
       body: {
-        id: 123,
-        status: 'approved',
+        id: 'ORDTST01ABC',
+        status: 'processed',
         status_detail: 'accredited',
         external_reference: checkout.externalReference,
-        transaction_amount: 45_000.5,
-        currency_id: 'ARS',
-        collector_id: 777,
-        date_approved: '2026-11-01T10:00:00.000-03:00',
+        currency: 'ARS',
+        user_id: 777,
+        created_date: '2026-11-01T10:00:00.000Z',
+        transactions: {
+          payments: [
+            {
+              id: 'PAY01',
+              status: 'failed',
+              status_detail: 'rejected_by_issuer',
+              amount: '45000.50',
+            },
+            {
+              id: 'PAY02',
+              status: 'processed',
+              status_detail: 'accredited',
+              amount: '45000.50',
+            },
+          ],
+        },
       },
     });
 
-    expect(await sandbox().getPayment(TENANT, '123')).toEqual({
-      id: '123',
-      status: 'approved',
-      statusDetail: 'accredited',
-      externalReference: checkout.externalReference,
-      amountCents: 4_500_050,
-      currency: 'ARS',
-      collectorId: '777',
-      approvedAt: new Date('2026-11-01T13:00:00.000Z'),
-    });
-    expect(sent[0]).toMatchObject({
-      url: 'https://api.mercadopago.com/v1/payments/123',
-      method: 'GET',
-    });
-  });
-
-  it('refunds with our own stable idempotency key (ADR 0006 §4, R-MP-5)', async () => {
-    respond({ status: 201, body: { id: 55, status: 'approved' } });
-
-    const refund = await sandbox().refund(
-      TENANT,
-      '123',
-      'key-refund-1',
-      1_000_00,
-    );
-
-    expect(refund).toEqual({ id: '55', status: 'approved' });
-    expect(sent[0].url).toBe(
-      'https://api.mercadopago.com/v1/payments/123/refunds',
-    );
-    expect(sent[0].headers['X-Idempotency-Key']).toBe('key-refund-1');
-    expect(sent[0].body).toEqual({ amount: 1000 });
-  });
-
-  it('refunds the whole payment when no amount is given', async () => {
-    respond({ status: 201, body: { id: 56, status: 'approved' } });
-    await sandbox().refund(TENANT, '123', 'key-refund-2');
-    expect(sent[0].body ?? {}).toEqual({});
-  });
-
-  it('cancels a pending payment with our idempotency key (PAY-06)', async () => {
-    respond({ status: 200, body: { id: 123, status: 'cancelled' } });
-
-    expect(await sandbox().cancel(TENANT, '123', 'key-cancel-1')).toEqual({
-      status: 'cancelled',
-    });
-    expect(sent[0]).toMatchObject({
-      url: 'https://api.mercadopago.com/v1/payments/123',
-      method: 'PUT',
-      body: { status: 'cancelled' },
-    });
-    expect(sent[0].headers['X-Idempotency-Key']).toBe('key-cancel-1');
-  });
-
-  it('finds the payments of an attempt by external_reference (PAY-05)', async () => {
-    respond({
-      status: 200,
-      body: {
-        results: [
-          {
-            id: 7,
-            status: 'rejected',
-            external_reference: checkout.externalReference,
-            transaction_amount: 45_000.5,
-            currency_id: 'ARS',
-            collector_id: '777',
-          },
-        ],
-      },
-    });
-
-    const found = await sandbox().findPayments(
-      TENANT,
-      checkout.externalReference,
-    );
-
-    expect(found).toEqual([
+    expect(await sandbox().getPayments(TENANT, 'ORDTST01ABC')).toEqual([
       {
-        id: '7',
+        id: 'PAY01',
         status: 'rejected',
-        statusDetail: null,
+        statusDetail: 'rejected_by_issuer',
         externalReference: checkout.externalReference,
         amountCents: 4_500_050,
         currency: 'ARS',
         collectorId: '777',
         approvedAt: null,
       },
+      {
+        id: 'PAY02',
+        status: 'approved',
+        statusDetail: 'accredited',
+        externalReference: checkout.externalReference,
+        amountCents: 4_500_050,
+        currency: 'ARS',
+        collectorId: '777',
+        approvedAt: new Date('2026-11-01T10:00:00.000Z'),
+      },
     ]);
-    const url = new URL(sent[0].url);
-    expect(url.pathname).toBe('/v1/payments/search');
-    expect(url.searchParams.get('external_reference')).toBe(
-      checkout.externalReference,
+    expect(sent[0]).toMatchObject({
+      url: 'https://api.mercadopago.com/v1/orders/ORDTST01ABC',
+      method: 'GET',
+    });
+  });
+
+  it.each([
+    ['created', 'pending'],
+    ['action_required', 'pending'],
+    ['processing', 'in_process'],
+    ['canceled', 'cancelled'],
+    ['expired', 'cancelled'],
+    ['refunded', 'refunded'],
+    ['something_new', 'pending'],
+  ])(
+    'maps the order payment status %s to %s, never to approved',
+    (raw, expected) => {
+      const [payment] = toPayments({
+        external_reference: 'x',
+        transactions: { payments: [{ id: 'P', status: raw, amount: '1.00' }] },
+      });
+      expect(payment.status).toBe(expected);
+    },
+  );
+
+  it('has no payment while the order is unpaid', async () => {
+    respond({ status: 200, body: { id: 'ORD1', status: 'created' } });
+    expect(await sandbox().getPayments(TENANT, 'ORD1')).toEqual([]);
+  });
+
+  it('refunds the whole order with our own stable idempotency key (ADR 0006 §4, R-MP-5)', async () => {
+    respond({
+      status: 201,
+      body: {
+        id: 'ORD1',
+        status: 'refunded',
+        transactions: { refunds: [{ id: 'REF1', status: 'approved' }] },
+      },
+    });
+
+    const refund = await sandbox().refund(
+      TENANT,
+      'ORD1',
+      'PAY1',
+      'key-refund-1',
+    );
+
+    expect(refund).toEqual({ id: 'REF1', status: 'approved' });
+    expect(sent[0].url).toBe(
+      'https://api.mercadopago.com/v1/orders/ORD1/refund',
+    );
+    expect(sent[0].method).toBe('POST');
+    expect(sent[0].headers['X-Idempotency-Key']).toBe('key-refund-1');
+    expect(sent[0].body ?? {}).toEqual({});
+  });
+
+  it('refunds part of a payment naming its transaction and amount', async () => {
+    respond({
+      status: 201,
+      body: { id: 'ORD1', transactions: { refunds: [{ id: 'REF2' }] } },
+    });
+    await sandbox().refund(TENANT, 'ORD1', 'PAY1', 'key-refund-2', 1_000_00);
+    expect(sent[0].body).toEqual({
+      transactions: [{ id: 'PAY1', amount: '1000.00' }],
+    });
+  });
+
+  it('cancels an unpaid order with our idempotency key (PAY-06)', async () => {
+    respond({ status: 200, body: { id: 'ORD1', status: 'canceled' } });
+
+    expect(await sandbox().cancel(TENANT, 'ORD1', 'key-cancel-1')).toEqual({
+      status: 'cancelled',
+    });
+    expect(sent[0]).toMatchObject({
+      url: 'https://api.mercadopago.com/v1/orders/ORD1/cancel',
+      method: 'POST',
+    });
+    expect(sent[0].headers['X-Idempotency-Key']).toBe('key-cancel-1');
+  });
+
+  it('treats an already canceled order (409) as cancelled, after reading it', async () => {
+    respond(
+      { status: 409, body: { errors: [{ code: 'order_already_canceled' }] } },
+      { status: 200, body: { id: 'ORD1', status: 'canceled' } },
+    );
+    expect(await sandbox().cancel(TENANT, 'ORD1', 'k')).toEqual({
+      status: 'cancelled',
+    });
+  });
+
+  it('does not hide a 409 on an order that is not canceled', async () => {
+    respond(
+      { status: 409, body: { errors: [{ code: 'cannot_cancel_order' }] } },
+      { status: 200, body: { id: 'ORD1', status: 'processed' } },
+    );
+    await expect(sandbox().cancel(TENANT, 'ORD1', 'k')).rejects.toBeInstanceOf(
+      BadGatewayException,
     );
   });
 });
 
 describe('MercadoPagoProvider auto_return', () => {
-  const preference = { id: 'pref-1', sandbox_init_point: 'https://mp.test/s' };
-
   it('sends auto_return approved only with https back_urls', async () => {
-    respond({ status: 201, body: preference });
+    respond({ status: 201, body: order });
     await sandbox().createCheckout(checkout);
-    expect(sent[0].body).toMatchObject({ auto_return: 'approved' });
+    expect(sent[0].body).toMatchObject({
+      config: { online: { auto_return: 'approved' } },
+    });
   });
 
-  it('omits auto_return for http://localhost back_urls (invalid_auto_return)', async () => {
-    respond({ status: 201, body: preference });
+  it('omits auto_return for http://localhost back_urls', async () => {
+    respond({ status: 201, body: order });
     await sandbox().createCheckout({
       ...checkout,
       backUrls: {
@@ -307,9 +405,11 @@ describe('MercadoPagoProvider auto_return', () => {
         failure: 'http://localhost:4200/checkout/failure',
       },
     });
-    expect(sent[0].body).not.toHaveProperty('auto_return');
-    expect(sent[0].body).toMatchObject({
-      back_urls: { success: 'http://localhost:4200/checkout/success' },
+    const online = (sent[0].body as { config: { online: object } }).config
+      .online;
+    expect(online).not.toHaveProperty('auto_return');
+    expect(online).toMatchObject({
+      success_url: 'http://localhost:4200/checkout/success',
     });
   });
 });

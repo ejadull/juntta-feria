@@ -556,12 +556,12 @@ describe('subscription webhooks (EXH-05)', () => {
     );
   });
 
-  it('still requires the tenant on payment notifications', async () => {
+  it('ignores the old payment topic: orders replaced it (ADR 0007)', async () => {
     const { requestId, response } = notify('123', { topic: 'payment' });
     expect((await response).statusCode).toBe(200);
     expect(await settled(requestId)).toEqual({
       status: 'IGNORED',
-      outcome: 'MISSING_TENANT',
+      outcome: 'UNSUPPORTED_TOPIC',
     });
   });
 

@@ -3,6 +3,7 @@
 - **Estado:** aceptado
 - **Fecha:** 2026-11-02
 - **Tarea:** `PAY-00` (condiciona `PAY-01..07` y `SUB-01`)
+- **Enmienda 2026-11-10:** el pago del stand ya no usa Preferences sino Orders API (`POST /v1/orders`); ver [ADR 0007](0007-checkout-pro-orders-api.md). Lo dicho aquí sobre Preferences, `notification_url` con `?tenant=`, el topic `payment` y el Wallet Brick queda reemplazado por el ADR 0007.
 - **Resuelve:** las decisiones abiertas de §7 y R1 (§15) sobre track de integración, credenciales por organizador, firma de webhooks, idempotencia y pagos offline.
 
 ## Contexto

@@ -15,18 +15,19 @@ import {
   eventStands,
   paymentAttempts,
   reservations,
+  users,
   type PaymentAttemptStatus,
 } from '../db/schema.js';
 import {
   PAYMENT_PROVIDER,
   type Checkout,
+  type CheckoutRequest,
   type PaymentProvider,
 } from '../payments/payment-provider.js';
-import { SellerAccountsService } from '../payments/seller-accounts.service.js';
 import { AuditService } from '../tenancy/audit.service.js';
 import { fail } from './reservations.service.js';
 
-/** Wallet Brick settings (Checkout Pro, "Agregar el SDK al frontend"): public data only. */
+/** Wallet settings kept for the web; Orders API checkout is a redirect, so the web gets `null` (ADR 0007). */
 export interface WalletSettings {
   /** The platform's public key, also in marketplace mode. */
   readonly publicKey: string;
@@ -37,11 +38,14 @@ export interface WalletSettings {
 /** §5.2 response: our attempt id and public checkout data, never provider credentials. */
 export interface CheckoutView {
   readonly paymentAttemptId: string;
-  /** `init_point`: the redirect fallback when there is no Wallet Brick. */
+  /** The order's `checkout_url`: the web redirects the buyer there. */
   readonly checkoutUrl: string;
-  /** What the Wallet Brick renders. */
+  /**
+   * Backward compatible name: since ADR 0007 this is the provider's ORDER id (it used to be the
+   * Preferences id the Wallet Brick rendered).
+   */
   readonly preferenceId: string;
-  /** Null without MP_PUBLIC_KEY: the web then redirects to `checkoutUrl`. */
+  /** Always null: an Orders checkout has no Wallet Brick, so the web falls back to `checkoutUrl`. */
   readonly wallet: WalletSettings | null;
   readonly status: PaymentAttemptStatus;
 }
@@ -55,38 +59,29 @@ const notPayable = () =>
     'Only a live hold can be paid.',
   );
 
-const view = (
-  attempt: Attempt,
-  wallet: WalletSettings | null,
-): CheckoutView => ({
+const view = (attempt: Attempt): CheckoutView => ({
   paymentAttemptId: attempt.id,
   checkoutUrl: attempt.checkoutUrl ?? '',
-  preferenceId: attempt.preferenceId ?? '',
-  wallet,
+  preferenceId: attempt.providerCheckoutId ?? '',
+  wallet: null,
   status: attempt.status,
 });
 
 /**
  * Checkout of a reservation (PAY-02, §6.5). Three steps so the provider call never runs inside
- * a transaction: open (or reuse) the attempt, create the preference, persist it once.
+ * a transaction: open (or reuse) the attempt, create the order, persist it once.
  * A provider failure leaves the hold and the attempt as they were; a retry completes them.
  */
 @Injectable()
 export class CheckoutService {
   private readonly webOrigin: string;
-  private readonly notificationUrl: string | undefined;
-  private readonly publicKey: string | undefined;
-
   constructor(
     private readonly database: DatabaseService,
     private readonly audit: AuditService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
-    private readonly accounts: SellerAccountsService,
     @Inject(configuration.KEY) env: AppConfiguration,
   ) {
     this.webOrigin = env.corsOrigins.find((origin) => origin !== '*') ?? '';
-    this.notificationUrl = env.mercadoPago.notificationUrl;
-    this.publicKey = env.mercadoPago.publicKey;
   }
 
   /** `created` is true when this request opened the checkout (201), false on a replay (200). */
@@ -102,7 +97,7 @@ export class CheckoutService {
       reservationId,
       idempotencyKey,
     );
-    return { checkout: view(attempt, await this.wallet(tenantId)), created };
+    return { checkout: view(attempt), created };
   }
 
   private async openCheckout(
@@ -111,8 +106,9 @@ export class CheckoutService {
     reservationId: string,
     idempotencyKey: string,
   ): Promise<{ attempt: Attempt; created: boolean }> {
-    const { attempt, title } = await this.database.withTenant(tenantId, (tx) =>
-      this.openAttempt(tx, userId, reservationId, idempotencyKey),
+    const { attempt, title, payer } = await this.database.withTenant(
+      tenantId,
+      (tx) => this.openAttempt(tx, userId, reservationId, idempotencyKey),
     );
     if (attempt.checkoutUrl) return { attempt, created: false };
 
@@ -124,9 +120,7 @@ export class CheckoutService {
       currency: attempt.currency,
       expiresAt: attempt.expiresAt,
       backUrls: this.backUrls(reservationId),
-      ...(this.notificationUrl
-        ? { notificationUrl: this.notificationFor(tenantId) }
-        : {}),
+      payer,
     });
     return this.database.withTenant(tenantId, (tx) =>
       this.saveCheckout(tx, userId, attempt, result),
@@ -139,7 +133,11 @@ export class CheckoutService {
     userId: string,
     reservationId: string,
     idempotencyKey: string,
-  ): Promise<{ attempt: Attempt; title: string }> {
+  ): Promise<{
+    attempt: Attempt;
+    title: string;
+    payer: CheckoutRequest['payer'];
+  }> {
     const [reservation] = await tx
       .select({
         status: reservations.status,
@@ -160,6 +158,7 @@ export class CheckoutService {
       )
       .for('update', { of: reservations });
     if (!reservation) throw new NotFoundException('Reservation not found.');
+    const payer = await this.payerOf(tx, userId);
     const title = `Stand ${reservation.standCode} — ${reservation.eventName}`;
     const holdExpiresAt = reservation.holdExpiresAt;
     const liveHold =
@@ -169,7 +168,7 @@ export class CheckoutService {
     if (!liveHold && reservation.status !== 'PAYMENT_PENDING')
       throw notPayable();
 
-    // Same key → its attempt; otherwise the open one: never a second preference per reservation.
+    // Same key → its attempt; otherwise the open one: never a second order per reservation.
     const attempts = await tx
       .select()
       .from(paymentAttempts)
@@ -177,7 +176,7 @@ export class CheckoutService {
     const reused =
       attempts.find((a) => a.idempotencyKey === idempotencyKey) ??
       attempts.find((a) => a.status === 'PENDING');
-    if (reused) return { attempt: reused, title };
+    if (reused) return { attempt: reused, title, payer };
     if (!liveHold || !holdExpiresAt) throw notPayable();
 
     const [attempt] = await tx
@@ -186,7 +185,7 @@ export class CheckoutService {
         reservationId,
         amountCents: reservation.priceCents,
         currency: reservation.currency,
-        // The preference must not outlive the hold (PAY-02, ADR 0006 §5).
+        // The order must not outlive the hold (PAY-02, ADR 0006 §5).
         expiresAt: holdExpiresAt,
         idempotencyKey,
       })
@@ -202,10 +201,10 @@ export class CheckoutService {
         currency: attempt.currency,
       },
     });
-    return { attempt, title };
+    return { attempt, title, payer };
   }
 
-  /** First preference wins; a concurrent loser answers with the persisted one. */
+  /** First order wins; a concurrent loser answers with the persisted one. */
   private async saveCheckout(
     tx: Transaction,
     userId: string,
@@ -215,14 +214,14 @@ export class CheckoutService {
     const [saved] = await tx
       .update(paymentAttempts)
       .set({
-        preferenceId: result.preferenceId,
+        providerCheckoutId: result.checkoutId,
         checkoutUrl: result.checkoutUrl,
         updatedAt: new Date(),
       })
       .where(
         and(
           eq(paymentAttempts.id, attempt.id),
-          isNull(paymentAttempts.preferenceId),
+          isNull(paymentAttempts.providerCheckoutId),
         ),
       )
       .returning();
@@ -256,24 +255,26 @@ export class CheckoutService {
     return { attempt: saved, created: true };
   }
 
-  /** Marketplace mode whenever the organizer has a seller account (PAY-07); its token pays. */
-  private async wallet(tenantId: string): Promise<WalletSettings | null> {
-    if (!this.publicKey) return null;
-    const account = await this.accounts.status(tenantId);
-    return {
-      publicKey: this.publicKey,
-      marketplace: account.status !== 'NOT_LINKED',
-    };
-  }
-
   /**
-   * The webhook needs the tenant to read the payment with its seller credentials (PAY-03).
-   * The query is unsigned: the webhook trusts it only after the payment matches an attempt of it.
+   * The payer of the order is the logged-in exhibitor, read here and never from the request.
+   * The account has a single `full_name`: first token is the first name, the rest the last name.
    */
-  private notificationFor(tenantId: string): string {
-    const url = new URL(this.notificationUrl ?? '');
-    url.searchParams.set('tenant', tenantId);
-    return url.toString();
+  private async payerOf(
+    tx: Transaction,
+    userId: string,
+  ): Promise<CheckoutRequest['payer']> {
+    const [user] = await tx
+      .select({ email: users.email, fullName: users.fullName })
+      .from(users)
+      .where(eq(users.id, userId));
+    if (!user) throw new NotFoundException('Reservation not found.');
+    const [firstName, ...rest] = (user.fullName ?? '').trim().split(/\s+/);
+    const lastName = rest.join(' ');
+    return {
+      email: user.email,
+      ...(firstName ? { firstName } : {}),
+      ...(lastName ? { lastName } : {}),
+    };
   }
 
   /** Return pages of PAY-04 (P19); the browser return never confirms anything (§5.2). */

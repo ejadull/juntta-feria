@@ -113,6 +113,13 @@
       "when": 1794281715516,
       "tag": "0015_platform_subscription_billing",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794283427740,
+      "tag": "0016_checkout_pro_orders",
+      "breakpoints": true
     }
   ]
 }

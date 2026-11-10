@@ -20,44 +20,59 @@ export class FakePaymentProvider implements PaymentProvider {
     this.failures = count;
   }
 
+  /** Orders by id → the attempt (`external_reference`) they were created for. */
+  readonly orders = new Map<string, string>();
+
+  /** Like Mercado Pago with an `X-Idempotency-Key`: the same attempt always gets the same order. */
   createCheckout(request: CheckoutRequest): Promise<Checkout> {
     this.checkouts.push(request);
     if (this.failures > 0) {
       this.failures -= 1;
       return Promise.reject(providerFailed());
     }
-    const preferenceId = `pref-${randomUUID()}`;
+    const existing = [...this.orders].find(
+      ([, reference]) => reference === request.externalReference,
+    );
+    const checkoutId =
+      existing?.[0] ??
+      `ORDTST${randomUUID().replaceAll('-', '').toUpperCase()}`;
+    this.orders.set(checkoutId, request.externalReference);
     return Promise.resolve({
-      preferenceId,
-      checkoutUrl: `https://sandbox.mp.test/checkout/${preferenceId}`,
+      checkoutId,
+      checkoutUrl: `https://sandbox.mp.test/checkout/${checkoutId}`,
     });
   }
 
-  /** Payments the provider "has", by id; a missing one fails like the adapter (502). */
+  /** Payments the provider "has", by payment id; they belong to an order by `externalReference`. */
   readonly payments = new Map<string, ProviderPayment>();
-  readonly paymentReads: { tenantId: string; paymentId: string }[] = [];
+  /** Orders whose payments cannot be read (a persistent provider outage), until cleared. */
+  readonly unreadable = new Set<string>();
+  readonly paymentReads: { tenantId: string; checkoutId: string }[] = [];
 
-  getPayment(tenantId: string, paymentId: string): Promise<ProviderPayment> {
-    this.paymentReads.push({ tenantId, paymentId });
-    const payment = this.payments.get(paymentId);
-    return payment
-      ? Promise.resolve(payment)
-      : Promise.reject(providerFailed());
+  /** The order created for an attempt, for tests that must notify about it. */
+  orderOf(externalReference: string): string | undefined {
+    return [...this.orders].find(([, ref]) => ref === externalReference)?.[0];
   }
 
-  findPayments(
-    _tenantId: string,
-    externalReference: string,
+  getPayments(
+    tenantId: string,
+    checkoutId: string,
   ): Promise<ProviderPayment[]> {
+    this.paymentReads.push({ tenantId, checkoutId });
+    if (this.unreadable.has(checkoutId))
+      return Promise.reject(providerFailed());
     if (this.failures > 0) {
       this.failures -= 1;
       return Promise.reject(providerFailed());
     }
-    return Promise.resolve(
-      [...this.payments.values()].filter(
-        (p) => p.externalReference === externalReference,
-      ),
-    );
+    const reference = this.orders.get(checkoutId);
+    return reference
+      ? Promise.resolve(
+          [...this.payments.values()].filter(
+            (p) => p.externalReference === reference,
+          ),
+        )
+      : Promise.reject(providerFailed());
   }
 
   /** Refunds and cancellations sent, in order (PAY-06). */
@@ -76,6 +91,7 @@ export class FakePaymentProvider implements PaymentProvider {
 
   refund(
     _tenantId: string,
+    _checkoutId: string,
     paymentId: string,
     key: string,
     amountCents?: number,
@@ -93,16 +109,26 @@ export class FakePaymentProvider implements PaymentProvider {
     return Promise.resolve({ id: `refund-${key}`, status: 'approved' });
   }
 
+  /** Cancels the order: its unpaid payments become `cancelled`. */
   cancel(
     _tenantId: string,
-    paymentId: string,
+    checkoutId: string,
     key: string,
   ): Promise<{ status: string }> {
     if (this.reversalFailed()) return Promise.reject(providerFailed());
-    this.reversals.push({ kind: 'cancel', paymentId, key });
-    const payment = this.payments.get(paymentId);
-    if (payment)
-      this.payments.set(paymentId, { ...payment, status: 'cancelled' });
+    const reference = this.orders.get(checkoutId);
+    const open = [...this.payments.values()].filter(
+      (p) =>
+        p.externalReference === reference &&
+        ['pending', 'in_process', 'authorized'].includes(p.status),
+    );
+    for (const payment of open)
+      this.payments.set(payment.id, { ...payment, status: 'cancelled' });
+    this.reversals.push({
+      kind: 'cancel',
+      paymentId: open[0]?.id ?? checkoutId,
+      key,
+    });
     return Promise.resolve({ status: 'cancelled' });
   }
 
