@@ -71,6 +71,12 @@ const AREAS: readonly Area[] = [
         active: under('/organizador/expositores'),
         icon: ICON.people,
       },
+      {
+        label: 'Mercado Pago',
+        link: '/organizador/mercado-pago',
+        active: under('/organizador/mercado-pago'),
+        icon: ICON.card,
+      },
     ],
   },
   {

@@ -806,7 +806,7 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 
 ##### PAY-07 — Configuración Mercado Pago (P12)
 
-- **Estado:** `IN_PROGRESS` (API lista; falta la pantalla P12 en la web y la prueba en sandbox con cuentas de prueba)
+- **Estado:** `IN_PROGRESS` (API y pantalla P12 listas; la web usa un adaptador en memoria hasta tener sesión (`CORE-02` web); falta la prueba en sandbox con cuentas de prueba)
 - **Dependencias:** `PAY-01`, `CORE-03`
 - **Entrega:** vinculación OAuth de la cuenta vendedora del organizador según ADR 0006 §2. `GET /api/v1/payment-account`, `POST /payment-account/authorization`, `POST /payment-account/link` y `DELETE /payment-account` (OWNER/ADMIN). Tabla `seller_accounts` (migración `0013_seller_accounts`, RLS), una por tenant.
 - **Aceptación:** sólo owner/administrador; los secretos nunca vuelven al navegador; estado de vinculación y entorno visibles.
@@ -819,6 +819,7 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
     - Renovación fallida con el token vigente → se sigue usando; vencido → 503 y estado `EXPIRED` (revincular).
     - Revincular reemplaza la cuenta; desvincular → `NOT_LINKED`. Sin tenant (RLS) no se ve ninguna fila.
     - Pago cobrado por otra cuenta que la vinculada → `COLLECTOR_MISMATCH`, incidencia, sin confirmar.
+  - 2026-11-10 (web P12): `ng test` 284/284 (6 de `PaymentAccountPage`, 4 de la página de retorno, 1 de rutas con el flujo completo); `playwright` 8/8 con 2 de P12 y **axe sin violaciones serias/críticas** (sin vincular, vinculada, confirmación de desvincular, retorno inválido); capturas desktop (1280) y móvil (390) revisadas.
   - 2026-11-10: `npm test` 124/124 (`TokenCipher`, `MercadoPagoOAuth` con `fetch` simulado, provider con el token del vendedor, contrato de entorno), `test:e2e` 7/7, `tsc` y `oxlint` OK.
 - **Flujo:**
   1. `POST /payment-account/authorization` arma la URL de `auth.mercadopago.com/authorization` con `client_id`, `platform_id=mp`, `redirect_uri` estática, `code_challenge` (S256) y un `state` **cifrado con AES-256-GCM** que lleva tenant, usuario, verifier y vencimiento (10 min, lo que dura el código). No hace falta tabla de autorizaciones en curso.
@@ -827,7 +828,8 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 - **Uso de las credenciales:** el provider pide el token por tenant. Con cuenta vinculada usa la del organizador (también en `production`); sin cuenta, `sandbox` cae al `MP_ACCESS_TOKEN` de plataforma para desarrollo y `production` responde 503.
 - **Renovación:** 7 días antes de vencer (el token dura 180). Serializada con `SELECT … FOR UPDATE` sobre la fila del tenant durante la llamada, porque cada refresh rota el refresh token. Si falla y el token sigue vigente, se usa y se avisa en el log; vencido → 503 y la pantalla pide revincular.
 - **Cobrador (§6.7):** con cuenta vinculada, un pago cuyo `collector_id` no es el `seller_id` → `payment.collector_mismatch` (incidencia `COLLECTOR_MISMATCH`) y no se confirma.
-- [ ] Pantalla P12 en la web (estado, entorno, botón vincular/revincular/desvincular, página de retorno), con tests de página y axe.
+- [x] Pantalla P12 en la web: `/organizador/mercado-pago` (estado con ícono y texto, entorno, id de vendedor, vencimiento; vincular, revincular y desvincular con confirmación `alertdialog` y foco en Cancelar; aviso si venció) y `/organizador/mercado-pago/vincular` (retorno: canjea `code`/`state`, explica `state` inválido o autorización cancelada con `error=access_denied`).
+- [ ] Adaptador HTTP de `PaymentAccountRepository` cuando la web tenga sesión y organización seleccionada (hoy `InMemoryPaymentAccountRepository` simula el redirect).
 - [ ] Prueba en sandbox con cuentas de prueba: confirmar los campos de `/oauth/token` (`user_id`, `live_mode`, `expires_in`) y el comportamiento del refresh (R-MP-4).
 - [ ] Ponytail: la clave de cifrado sale de `MP_TOKEN_ENCRYPTION_KEY`. Envolverla con KMS/vault antes de producción; la rotación re-cifra las filas del `key_id` viejo.
 - [ ] Ponytail: la renovación sólo ocurre cuando se usa el token. Sumar al job de conciliación una renovación proactiva y una alerta para cuentas sin uso cerca del vencimiento.

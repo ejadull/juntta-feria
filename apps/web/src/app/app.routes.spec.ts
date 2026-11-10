@@ -48,6 +48,21 @@ describe('organizer routes (ORG-01)', () => {
     expect(host.querySelector('main h1')?.textContent).toContain('Reservas y cobros');
   });
 
+  it('links Mercado Pago through its return page and keeps the section active (P12, PAY-07)', async () => {
+    const { current, host, harness, router } = await open('/organizador/mercado-pago');
+    expect(current()).toEqual(['Mercado Pago']);
+    expect(TestBed.inject(Title).getTitle()).toBe('Mercado Pago · Juntta Feria');
+    expect(host.querySelector('main .status')?.textContent).toContain('Sin vincular');
+
+    await harness.navigateByUrl(
+      '/organizador/mercado-pago/vincular?code=demo-code&state=demo-state',
+    );
+    await harness.fixture.whenStable();
+    expect(router.url).toBe('/organizador/mercado-pago');
+    expect(current()).toEqual(['Mercado Pago']);
+    expect(host.querySelector('main .status')?.textContent).toContain('Vinculada');
+  });
+
   it('shows "Página no encontrada" with a link to the Panel (spec: "Ruta inexistente")', async () => {
     const { host } = await open('/organizador/no-existe');
     expect(host.textContent).toContain('Página no encontrada');

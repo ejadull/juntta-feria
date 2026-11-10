@@ -5,6 +5,8 @@ import { ExhibitorRepository } from './features/exhibitors/data/exhibitor.reposi
 import { InMemoryExhibitorRepository } from './features/exhibitors/data/in-memory-exhibitor.repository';
 import { InMemoryLayoutRepository } from './features/layout-editor/data/in-memory-layout.repository';
 import { LayoutRepository } from './features/layout-editor/data/layout.repository';
+import { InMemoryPaymentAccountRepository } from './features/payment-account/data/in-memory-payment-account.repository';
+import { PaymentAccountRepository } from './features/payment-account/data/payment-account.repository';
 import { InMemoryPublicCatalogRepository } from './features/public-catalog/data/in-memory-public-catalog.repository';
 import { PublicCatalogRepository } from './features/public-catalog/data/public-catalog.repository';
 import { APP_NAME } from './shared/demo-context';
@@ -79,6 +81,36 @@ export const routes: Routes = [
               {
                 provide: ExhibitorRepository,
                 useFactory: () => new InMemoryExhibitorRepository(),
+              },
+            ],
+          },
+          {
+            path: 'mercado-pago',
+            // One repository for both pages: the return page links, P12 shows the result.
+            providers: [
+              {
+                provide: PaymentAccountRepository,
+                useFactory: () => new InMemoryPaymentAccountRepository(),
+              },
+            ],
+            children: [
+              {
+                path: '',
+                pathMatch: 'full',
+                title: title('Mercado Pago'),
+                loadComponent: () =>
+                  import('./features/payment-account/payment-account.page').then(
+                    (m) => m.PaymentAccountPage,
+                  ),
+              },
+              {
+                // MP_OAUTH_REDIRECT_URI points here (PAY-07).
+                path: 'vincular',
+                title: title('Vincular Mercado Pago'),
+                loadComponent: () =>
+                  import('./features/payment-account/payment-account-return.page').then(
+                    (m) => m.PaymentAccountReturnPage,
+                  ),
               },
             ],
           },
