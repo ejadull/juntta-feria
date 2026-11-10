@@ -25,10 +25,12 @@ export interface LayoutIssue {
 export const OVERLAP_EPSILON_M2 = 0.0001;
 
 const MESSAGES: Readonly<Record<LayoutIssueCode, string>> = {
-  INVALID_GEOMETRY: 'The polygon is not valid (self-intersecting or degenerate).',
+  INVALID_GEOMETRY:
+    'The polygon is not valid (self-intersecting or degenerate).',
   OUT_OF_BOUNDS: 'The object is outside the layout bounds.',
   STAND_OVERLAP: 'Two stands overlap.',
-  STAND_ON_RESERVED: 'A stand overlaps an aisle, entry, exit or emergency area.',
+  STAND_ON_RESERVED:
+    'A stand overlaps an aisle, entry, exit or emergency area.',
   CODE_MISSING: 'The stand has no code.',
   CODE_DUPLICATE: 'Several stands share the same code.',
   NO_STANDS: 'The layout has no stands.',
@@ -44,7 +46,10 @@ export async function validateLayoutVersion(
   widthM: number,
   heightM: number,
 ): Promise<LayoutIssue[]> {
-  const { rows } = await tx.execute<{ code: LayoutIssueCode; ids: string[] }>(sql`
+  const { rows } = await tx.execute<{
+    code: LayoutIssueCode;
+    ids: string[];
+  }>(sql`
     WITH o AS (
       SELECT id, kind, btrim(code) AS code, geometry, ST_IsValid(geometry) AS valid
       FROM layout_objects WHERE layout_version_id = ${versionId}
@@ -75,5 +80,9 @@ export async function validateLayoutVersion(
     ) issues
     ORDER BY code, ids
   `);
-  return rows.map((r) => ({ code: r.code, objectIds: r.ids, message: MESSAGES[r.code] }));
+  return rows.map((r) => ({
+    code: r.code,
+    objectIds: r.ids,
+    message: MESSAGES[r.code],
+  }));
 }

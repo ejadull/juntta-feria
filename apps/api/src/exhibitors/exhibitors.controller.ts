@@ -24,7 +24,8 @@ import {
   type ExhibitorSummary,
 } from './exhibitors.service.js';
 
-const PROFILE_NOT_FOUND = 'You have no exhibitor profile in this organization yet.';
+const PROFILE_NOT_FOUND =
+  'You have no exhibitor profile in this organization yet.';
 const NOT_FOUND = 'Exhibitor not found.';
 
 /** The exhibitor member's own profile in the organization of X-Tenant-Id (EXH-01). */
@@ -35,7 +36,10 @@ export class MyExhibitorProfileController {
   @Get()
   @TenantScoped('EXHIBITOR')
   async get(@Req() request: TenantRequest): Promise<ExhibitorProfile> {
-    const profile = await this.exhibitors.getOwn(request.tenant.id, request.user.id);
+    const profile = await this.exhibitors.getOwn(
+      request.tenant.id,
+      request.user.id,
+    );
     if (!profile) throw new NotFoundException(PROFILE_NOT_FOUND);
     return profile;
   }
@@ -72,8 +76,13 @@ export class ExhibitorsController {
 
   @Get(':id')
   @TenantScoped(...MANAGERS)
-  async get(@Req() request: TenantRequest, @Param('id') id: string): Promise<ExhibitorSummary> {
-    const exhibitor = isUuid(id) ? await this.exhibitors.get(request.tenant.id, id) : null;
+  async get(
+    @Req() request: TenantRequest,
+    @Param('id') id: string,
+  ): Promise<ExhibitorSummary> {
+    const exhibitor = isUuid(id)
+      ? await this.exhibitors.get(request.tenant.id, id)
+      : null;
     if (!exhibitor) throw new NotFoundException(NOT_FOUND);
     return exhibitor;
   }

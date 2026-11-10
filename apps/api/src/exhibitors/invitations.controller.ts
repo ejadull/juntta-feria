@@ -36,7 +36,10 @@ export class InvitationsController {
 
   @Post()
   @TenantScoped(...MANAGERS)
-  create(@Req() request: TenantRequest, @Body() body: unknown): Promise<CreatedInvitation> {
+  create(
+    @Req() request: TenantRequest,
+    @Body() body: unknown,
+  ): Promise<CreatedInvitation> {
     const input = parseBody(createInvitationInput, body ?? {}, 'invitation');
     return this.invitations.create(request.tenant.id, request.user.id, input);
   }
@@ -50,7 +53,10 @@ export class InvitationsController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @TenantScoped(...MANAGERS)
-  revoke(@Req() request: TenantRequest, @Param('id') id: string): Promise<void> {
+  revoke(
+    @Req() request: TenantRequest,
+    @Param('id') id: string,
+  ): Promise<void> {
     if (!isUuid(id)) throw new NotFoundException('Invitation not found.');
     return this.invitations.revoke(request.tenant.id, request.user.id, id);
   }

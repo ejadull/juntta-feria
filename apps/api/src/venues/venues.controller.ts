@@ -23,8 +23,10 @@ import { createVenueInput, updateVenueInput } from './venue.input.js';
 import { VenuesService, type Venue } from './venues.service.js';
 
 const NOT_FOUND = 'Venue not found.';
-const parse = <S extends Parameters<typeof parseBody>[0]>(schema: S, body: unknown) =>
-  parseBody(schema, body, 'venue');
+const parse = <S extends Parameters<typeof parseBody>[0]>(
+  schema: S,
+  body: unknown,
+) => parseBody(schema, body, 'venue');
 
 /** A malformed id is just another venue that does not exist (uniform 404). */
 function venueId(id: string): string {
@@ -49,14 +51,21 @@ export class VenuesController {
 
   @Get(':id')
   @TenantScoped(...MANAGERS)
-  async get(@Req() request: TenantRequest, @Param('id') id: string): Promise<Venue> {
+  async get(
+    @Req() request: TenantRequest,
+    @Param('id') id: string,
+  ): Promise<Venue> {
     return found(await this.venues.get(request.tenant.id, venueId(id)));
   }
 
   @Post()
   @TenantScoped(...MANAGERS)
   create(@Req() request: TenantRequest, @Body() body: unknown): Promise<Venue> {
-    return this.venues.create(request.tenant.id, request.user.id, parse(createVenueInput, body));
+    return this.venues.create(
+      request.tenant.id,
+      request.user.id,
+      parse(createVenueInput, body),
+    );
   }
 
   @Patch(':id')
@@ -68,14 +77,28 @@ export class VenuesController {
   ): Promise<Venue> {
     const venue = venueId(id);
     const patch = parse(updateVenueInput, body);
-    return found(await this.venues.update(request.tenant.id, request.user.id, venue, patch));
+    return found(
+      await this.venues.update(
+        request.tenant.id,
+        request.user.id,
+        venue,
+        patch,
+      ),
+    );
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @TenantScoped(...OWNERS)
-  async remove(@Req() request: TenantRequest, @Param('id') id: string): Promise<void> {
-    const removed = await this.venues.remove(request.tenant.id, request.user.id, venueId(id));
+  async remove(
+    @Req() request: TenantRequest,
+    @Param('id') id: string,
+  ): Promise<void> {
+    const removed = await this.venues.remove(
+      request.tenant.id,
+      request.user.id,
+      venueId(id),
+    );
     if (!removed) throw new NotFoundException(NOT_FOUND);
   }
 }

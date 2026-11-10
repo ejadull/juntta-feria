@@ -1,4 +1,8 @@
-import { hashPassword, verifyPassword, verifyAgainstDummy } from './password.js';
+import {
+  hashPassword,
+  verifyPassword,
+  verifyAgainstDummy,
+} from './password.js';
 
 describe('password hashing (CORE-02, §8 Argon2id)', () => {
   it('stores an Argon2id hash, never the password', async () => {
@@ -9,8 +13,12 @@ describe('password hashing (CORE-02, §8 Argon2id)', () => {
 
   it('verifies the right password and rejects a wrong one', async () => {
     const hash = await hashPassword('s3cret-pass-phrase');
-    await expect(verifyPassword(hash, 's3cret-pass-phrase')).resolves.toBe(true);
-    await expect(verifyPassword(hash, 's3cret-pass-phrasE')).resolves.toBe(false);
+    await expect(verifyPassword(hash, 's3cret-pass-phrase')).resolves.toBe(
+      true,
+    );
+    await expect(verifyPassword(hash, 's3cret-pass-phrasE')).resolves.toBe(
+      false,
+    );
   });
 
   it('returns false for a malformed stored hash instead of throwing', async () => {

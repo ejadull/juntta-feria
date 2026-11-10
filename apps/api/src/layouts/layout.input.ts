@@ -19,7 +19,11 @@ const polygon = z.strictObject({
   type: z.literal('Polygon'),
   coordinates: z
     .array(
-      z.array(position).min(4).max(1000).refine(closed, { error: 'ring must be closed' }),
+      z
+        .array(position)
+        .min(4)
+        .max(1000)
+        .refine(closed, { error: 'ring must be closed' }),
     )
     .length(1),
 });
@@ -44,9 +48,12 @@ export const saveObjectsInput = z.strictObject({
   objects: z
     .array(layoutObject)
     .max(MAX_OBJECTS)
-    .refine((objects) => new Set(objects.map((o) => o.id)).size === objects.length, {
-      error: 'object ids must be unique',
-    }),
+    .refine(
+      (objects) => new Set(objects.map((o) => o.id)).size === objects.length,
+      {
+        error: 'object ids must be unique',
+      },
+    ),
 });
 
 /** The size comes from the venue unless given; a template without venue must give it. */

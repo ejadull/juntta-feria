@@ -119,11 +119,7 @@ async function tokenFor(email: string): Promise<string> {
   return res.json().accessToken as string;
 }
 
-const probe = (
-  method: 'GET' | 'POST',
-  token: string | null,
-  tenant?: string,
-) =>
+const probe = (method: 'GET' | 'POST', token: string | null, tenant?: string) =>
   app.inject({
     method,
     url: '/api/v1/tenancy-probe',
@@ -169,7 +165,11 @@ describe('tenant selection (CORE-03, X-Tenant-Id)', () => {
   });
 
   it('exposes the tenant and role to the handler', async () => {
-    const res = await probe('GET', await tokenFor('operator@tenancy.test'), T_A);
+    const res = await probe(
+      'GET',
+      await tokenFor('operator@tenancy.test'),
+      T_A,
+    );
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ id: T_A, role: 'OPERATOR' });
   });

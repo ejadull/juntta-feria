@@ -85,7 +85,11 @@ export class LayoutsService {
   listTemplates(tenantId: string): Promise<LayoutTemplateSummary[]> {
     return this.database.withTenant(tenantId, async (tx) => {
       const templates = await tx
-        .select({ id: layoutTemplates.id, name: layoutTemplates.name, venueId: layoutTemplates.venueId })
+        .select({
+          id: layoutTemplates.id,
+          name: layoutTemplates.name,
+          venueId: layoutTemplates.venueId,
+        })
         .from(layoutTemplates)
         .orderBy(sql`lower(${layoutTemplates.name})`);
       if (templates.length === 0) return [];
@@ -98,13 +102,23 @@ export class LayoutsService {
           publishedAt: layoutVersions.publishedAt,
         })
         .from(layoutVersions)
-        .where(inArray(layoutVersions.templateId, templates.map((t) => t.id)))
+        .where(
+          inArray(
+            layoutVersions.templateId,
+            templates.map((t) => t.id),
+          ),
+        )
         .orderBy(asc(layoutVersions.version));
       return templates.map((t) => ({
         ...t,
         versions: versions
           .filter((v) => v.templateId === t.id)
-          .map((v) => ({ id: v.id, version: v.version, status: v.status, publishedAt: v.publishedAt })),
+          .map((v) => ({
+            id: v.id,
+            version: v.version,
+            status: v.status,
+            publishedAt: v.publishedAt,
+          })),
       }));
     });
   }
@@ -137,7 +151,10 @@ export class LayoutsService {
     );
   }
 
-  getVersion(tenantId: string, versionId: string): Promise<LayoutVersionDto | null> {
+  getVersion(
+    tenantId: string,
+    versionId: string,
+  ): Promise<LayoutVersionDto | null> {
     return this.database.withTenant(tenantId, async (tx) => {
       const version = await this.findVersion(tx, versionId);
       return version && this.withObjects(tx, version);
@@ -153,7 +170,9 @@ export class LayoutsService {
   ): Promise<LayoutVersionDto> {
     return this.database.withTenant(tenantId, async (tx) => {
       const version = await this.draft(tx, versionId);
-      await tx.delete(layoutObjects).where(eq(layoutObjects.layoutVersionId, versionId));
+      await tx
+        .delete(layoutObjects)
+        .where(eq(layoutObjects.layoutVersionId, versionId));
       if (objects.length > 0)
         await tx.insert(layoutObjects).values(
           objects.map((o) => ({
@@ -177,10 +196,19 @@ export class LayoutsService {
   }
 
   /** Validates with PostGIS (INV-04); on success the previous published version is archived. */
-  publish(tenantId: string, actorId: string, versionId: string): Promise<LayoutVersionDto> {
+  publish(
+    tenantId: string,
+    actorId: string,
+    versionId: string,
+  ): Promise<LayoutVersionDto> {
     return this.database.withTenant(tenantId, async (tx) => {
       const version = await this.draft(tx, versionId);
-      const issues = await validateLayoutVersion(tx, versionId, version.widthM, version.heightM);
+      const issues = await validateLayoutVersion(
+        tx,
+        versionId,
+        version.widthM,
+        version.heightM,
+      );
       if (issues.length > 0)
         throw new UnprocessableEntityException({
           message: `The layout has ${issues.length} issue(s) and cannot be published.`,
@@ -226,8 +254,10 @@ export class LayoutsService {
           .from(layoutTemplates)
           .where(eq(layoutTemplates.id, templateId))
           .for('update');
-        const source = template && (await this.findVersion(tx, sourceVersionId));
-        if (!source || source.templateId !== templateId) throw new NotFoundException(NOT_FOUND);
+        const source =
+          template && (await this.findVersion(tx, sourceVersionId));
+        if (!source || source.templateId !== templateId)
+          throw new NotFoundException(NOT_FOUND);
 
         const [{ last }] = await tx
           .select({ last: max(layoutVersions.version) })
@@ -277,7 +307,10 @@ export class LayoutsService {
     versionId: string,
     forUpdate = false,
   ): Promise<VersionRow | null> {
-    const query = tx.select(versionView).from(layoutVersions).where(eq(layoutVersions.id, versionId));
+    const query = tx
+      .select(versionView)
+      .from(layoutVersions)
+      .where(eq(layoutVersions.id, versionId));
     const [version] = await (forUpdate ? query.for('update') : query);
     return version ?? null;
   }
@@ -290,18 +323,27 @@ export class LayoutsService {
     return version;
   }
 
-  private async withObjects(tx: Transaction, version: VersionRow): Promise<LayoutVersionDto> {
+  private async withObjects(
+    tx: Transaction,
+    version: VersionRow,
+  ): Promise<LayoutVersionDto> {
     const objects = await tx
       .select({
         id: layoutObjects.id,
         kind: layoutObjects.kind,
         code: layoutObjects.code,
-        geometry: sql<LayoutObjectDto['geometry']>`ST_AsGeoJSON(${layoutObjects.geometry})::json`,
+        geometry: sql<
+          LayoutObjectDto['geometry']
+        >`ST_AsGeoJSON(${layoutObjects.geometry})::json`,
         metadata: layoutObjects.metadata,
       })
       .from(layoutObjects)
       .where(eq(layoutObjects.layoutVersionId, version.id))
-      .orderBy(asc(layoutObjects.kind), asc(layoutObjects.code), asc(layoutObjects.id));
+      .orderBy(
+        asc(layoutObjects.kind),
+        asc(layoutObjects.code),
+        asc(layoutObjects.id),
+      );
     return { ...version, objects };
   }
 

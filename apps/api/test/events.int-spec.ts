@@ -336,7 +336,11 @@ describe('events (EVT-01)', () => {
       sectorId: diseno,
       status: 'AVAILABLE',
     });
-    expect(byCode('A3')).toMatchObject({ priceCents: 0, hasPrice: false, sectorId: null });
+    expect(byCode('A3')).toMatchObject({
+      priceCents: 0,
+      hasPrice: false,
+      sectorId: null,
+    });
   });
 
   it('rejects bulk updates with unknown stands, foreign sectors or invalid values', async () => {

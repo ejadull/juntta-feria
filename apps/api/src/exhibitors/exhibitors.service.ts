@@ -23,11 +23,16 @@ const view = {
 };
 
 /** Private profile: only its owner and the organizers of its organization see it (INV-08). */
-export type ExhibitorProfile = Omit<typeof exhibitors.$inferSelect, 'tenantId' | 'userId' | 'logoKey'>;
+export type ExhibitorProfile = Omit<
+  typeof exhibitors.$inferSelect,
+  'tenantId' | 'userId' | 'logoKey'
+>;
 
 /** `documents` arrives with EP05; until then nothing has been uploaded (D4 contract). */
 export type DocumentsStatus = 'MISSING' | 'PENDING' | 'APPROVED' | 'REJECTED';
-export type ExhibitorSummary = ExhibitorProfile & { documentsStatus: DocumentsStatus };
+export type ExhibitorSummary = ExhibitorProfile & {
+  documentsStatus: DocumentsStatus;
+};
 
 const summary = (profile: ExhibitorProfile): ExhibitorSummary => ({
   ...profile,
@@ -68,7 +73,10 @@ export class ExhibitorsService {
               .set({ ...values, updatedAt: new Date() })
               .where(eq(exhibitors.id, before.id))
               .returning(view)
-          : await tx.insert(exhibitors).values({ ...values, userId }).returning(view);
+          : await tx
+              .insert(exhibitors)
+              .values({ ...values, userId })
+              .returning(view);
         await this.audit.record(tx, {
           actorId: userId,
           action: before ? 'exhibitor.updated' : 'exhibitor.created',
@@ -82,7 +90,9 @@ export class ExhibitorsService {
     } catch (error) {
       // Two first saves at once: the (tenant, user) unique key lets only one create it.
       if (isUniqueViolation(error))
-        throw new ConflictException('The profile was just created; retry the save.');
+        throw new ConflictException(
+          'The profile was just created; retry the save.',
+        );
       throw error;
     }
   }
@@ -99,7 +109,10 @@ export class ExhibitorsService {
 
   get(tenantId: string, id: string): Promise<ExhibitorSummary | null> {
     return this.database.withTenant(tenantId, async (tx) => {
-      const [row] = await tx.select(view).from(exhibitors).where(eq(exhibitors.id, id));
+      const [row] = await tx
+        .select(view)
+        .from(exhibitors)
+        .where(eq(exhibitors.id, id));
       return row ? summary(row) : null;
     });
   }
@@ -109,7 +122,10 @@ export class ExhibitorsService {
     userId: string,
     forUpdate = false,
   ): Promise<ExhibitorProfile | null> {
-    const query = tx.select(view).from(exhibitors).where(eq(exhibitors.userId, userId));
+    const query = tx
+      .select(view)
+      .from(exhibitors)
+      .where(eq(exhibitors.userId, userId));
     const [profile] = await (forUpdate ? query.for('update') : query);
     return profile ?? null;
   }

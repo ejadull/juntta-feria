@@ -8,15 +8,26 @@ import {
 } from '@nestjs/common';
 import { desc, eq, sql } from 'drizzle-orm';
 import { hashPassword } from '../auth/password.js';
-import { configuration, type AppConfiguration } from '../config/configuration.js';
+import {
+  configuration,
+  type AppConfiguration,
+} from '../config/configuration.js';
 import {
   DatabaseService,
   isUniqueViolation,
   type Transaction,
 } from '../db/database.service.js';
-import { exhibitorInvitations, memberships, tenants, users } from '../db/schema.js';
+import {
+  exhibitorInvitations,
+  memberships,
+  tenants,
+  users,
+} from '../db/schema.js';
 import { AuditService } from '../tenancy/audit.service.js';
-import type { AcceptInvitationInput, CreateInvitationInput } from './invitation.input.js';
+import type {
+  AcceptInvitationInput,
+  CreateInvitationInput,
+} from './invitation.input.js';
 
 export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
 
@@ -47,7 +58,8 @@ export interface PublicInvitation {
 const NOT_FOUND = 'Invitation not found or no longer valid.';
 const DAY_MS = 86_400_000;
 
-const hashToken = (token: string): string => createHash('sha256').update(token).digest('hex');
+const hashToken = (token: string): string =>
+  createHash('sha256').update(token).digest('hex');
 
 const view = {
   id: exhibitorInvitations.id,
@@ -59,9 +71,14 @@ const view = {
   revokedAt: exhibitorInvitations.revokedAt,
   createdAt: exhibitorInvitations.createdAt,
 };
-type Row = { [K in keyof typeof view]: (typeof exhibitorInvitations.$inferSelect)[K] };
+type Row = {
+  [K in keyof typeof view]: (typeof exhibitorInvitations.$inferSelect)[K];
+};
 
-function summarize({ revokedAt, ...row }: Row, now = new Date()): InvitationSummary {
+function summarize(
+  { revokedAt, ...row }: Row,
+  now = new Date(),
+): InvitationSummary {
   const status: InvitationStatus = row.acceptedAt
     ? 'ACCEPTED'
     : revokedAt
@@ -89,7 +106,11 @@ export class InvitationsService {
     this.webOrigin = env.corsOrigins.find((origin) => origin !== '*') ?? '';
   }
 
-  create(tenantId: string, actorId: string, input: CreateInvitationInput): Promise<CreatedInvitation> {
+  create(
+    tenantId: string,
+    actorId: string,
+    input: CreateInvitationInput,
+  ): Promise<CreatedInvitation> {
     const token = randomBytes(32).toString('base64url');
     return this.database.withTenant(tenantId, async (tx) => {
       const [row] = await tx
@@ -108,7 +129,12 @@ export class InvitationsService {
         action: 'invitation.created',
         entityType: 'exhibitor_invitation',
         entityId: row.id,
-        after: { email: row.email, phone: row.phone, name: row.name, expiresAt: row.expiresAt },
+        after: {
+          email: row.email,
+          phone: row.phone,
+          name: row.name,
+          expiresAt: row.expiresAt,
+        },
       });
       const url = `${this.webOrigin}/invitacion/${token}`;
       const organization = await this.organizationName(tx, tenantId);
@@ -138,7 +164,9 @@ export class InvitationsService {
         .for('update');
       if (!row) throw new NotFoundException('Invitation not found.');
       if (row.acceptedAt || row.revokedAt)
-        throw new ConflictException('The invitation was already accepted or revoked.');
+        throw new ConflictException(
+          'The invitation was already accepted or revoked.',
+        );
       await tx
         .update(exhibitorInvitations)
         .set({ revokedAt: new Date() })
@@ -180,7 +208,9 @@ export class InvitationsService {
       return await this.database.withTenant(target.tenantId, async (tx) => {
         const invitation = await this.usable(tx, target.id, true);
         if (invitation.email && invitation.email !== input.email)
-          throw new BadRequestException('Invalid account: use the email the invitation was sent to.');
+          throw new BadRequestException(
+            'Invalid account: use the email the invitation was sent to.',
+          );
         const now = new Date();
         const [user] = await tx
           .insert(users)
@@ -192,7 +222,13 @@ export class InvitationsService {
             confirmedAt: now,
           })
           .returning({ id: users.id, email: users.email });
-        await tx.insert(memberships).values({ tenantId: target.tenantId, userId: user.id, role: 'EXHIBITOR' });
+        await tx
+          .insert(memberships)
+          .values({
+            tenantId: target.tenantId,
+            userId: user.id,
+            role: 'EXHIBITOR',
+          });
         await tx
           .update(exhibitorInvitations)
           .set({ acceptedAt: now, acceptedUserId: user.id })
@@ -208,14 +244,21 @@ export class InvitationsService {
       });
     } catch (error) {
       if (isUniqueViolation(error))
-        throw new ConflictException('An account with that email already exists; sign in instead.');
+        throw new ConflictException(
+          'An account with that email already exists; sign in instead.',
+        );
       throw error;
     }
   }
 
   /** The only cross-tenant read (SECURITY DEFINER function, migration 0008). */
-  private async lookup(token: string): Promise<{ id: string; tenantId: string }> {
-    const { rows } = await this.database.db.execute<{ id: string; tenant_id: string }>(
+  private async lookup(
+    token: string,
+  ): Promise<{ id: string; tenantId: string }> {
+    const { rows } = await this.database.db.execute<{
+      id: string;
+      tenant_id: string;
+    }>(
       sql`SELECT id, tenant_id FROM exhibitor_invitation_lookup(${hashToken(token)})`,
     );
     if (!rows[0]) throw new NotFoundException(NOT_FOUND);
@@ -223,15 +266,29 @@ export class InvitationsService {
   }
 
   /** Re-checks inside the transaction: the invitation may have been used or revoked meanwhile. */
-  private async usable(tx: Transaction, id: string, forUpdate = false): Promise<Row> {
-    const query = tx.select(view).from(exhibitorInvitations).where(eq(exhibitorInvitations.id, id));
+  private async usable(
+    tx: Transaction,
+    id: string,
+    forUpdate = false,
+  ): Promise<Row> {
+    const query = tx
+      .select(view)
+      .from(exhibitorInvitations)
+      .where(eq(exhibitorInvitations.id, id));
     const [row] = await (forUpdate ? query.for('update') : query);
-    if (!row || summarize(row).status !== 'PENDING') throw new NotFoundException(NOT_FOUND);
+    if (!row || summarize(row).status !== 'PENDING')
+      throw new NotFoundException(NOT_FOUND);
     return row;
   }
 
-  private async organizationName(tx: Transaction, tenantId: string): Promise<string> {
-    const [tenant] = await tx.select({ name: tenants.name }).from(tenants).where(eq(tenants.id, tenantId));
+  private async organizationName(
+    tx: Transaction,
+    tenantId: string,
+  ): Promise<string> {
+    const [tenant] = await tx
+      .select({ name: tenants.name })
+      .from(tenants)
+      .where(eq(tenants.id, tenantId));
     return tenant?.name ?? '';
   }
 }

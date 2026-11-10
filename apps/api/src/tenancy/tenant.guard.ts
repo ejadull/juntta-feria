@@ -53,10 +53,9 @@ export class TenantGuard implements CanActivate {
       .limit(1);
     if (!membership) throw new NotFoundException('Resource not found.');
 
-    const allowed = this.reflector.getAllAndOverride<readonly MembershipRole[] | undefined>(
-      TENANT_ROLES,
-      [context.getHandler(), context.getClass()],
-    );
+    const allowed = this.reflector.getAllAndOverride<
+      readonly MembershipRole[] | undefined
+    >(TENANT_ROLES, [context.getHandler(), context.getClass()]);
     if (allowed && !allowed.includes(membership.role))
       throw new ForbiddenException('Your role cannot perform this action.');
 

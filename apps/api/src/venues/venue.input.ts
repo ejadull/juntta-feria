@@ -23,7 +23,9 @@ const fields = {
   type: z.enum(VENUE_TYPES),
   name: z.string().trim().min(1).max(120),
   address: z.string().trim().min(1).max(300).nullable(),
-  timezone: z.string().refine(isTimeZone, { error: 'must be an IANA time zone' }),
+  timezone: z
+    .string()
+    .refine(isTimeZone, { error: 'must be an IANA time zone' }),
   widthM: meters,
   heightM: meters,
 };

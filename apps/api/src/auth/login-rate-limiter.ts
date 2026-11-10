@@ -3,7 +3,10 @@ import { createHash } from 'node:crypto';
 /** The two operations the limiter needs; Redis in production, a Map in tests. */
 export interface CounterStore {
   /** Increments `key`; starts its window only on the first hit. Returns count and seconds left. */
-  incrementWithWindow(key: string, windowSeconds: number): Promise<{ count: number; ttl: number }>;
+  incrementWithWindow(
+    key: string,
+    windowSeconds: number,
+  ): Promise<{ count: number; ttl: number }>;
   reset(key: string): Promise<void>;
 }
 
@@ -13,7 +16,8 @@ export interface LoginLimits {
   readonly windowSeconds: number;
 }
 
-export type RateDecision = { allowed: true } | { allowed: false; retryAfterSeconds: number };
+export type RateDecision =
+  { allowed: true } | { allowed: false; retryAfterSeconds: number };
 
 /** Emails are keyed by a hash: the counter store never holds them in clear. */
 const emailKey = (email: string): string =>

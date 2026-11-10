@@ -138,7 +138,9 @@ describe('layouts (LAY-01)', () => {
       venueId: VENUE_B,
     });
     expect(foreign.statusCode).toBe(404);
-    const sizeless = await call('POST', '/layout-templates', 'operator', L_A, { name: 'Sin medidas' });
+    const sizeless = await call('POST', '/layout-templates', 'operator', L_A, {
+      name: 'Sin medidas',
+    });
     expect(sizeless.statusCode).toBe(400);
     const free = await call('POST', '/layout-templates', 'operator', L_A, {
       name: 'Itinerante',
@@ -157,24 +159,76 @@ describe('layouts (LAY-01)', () => {
       venueId: VENUE_A,
       versions: [{ id: v1, version: 1, status: 'DRAFT' }],
     });
-    expect((await call('GET', '/layout-templates', 'owner', L_B)).json()).toEqual([]);
+    expect(
+      (await call('GET', '/layout-templates', 'owner', L_B)).json(),
+    ).toEqual([]);
   });
 
   it.each([
-    ['open ring', { ...object('STAND', 'A1', rect(0, 0, 2, 2)), geometry: { type: 'Polygon', coordinates: [[[0, 0], [2, 0], [2, 2], [0, 2]]] } }],
+    [
+      'open ring',
+      {
+        ...object('STAND', 'A1', rect(0, 0, 2, 2)),
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [0, 0],
+              [2, 0],
+              [2, 2],
+              [0, 2],
+            ],
+          ],
+        },
+      },
+    ],
     ['unknown kind', object('BAR', 'X', rect(0, 0, 2, 2))],
-    ['non numeric point', { ...object('STAND', 'A1', rect(0, 0, 2, 2)), geometry: { type: 'Polygon', coordinates: [[[0, 0], ['a', 0], [2, 2], [0, 0]]] } }],
-    ['malformed id', { ...object('STAND', 'A1', rect(0, 0, 2, 2)), id: 'stand-1' }],
+    [
+      'non numeric point',
+      {
+        ...object('STAND', 'A1', rect(0, 0, 2, 2)),
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [0, 0],
+              ['a', 0],
+              [2, 2],
+              [0, 0],
+            ],
+          ],
+        },
+      },
+    ],
+    [
+      'malformed id',
+      { ...object('STAND', 'A1', rect(0, 0, 2, 2)), id: 'stand-1' },
+    ],
   ])('rejects a draft with %s (400)', async (_case, bad) => {
-    const res = await call('PUT', `/layout-versions/${v1}/objects`, 'operator', L_A, { objects: [bad] });
+    const res = await call(
+      'PUT',
+      `/layout-versions/${v1}/objects`,
+      'operator',
+      L_A,
+      { objects: [bad] },
+    );
     expect(res.statusCode).toBe(400);
   });
 
   it('rejects duplicate object ids in one draft (400)', async () => {
     const id = randomUUID();
-    const res = await call('PUT', `/layout-versions/${v1}/objects`, 'operator', L_A, {
-      objects: [object('STAND', 'A1', rect(0, 0, 2, 2), id), object('STAND', 'A2', rect(3, 0, 2, 2), id)],
-    });
+    const res = await call(
+      'PUT',
+      `/layout-versions/${v1}/objects`,
+      'operator',
+      L_A,
+      {
+        objects: [
+          object('STAND', 'A1', rect(0, 0, 2, 2), id),
+          object('STAND', 'A2', rect(3, 0, 2, 2), id),
+        ],
+      },
+    );
     expect(res.statusCode).toBe(400);
   });
 
@@ -189,11 +243,35 @@ describe('layouts (LAY-01)', () => {
     const onAisle = object('STAND', 'C1', rect(20, 9, 2, 2));
     const bowtie = object('OBSTACLE', null, {
       type: 'Polygon',
-      coordinates: [[[25, 0], [27, 2], [27, 0], [25, 2], [25, 0]]],
+      coordinates: [
+        [
+          [25, 0],
+          [27, 2],
+          [27, 0],
+          [25, 2],
+          [25, 0],
+        ],
+      ],
     });
-    const objects = [overlapA, overlapB, outside, noCode, dupA, dupB, aisle, onAisle, bowtie];
+    const objects = [
+      overlapA,
+      overlapB,
+      outside,
+      noCode,
+      dupA,
+      dupB,
+      aisle,
+      onAisle,
+      bowtie,
+    ];
 
-    const saved = await call('PUT', `/layout-versions/${v1}/objects`, 'operator', L_A, { objects });
+    const saved = await call(
+      'PUT',
+      `/layout-versions/${v1}/objects`,
+      'operator',
+      L_A,
+      { objects },
+    );
     expect(saved.statusCode).toBe(200);
     expect(saved.json().objects).toHaveLength(objects.length);
 
@@ -216,36 +294,65 @@ describe('layouts (LAY-01)', () => {
     });
     const res = await call('POST', `/layout-versions/${v1}/publish`, 'owner');
     expect(res.statusCode).toBe(422);
-    expect(res.json().issues.map((i: { code: string }) => i.code)).toEqual(['NO_STANDS']);
+    expect(res.json().issues.map((i: { code: string }) => i.code)).toEqual([
+      'NO_STANDS',
+    ]);
   });
 
   const a1 = object('STAND', 'A1', rect(0, 0, 3, 3));
   const a2 = object('STAND', 'A2', rect(3, 0, 3, 3)); // shares an edge with A1: valid
 
   it('round-trips geometry exactly and publishes a valid draft (owner only)', async () => {
-    const saved = await call('PUT', `/layout-versions/${v1}/objects`, 'operator', L_A, {
-      objects: [a1, a2, object('AISLE', null, rect(0, 3, 6, 1.5))],
-    });
-    expect(saved.json().objects.find((o: { id: string }) => o.id === a1.id)).toEqual(a1);
+    const saved = await call(
+      'PUT',
+      `/layout-versions/${v1}/objects`,
+      'operator',
+      L_A,
+      {
+        objects: [a1, a2, object('AISLE', null, rect(0, 3, 6, 1.5))],
+      },
+    );
+    expect(
+      saved.json().objects.find((o: { id: string }) => o.id === a1.id),
+    ).toEqual(a1);
 
-    expect((await call('POST', `/layout-versions/${v1}/publish`, 'operator')).statusCode).toBe(403);
+    expect(
+      (await call('POST', `/layout-versions/${v1}/publish`, 'operator'))
+        .statusCode,
+    ).toBe(403);
     const res = await call('POST', `/layout-versions/${v1}/publish`, 'owner');
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ status: 'PUBLISHED', publishedAt: expect.any(String) });
+    expect(res.json()).toMatchObject({
+      status: 'PUBLISHED',
+      publishedAt: expect.any(String),
+    });
   });
 
   it('keeps a published version immutable, in the API and in the database', async () => {
-    const res = await call('PUT', `/layout-versions/${v1}/objects`, 'operator', L_A, { objects: [a1] });
+    const res = await call(
+      'PUT',
+      `/layout-versions/${v1}/objects`,
+      'operator',
+      L_A,
+      { objects: [a1] },
+    );
     expect(res.statusCode).toBe(409);
-    expect((await call('POST', `/layout-versions/${v1}/publish`, 'owner')).statusCode).toBe(409);
+    expect(
+      (await call('POST', `/layout-versions/${v1}/publish`, 'owner'))
+        .statusCode,
+    ).toBe(409);
     await expect(
       database.withTenant(L_A, (tx) =>
-        tx.execute(sql`UPDATE layout_objects SET code = 'Z9' WHERE layout_version_id = ${v1}`),
+        tx.execute(
+          sql`UPDATE layout_objects SET code = 'Z9' WHERE layout_version_id = ${v1}`,
+        ),
       ),
     ).rejects.toBeDefined();
     await expect(
       database.withTenant(L_A, (tx) =>
-        tx.execute(sql`UPDATE layout_versions SET width_m = 99 WHERE id = ${v1}`),
+        tx.execute(
+          sql`UPDATE layout_versions SET width_m = 99 WHERE id = ${v1}`,
+        ),
       ),
     ).rejects.toBeDefined();
   });
@@ -253,32 +360,66 @@ describe('layouts (LAY-01)', () => {
   let v2 = '';
 
   it('clones a version into the next draft keeping object ids, one draft at a time', async () => {
-    const res = await call('POST', `/layout-templates/${templateId}/versions`, 'operator', L_A, {
-      sourceVersionId: v1,
-    });
+    const res = await call(
+      'POST',
+      `/layout-templates/${templateId}/versions`,
+      'operator',
+      L_A,
+      {
+        sourceVersionId: v1,
+      },
+    );
     expect(res.statusCode).toBe(201);
     const draft = res.json();
-    expect(draft).toMatchObject({ version: 2, status: 'DRAFT', widthM: 40, heightM: 20 });
-    expect(draft.objects.map((o: { id: string }) => o.id).sort()).toContain(a1.id);
+    expect(draft).toMatchObject({
+      version: 2,
+      status: 'DRAFT',
+      widthM: 40,
+      heightM: 20,
+    });
+    expect(draft.objects.map((o: { id: string }) => o.id).sort()).toContain(
+      a1.id,
+    );
     v2 = draft.id;
 
-    const again = await call('POST', `/layout-templates/${templateId}/versions`, 'operator', L_A, {
-      sourceVersionId: v1,
-    });
+    const again = await call(
+      'POST',
+      `/layout-templates/${templateId}/versions`,
+      'operator',
+      L_A,
+      {
+        sourceVersionId: v1,
+      },
+    );
     expect(again.statusCode).toBe(409);
   });
 
   it('archives the previous published version when the next one is published', async () => {
-    expect((await call('POST', `/layout-versions/${v2}/publish`, 'owner')).statusCode).toBe(200);
-    expect((await call('GET', `/layout-versions/${v1}`)).json().status).toBe('ARCHIVED');
+    expect(
+      (await call('POST', `/layout-versions/${v2}/publish`, 'owner'))
+        .statusCode,
+    ).toBe(200);
+    expect((await call('GET', `/layout-versions/${v1}`)).json().status).toBe(
+      'ARCHIVED',
+    );
   });
 
   it('hides versions and templates of other tenants (404)', async () => {
-    expect((await call('GET', `/layout-versions/${v1}`, 'owner', L_B)).statusCode).toBe(404);
-    expect((await call('GET', '/layout-versions/nope', 'owner', L_A)).statusCode).toBe(404);
-    const clone = await call('POST', `/layout-templates/${templateId}/versions`, 'owner', L_B, {
-      sourceVersionId: v2,
-    });
+    expect(
+      (await call('GET', `/layout-versions/${v1}`, 'owner', L_B)).statusCode,
+    ).toBe(404);
+    expect(
+      (await call('GET', '/layout-versions/nope', 'owner', L_A)).statusCode,
+    ).toBe(404);
+    const clone = await call(
+      'POST',
+      `/layout-templates/${templateId}/versions`,
+      'owner',
+      L_B,
+      {
+        sourceVersionId: v2,
+      },
+    );
     expect(clone.statusCode).toBe(404);
   });
 
@@ -288,8 +429,14 @@ describe('layouts (LAY-01)', () => {
   });
 
   it('keeps layout tables invisible outside a tenant transaction (RLS)', async () => {
-    for (const table of ['layout_templates', 'layout_versions', 'layout_objects']) {
-      const { rows } = await database.db.execute(sql.raw(`SELECT 1 FROM ${table}`));
+    for (const table of [
+      'layout_templates',
+      'layout_versions',
+      'layout_objects',
+    ]) {
+      const { rows } = await database.db.execute(
+        sql.raw(`SELECT 1 FROM ${table}`),
+      );
       expect(rows).toEqual([]);
     }
   });

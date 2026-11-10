@@ -37,7 +37,8 @@ export class AccessTokens {
         issuer: ISSUER,
         audience: AUDIENCE,
       });
-      if (payload.typ !== ACCESS || typeof payload.sub !== 'string') return null;
+      if (payload.typ !== ACCESS || typeof payload.sub !== 'string')
+        return null;
       return { userId: payload.sub };
     } catch {
       return null;
@@ -46,7 +47,8 @@ export class AccessTokens {
 }
 
 /** 256-bit opaque refresh token, URL-safe. Only its keyed hash is stored. */
-export const newRefreshToken = (): string => randomBytes(32).toString('base64url');
+export const newRefreshToken = (): string =>
+  randomBytes(32).toString('base64url');
 
 /** HMAC-SHA256 with AUTH_REFRESH_TOKEN_SECRET: a leaked table alone cannot be replayed. */
 export const hashRefreshToken = (token: string, secret: string): string =>

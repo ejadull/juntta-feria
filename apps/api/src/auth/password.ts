@@ -7,10 +7,14 @@ import { hash, verify } from '@node-rs/argon2';
  */
 const OPTIONS = { memoryCost: 19_456, timeCost: 2, parallelism: 1 } as const;
 
-export const hashPassword = (password: string): Promise<string> => hash(password, OPTIONS);
+export const hashPassword = (password: string): Promise<string> =>
+  hash(password, OPTIONS);
 
 /** False for a wrong password or a malformed stored hash; never throws on bad input. */
-export async function verifyPassword(storedHash: string, password: string): Promise<boolean> {
+export async function verifyPassword(
+  storedHash: string,
+  password: string,
+): Promise<boolean> {
   try {
     return await verify(storedHash, password);
   } catch {

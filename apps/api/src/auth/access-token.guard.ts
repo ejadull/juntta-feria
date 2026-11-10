@@ -19,9 +19,14 @@ export class AccessTokenGuard implements CanActivate {
     const http = context.switchToHttp();
     const request = http.getRequest<FastifyRequest>();
     const [scheme, token] = (request.headers.authorization ?? '').split(' ');
-    const verified = scheme === 'Bearer' && token ? await this.auth.verifyAccessToken(token) : null;
+    const verified =
+      scheme === 'Bearer' && token
+        ? await this.auth.verifyAccessToken(token)
+        : null;
     if (!verified) {
-      void http.getResponse<FastifyReply>().header('www-authenticate', 'Bearer');
+      void http
+        .getResponse<FastifyReply>()
+        .header('www-authenticate', 'Bearer');
       throw new UnauthorizedException('Authentication required.');
     }
     (request as AuthenticatedRequest).user = { id: verified.userId };

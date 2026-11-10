@@ -34,8 +34,12 @@ describe('AccessTokens (CORE-02, ADR 0004)', () => {
   });
 
   it('rejects unsigned ("alg: none") and garbage tokens', async () => {
-    const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify({ sub: USER, typ: 'access' })).toString('base64url');
+    const header = Buffer.from(
+      JSON.stringify({ alg: 'none', typ: 'JWT' }),
+    ).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({ sub: USER, typ: 'access' }),
+    ).toString('base64url');
     await expect(tokens.verify(`${header}.${payload}.`)).resolves.toBeNull();
     await expect(tokens.verify('not.a.jwt')).resolves.toBeNull();
     await expect(tokens.verify('')).resolves.toBeNull();
@@ -63,8 +67,12 @@ describe('refresh tokens', () => {
 
   it('are stored as a keyed hash: deterministic per secret, different across secrets', () => {
     const token = newRefreshToken();
-    expect(hashRefreshToken(token, SECRET)).toBe(hashRefreshToken(token, SECRET));
-    expect(hashRefreshToken(token, SECRET)).not.toBe(hashRefreshToken(token, OTHER));
+    expect(hashRefreshToken(token, SECRET)).toBe(
+      hashRefreshToken(token, SECRET),
+    );
+    expect(hashRefreshToken(token, SECRET)).not.toBe(
+      hashRefreshToken(token, OTHER),
+    );
     expect(hashRefreshToken(token, SECRET)).not.toContain(token);
   });
 });

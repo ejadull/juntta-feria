@@ -39,7 +39,13 @@ async function seed(): Promise<void> {
       `INSERT INTO memberships (tenant_id, user_id, role) VALUES
          ($1, $3, 'OWNER'), ($2, $3, 'OWNER'),
          ($1, $4, 'EXHIBITOR'), ($2, $4, 'EXHIBITOR'), ($1, $5, 'EXHIBITOR')`,
-      [X_A, X_B, id('owner@exhibitors.test'), id('ana@exhibitors.test'), id('beto@exhibitors.test')],
+      [
+        X_A,
+        X_B,
+        id('owner@exhibitors.test'),
+        id('ana@exhibitors.test'),
+        id('beto@exhibitors.test'),
+      ],
     );
   } finally {
     await client.end();
@@ -96,7 +102,9 @@ describe('exhibitor profile (EXH-01)', () => {
   let anaId = '';
 
   it('has no profile until the exhibitor creates it', async () => {
-    expect((await call('GET', '/me/exhibitor-profile', 'ana')).statusCode).toBe(404);
+    expect((await call('GET', '/me/exhibitor-profile', 'ana')).statusCode).toBe(
+      404,
+    );
   });
 
   it('lets the exhibitor create its own profile (201) with a normalized CUIT', async () => {
@@ -108,7 +116,9 @@ describe('exhibitor profile (EXH-01)', () => {
       publicConsentAt: null,
     });
     anaId = res.json().id;
-    expect((await call('GET', '/me/exhibitor-profile', 'ana')).json()).toMatchObject({
+    expect(
+      (await call('GET', '/me/exhibitor-profile', 'ana')).json(),
+    ).toMatchObject({
       id: anaId,
       tradeName: 'Lanas del Sur',
     });
@@ -131,8 +141,17 @@ describe('exhibitor profile (EXH-01)', () => {
     });
     expect(again.json().publicConsentAt).toBe(consentAt); // still the original consent
 
-    const withdrawn = await call('PUT', '/me/exhibitor-profile', 'ana', X_A, perfil);
-    expect(withdrawn.json()).toMatchObject({ publicContactOptIn: false, publicConsentAt: null });
+    const withdrawn = await call(
+      'PUT',
+      '/me/exhibitor-profile',
+      'ana',
+      X_A,
+      perfil,
+    );
+    expect(withdrawn.json()).toMatchObject({
+      publicContactOptIn: false,
+      publicConsentAt: null,
+    });
   });
 
   it.each([
@@ -142,7 +161,10 @@ describe('exhibitor profile (EXH-01)', () => {
     ['an owner field', { userId: '00000000-0000-4000-8000-000000000000' }],
     ['a consent that is not a boolean', { publicContactOptIn: 'yes' }],
   ])('rejects %s (400)', async (_case, change) => {
-    const res = await call('PUT', '/me/exhibitor-profile', 'ana', X_A, { ...perfil, ...change });
+    const res = await call('PUT', '/me/exhibitor-profile', 'ana', X_A, {
+      ...perfil,
+      ...change,
+    });
     expect(res.statusCode).toBe(400);
   });
 
@@ -159,12 +181,19 @@ describe('exhibitor profile (EXH-01)', () => {
   });
 
   it('keeps one profile per organization: the same user starts empty in another tenant', async () => {
-    expect((await call('GET', '/me/exhibitor-profile', 'ana', X_B)).statusCode).toBe(404);
+    expect(
+      (await call('GET', '/me/exhibitor-profile', 'ana', X_B)).statusCode,
+    ).toBe(404);
   });
 
   it('only exhibitor members have a profile; only managers list exhibitors', async () => {
-    expect((await call('GET', '/me/exhibitor-profile', 'owner')).statusCode).toBe(403);
-    expect((await call('PUT', '/me/exhibitor-profile', 'owner', X_A, perfil)).statusCode).toBe(403);
+    expect(
+      (await call('GET', '/me/exhibitor-profile', 'owner')).statusCode,
+    ).toBe(403);
+    expect(
+      (await call('PUT', '/me/exhibitor-profile', 'owner', X_A, perfil))
+        .statusCode,
+    ).toBe(403);
     expect((await call('GET', '/exhibitors', 'ana')).statusCode).toBe(403);
   });
 
@@ -172,7 +201,11 @@ describe('exhibitor profile (EXH-01)', () => {
     const res = await call('GET', '/exhibitors', 'owner');
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual([
-      expect.objectContaining({ tradeName: 'Cerámicas Beto', taxId: null, documentsStatus: 'MISSING' }),
+      expect.objectContaining({
+        tradeName: 'Cerámicas Beto',
+        taxId: null,
+        documentsStatus: 'MISSING',
+      }),
       expect.objectContaining({
         id: anaId,
         tradeName: 'Lanas del Sur',
@@ -183,18 +216,26 @@ describe('exhibitor profile (EXH-01)', () => {
         documentsStatus: 'MISSING',
       }),
     ]);
-    expect((await call('GET', `/exhibitors/${anaId}`, 'owner')).json()).toMatchObject({ id: anaId });
+    expect(
+      (await call('GET', `/exhibitors/${anaId}`, 'owner')).json(),
+    ).toMatchObject({ id: anaId });
   });
 
   it('hides exhibitors of other organizations (404 / empty list)', async () => {
     expect((await call('GET', '/exhibitors', 'owner', X_B)).json()).toEqual([]);
-    expect((await call('GET', `/exhibitors/${anaId}`, 'owner', X_B)).statusCode).toBe(404);
-    expect((await call('GET', '/exhibitors/nope', 'owner')).statusCode).toBe(404);
+    expect(
+      (await call('GET', `/exhibitors/${anaId}`, 'owner', X_B)).statusCode,
+    ).toBe(404);
+    expect((await call('GET', '/exhibitors/nope', 'owner')).statusCode).toBe(
+      404,
+    );
   });
 
   it('audits creation and updates of the profile', async () => {
     const { rows } = await database.withTenant(X_A, (tx) =>
-      tx.execute(sql`SELECT action FROM audit_logs WHERE entity_id = ${anaId} ORDER BY created_at`),
+      tx.execute(
+        sql`SELECT action FROM audit_logs WHERE entity_id = ${anaId} ORDER BY created_at`,
+      ),
     );
     expect(rows.map((r) => r.action)).toEqual([
       'exhibitor.created',

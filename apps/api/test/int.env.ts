@@ -2,13 +2,15 @@
 
 export function required(name: string): string {
   const value = process.env[name];
-  if (!value) throw new Error(`${name} is required for integration tests (see README).`);
+  if (!value)
+    throw new Error(`${name} is required for integration tests (see README).`);
   return value;
 }
 
 const ownerUrl = (): URL => new URL(required('DATABASE_MIGRATION_URL'));
 
-export const testDatabase = (): string => `${ownerUrl().pathname.slice(1)}_test`;
+export const testDatabase = (): string =>
+  `${ownerUrl().pathname.slice(1)}_test`;
 
 export function ownerUrlFor(database: string): string {
   const url = ownerUrl();
@@ -26,4 +28,5 @@ export function appTestUrl(): string {
 }
 
 /** The owner password, only to assert it never appears in outputs. */
-export const ownerPassword = (): string => decodeURIComponent(ownerUrl().password);
+export const ownerPassword = (): string =>
+  decodeURIComponent(ownerUrl().password);

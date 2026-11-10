@@ -75,7 +75,11 @@ export class EventsService {
     return this.database.withTenant(tenantId, (tx) => this.find(tx, id));
   }
 
-  create(tenantId: string, actorId: string, input: CreateEventInput): Promise<Event> {
+  create(
+    tenantId: string,
+    actorId: string,
+    input: CreateEventInput,
+  ): Promise<Event> {
     return this.uniqueSlug(() =>
       this.database.withTenant(tenantId, async (tx) => {
         await this.checkLayout(tx, input.venueId, input.layoutVersionId);
@@ -113,7 +117,8 @@ export class EventsService {
         if (!before) return null;
         if (before.status !== 'DRAFT') throw new ConflictException(NOT_DRAFT);
         const problem = datesProblem({ ...before, ...patch });
-        if (problem) throw new BadRequestException(`Invalid event: ${problem}.`);
+        if (problem)
+          throw new BadRequestException(`Invalid event: ${problem}.`);
         const [after] = await tx
           .update(events)
           .set({ ...patch, updatedAt: new Date() })
@@ -145,7 +150,11 @@ export class EventsService {
         });
       const [published] = await tx
         .update(events)
-        .set({ status: 'PUBLISHED', publishedAt: new Date(), updatedAt: new Date() })
+        .set({
+          status: 'PUBLISHED',
+          publishedAt: new Date(),
+          updatedAt: new Date(),
+        })
         .where(eq(events.id, id))
         .returning(view);
       await this.audit.record(tx, {
@@ -160,22 +169,42 @@ export class EventsService {
   }
 
   /** Same tenant venue and PUBLISHED layout (INV-03); a template tied to a venue only serves it. */
-  private async checkLayout(tx: Transaction, venueId: string, versionId: string): Promise<void> {
-    const [venue] = await tx.select({ id: venues.id }).from(venues).where(eq(venues.id, venueId));
+  private async checkLayout(
+    tx: Transaction,
+    venueId: string,
+    versionId: string,
+  ): Promise<void> {
+    const [venue] = await tx
+      .select({ id: venues.id })
+      .from(venues)
+      .where(eq(venues.id, venueId));
     if (!venue) throw new NotFoundException('Venue not found.');
     const [layout] = await tx
-      .select({ status: layoutVersions.status, templateVenueId: layoutTemplates.venueId })
+      .select({
+        status: layoutVersions.status,
+        templateVenueId: layoutTemplates.venueId,
+      })
       .from(layoutVersions)
-      .innerJoin(layoutTemplates, eq(layoutTemplates.id, layoutVersions.templateId))
+      .innerJoin(
+        layoutTemplates,
+        eq(layoutTemplates.id, layoutVersions.templateId),
+      )
       .where(eq(layoutVersions.id, versionId));
     if (!layout) throw new NotFoundException('Layout not found.');
     if (layout.status !== 'PUBLISHED')
-      throw new ConflictException('The layout version must be published (INV-03).');
+      throw new ConflictException(
+        'The layout version must be published (INV-03).',
+      );
     if (layout.templateVenueId && layout.templateVenueId !== venueId)
-      throw new BadRequestException('Invalid event: the layout belongs to another venue.');
+      throw new BadRequestException(
+        'Invalid event: the layout belongs to another venue.',
+      );
   }
 
-  private async publishIssues(tx: Transaction, eventId: string): Promise<EventIssue[]> {
+  private async publishIssues(
+    tx: Transaction,
+    eventId: string,
+  ): Promise<EventIssue[]> {
     const unpriced = await tx
       .select({ id: eventStands.id })
       .from(eventStands)
@@ -190,7 +219,12 @@ export class EventsService {
     const [{ sellable }] = await tx
       .select({ sellable: sql<number>`count(*)::int` })
       .from(eventStands)
-      .where(and(eq(eventStands.eventId, eventId), eq(eventStands.status, 'AVAILABLE')));
+      .where(
+        and(
+          eq(eventStands.eventId, eventId),
+          eq(eventStands.status, 'AVAILABLE'),
+        ),
+      );
     const issues: EventIssue[] = [];
     if (unpriced.length > 0)
       issues.push({
@@ -207,7 +241,11 @@ export class EventsService {
     return issues;
   }
 
-  private async find(tx: Transaction, id: string, forUpdate = false): Promise<Event | null> {
+  private async find(
+    tx: Transaction,
+    id: string,
+    forUpdate = false,
+  ): Promise<Event | null> {
     const query = tx.select(view).from(events).where(eq(events.id, id));
     const [event] = await (forUpdate ? query.for('update') : query);
     return event ?? null;
