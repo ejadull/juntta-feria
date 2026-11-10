@@ -177,7 +177,7 @@ Autenticación de panel `Authorization: Bearer <token>` (access token JWT, [ADR 
 |---|---|---|---|
 | POST | /api/v1/auth/login | público | Login |
 | GET | /api/v1/me | usuario | Perfil y memberships |
-| POST | /api/v1/tenants | superadmin | Crear organización |
+| POST | /api/v1/tenants | superadmin | Crear organización y su `OWNER` `{ name, slug, owner: { email, fullName, password } }`; reutiliza al usuario si el email existe; 409 `TENANT_SLUG_TAKEN` (`CORE-04`). `GET` lista las organizaciones. Sin `X-Tenant-Id` |
 | GET/POST | /api/v1/venues | owner/admin/operator | Listar/crear predios |
 | GET/PATCH | /api/v1/venues/:id | owner/admin/operator | Ver/editar predio |
 | DELETE | /api/v1/venues/:id | owner/admin | Eliminar predio |
@@ -445,6 +445,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `CORE-01` Base de datos y migraciones | `FND-06` | Drizzle, migraciones PostgreSQL/PostGIS y roles separados — [detalle](#core-01--base-de-datos-y-migraciones) | `VERIFIED` |
 | `CORE-02` Usuarios, sesiones y membresías | `CORE-01` | login, refresh rotativo HttpOnly, logout y membresías — [detalle](#core-02--usuarios-sesiones-y-membresías) | `VERIFIED` |
 | `CORE-03` Aislamiento y auditoría | `CORE-02` | autorización tenant, RLS y auditoría — [detalle](#core-03--aislamiento-y-auditoría) | `VERIFIED` |
+| `CORE-04` Superadministrador y alta de organizaciones | `CORE-03` | `POST /tenants` y CLI del primer superadministrador — [detalle](#core-04--superadministrador-y-alta-de-organizaciones) | `VERIFIED` |
 | `VEN-01` Predios | `CORE-03` | CRUD de predios fijos/temporales — [detalle](#ven-01--predios) | `VERIFIED` |
 | `LUI-01..10` Editor de plano frontend | ninguna (ver change) | editor P06 con repositorio en memoria; fija contrato de geometría para `LAY-01` — [change archivado](changes/archive/2026-10-30-lay-ui-floor-plan-editor/proposal.md) · spec [`layout-editor`](specs/layout-editor/spec.md) | `VERIFIED` |
 | `ORG-01..07` Shell del organizador, Panel y Expositores | ninguna (ver change) | navegación, P03 y P11 en consulta con adaptadores en memoria; fija contratos de lectura para `REP-01`/`EXH-01` — [change archivado](changes/archive/2026-10-30-org-ui-shell/proposal.md) · spec [`organizer-shell`](specs/organizer-shell/spec.md) | `VERIFIED` |
@@ -521,7 +522,18 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
 - [x] `audit_logs` según §3.1: RLS `ENABLE` + `FORCE`, política `USING`/`WITH CHECK` por `app.tenant_id` y `REVOKE UPDATE, DELETE, TRUNCATE` a `juntta_app`.
 - Patrón para las tablas de tenant siguientes (`VEN-01` en adelante): misma política RLS por `app.tenant_id` con `ENABLE` + `FORCE` en la migración que crea la tabla, más un test de aislamiento.
 - Tablas de identidad sin RLS, por diseño: `users`, `memberships` y `refresh_tokens` se leen antes de elegir tenant (login, guard) y sólo las toca el módulo `auth`/`tenancy`; `tenants` también, porque es el ancla. Si en el futuro hiciera falta RLS en `memberships`, la política necesitaría además `app.user_id`.
-- Fuera de alcance: endpoints de auditoría (consulta/exportación), superadministrador de plataforma (`POST /tenants`) y auditoría de login.
+- Fuera de alcance: endpoints de auditoría (consulta/exportación), superadministrador de plataforma (resuelto en `CORE-04`) y auditoría de login.
+
+##### CORE-04 — Superadministrador y alta de organizaciones
+
+- **Estado:** `VERIFIED`
+- **Dependencias:** `CORE-03`
+- **Entrega:** columna `users.is_platform_admin` (migración `0014_platform_admin`); `PlatformAdminOnly()` (`AccessTokenGuard` + `PlatformAdminGuard`, sin `X-Tenant-Id`; la bandera se lee de la base en cada request); `POST /api/v1/tenants` y `GET /api/v1/tenants` (módulo `platform`); `GET /auth/me` suma `platformAdmin`; CLI `apps/api/scripts/create-platform-admin.mjs` para el primer superadministrador.
+- **Decisión:** `POST /tenants` crea la organización y su membresía `OWNER` en una sola transacción. Si el email ya existe se reutiliza la cuenta **sin tocar su contraseña** (`owner.created=false`); si no, se crea confirmada con Argon2id y la política de contraseña de invitaciones (10 a 256 caracteres). Las tablas `tenants`/`users`/`memberships` no tienen RLS (ver `CORE-03`), así que sólo la auditoría es de tenant: la transacción corre con `withTenant(<id nuevo>)` (el UUID se genera antes del `INSERT`) y `tenant.created` queda en el trail de la organización recién creada, con el superadministrador como `actor_id`. Slug repetido → 409 `TENANT_SLUG_TAKEN`; body inválido → 400. El CLI usa la conexión del dueño (`DATABASE_MIGRATION_URL`), es idempotente (si la cuenta existe sólo la promueve y no cambia su contraseña), se niega a correr con `NODE_ENV=production` sin `--allow-production` y nunca imprime la contraseña.
+- **Evidencia requerida:** pruebas de integración contra PostgreSQL real.
+  - 2026-11-10: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 184/184 en dos corridas consecutivas (13 de `test/tenants.int-spec.ts`): el superadministrador crea una organización con dueño nuevo que inicia sesión y accede a rutas del tenant como `OWNER`; `tenant.created` auditado en la organización nueva; email existente reutilizado con su contraseña intacta; slug duplicado → 409 `TENANT_SLUG_TAKEN` sin crear la cuenta; usuario común → 403; sin credenciales → 401; 5 bodies inválidos → 400; `/auth/me` expone `platformAdmin`; listado para superadministradores. `npx vitest run` 124/124, `test:e2e` 7/7, `tsc --noEmit` OK.
+- [x] Migración `0014_platform_admin`, guard, controlador, servicio, validación zod y CLI de arranque.
+- Fuera de alcance: UI de superadministrador, suspensión/baja de organizaciones, planes (`SUB-01`) y revocación de la bandera por API (hoy sólo por SQL).
 
 #### Dominio
 

@@ -92,6 +92,27 @@ Al arrancar, el servicio `db-migrate` corre `npm run db:setup` una vez con el ro
 
 Todos los puertos se publican sólo en `127.0.0.1`. La web llama siempre a la ruta relativa `/api/v1`; el proxy de desarrollo ([`apps/web/proxy.conf.cjs`](apps/web/proxy.conf.cjs)) la envía a `API_PROXY_TARGET` (`http://api:3000` en Compose). Ambos contenedores detectan cambios de código por polling, porque los bind mounts de Windows/macOS no entregan eventos de archivos.
 
+#### Primer superadministrador y primera organización (`CORE-04`)
+
+Nadie puede llamar a la API antes de que exista un superadministrador, así que el primero se crea con un CLI que usa la conexión del dueño de la base (desde la raíz del repo, PowerShell o Git Bash):
+
+```powershell
+docker compose run --rm --no-deps db-migrate node apps/api/scripts/create-platform-admin.mjs --email admin@example.com --name "Ada Admin" --password "una-clave-de-12-o-mas"
+```
+
+Es idempotente: si el email ya existe sólo lo promueve (no cambia su contraseña). Con `NODE_ENV=production` se niega a correr salvo que se pase `--allow-production`, y nunca imprime la contraseña.
+
+Después, iniciá sesión y creá la organización con su dueño (PowerShell):
+
+```powershell
+$api = "http://localhost:3000/api/v1"
+$login = Invoke-RestMethod -Method Post -Uri "$api/auth/login" -ContentType "application/json" -Body (@{ email = "admin@example.com"; password = "una-clave-de-12-o-mas" } | ConvertTo-Json)
+$body = @{ name = "Feria Norte"; slug = "feria-norte"; owner = @{ email = "duena@example.com"; fullName = "Ana Dueña"; password = "otra-clave-larga" } } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "$api/tenants" -Headers @{ Authorization = "Bearer $($login.accessToken)" } -ContentType "application/json" -Body $body
+```
+
+Responde `201` con `{ id, name, slug, owner: { userId, email, created } }`; el dueño ya puede iniciar sesión. Si el email del dueño ya tenía cuenta se reutiliza (`created: false`) y su contraseña no cambia. Un slug repetido responde `409 TENANT_SLUG_TAKEN`.
+
 ### 3. Con npm (sin contenedores de apps)
 
 ```bash

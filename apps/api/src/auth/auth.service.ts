@@ -1,9 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { configuration, type AppConfiguration } from '../config/configuration.js';
-import { DatabaseService, type Database, type Transaction } from '../db/database.service.js';
-import { memberships, refreshTokens, tenants, users, type MembershipRole } from '../db/schema.js';
+import {
+  configuration,
+  type AppConfiguration,
+} from '../config/configuration.js';
+import {
+  DatabaseService,
+  type Database,
+  type Transaction,
+} from '../db/database.service.js';
+import {
+  memberships,
+  refreshTokens,
+  tenants,
+  users,
+  type MembershipRole,
+} from '../db/schema.js';
 import { verifyAgainstDummy, verifyPassword } from './password.js';
 import { AccessTokens, hashRefreshToken, newRefreshToken } from './tokens.js';
 
@@ -17,6 +30,11 @@ export interface MembershipView {
 export interface Profile {
   readonly user: { readonly id: string; readonly email: string };
   readonly memberships: readonly MembershipView[];
+}
+
+/** GET /me: the profile plus whether the user is a platform administrator (CORE-04). */
+export interface MeView extends Profile {
+  readonly platformAdmin: boolean;
 }
 
 /** What a successful login/refresh returns; the refresh token only travels in the cookie. */
@@ -40,7 +58,10 @@ export class AuthService {
     private readonly database: DatabaseService,
     @Inject(configuration.KEY) env: AppConfiguration,
   ) {
-    this.access = new AccessTokens(env.auth.accessTokenSecret, env.auth.accessTokenTtlSeconds);
+    this.access = new AccessTokens(
+      env.auth.accessTokenSecret,
+      env.auth.accessTokenTtlSeconds,
+    );
     this.refreshSecret = env.auth.refreshTokenSecret;
     this.refreshTtlSeconds = env.auth.refreshTokenTtlSeconds;
   }
@@ -55,7 +76,11 @@ export class AuthService {
     if (!user) return verifyAgainstDummy(password).then(() => null);
     const valid = await verifyPassword(user.passwordHash, password);
     if (!valid || user.status !== 'ACTIVE') return null;
-    const refreshToken = await this.issueRefreshToken(db, user.id, randomUUID());
+    const refreshToken = await this.issueRefreshToken(
+      db,
+      user.id,
+      randomUUID(),
+    );
     return this.session(db, user, refreshToken);
   }
 
@@ -78,12 +103,18 @@ export class AuthService {
       }
       if (row.expiresAt.getTime() <= Date.now()) return null;
 
-      const [user] = await tx.select().from(users).where(eq(users.id, row.userId));
+      const [user] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, row.userId));
       if (!user || user.status !== 'ACTIVE') {
         await this.revokeFamily(tx, row.familyId);
         return null;
       }
-      await tx.update(refreshTokens).set({ usedAt: new Date() }).where(eq(refreshTokens.id, row.id));
+      await tx
+        .update(refreshTokens)
+        .set({ usedAt: new Date() })
+        .where(eq(refreshTokens.id, row.id));
       const next = await this.issueRefreshToken(tx, user.id, row.familyId);
       return this.session(tx, user, next);
     });
@@ -103,11 +134,15 @@ export class AuthService {
     return this.access.verify(token);
   }
 
-  async profile(userId: string): Promise<Profile | null> {
+  async profile(userId: string): Promise<MeView | null> {
     const db = this.database.db;
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (!user || user.status !== 'ACTIVE') return null;
-    return { user: { id: user.id, email: user.email }, memberships: await this.membershipsOf(db, user.id) };
+    return {
+      user: { id: user.id, email: user.email },
+      memberships: await this.membershipsOf(db, user.id),
+      platformAdmin: user.isPlatformAdmin,
+    };
   }
 
   private async session(
@@ -125,7 +160,10 @@ export class AuthService {
     };
   }
 
-  private membershipsOf(db: Database | Transaction, userId: string): Promise<MembershipView[]> {
+  private membershipsOf(
+    db: Database | Transaction,
+    userId: string,
+  ): Promise<MembershipView[]> {
     return db
       .select({
         tenantId: tenants.id,
@@ -160,10 +198,18 @@ export class AuthService {
     return token;
   }
 
-  private async revokeFamily(db: Database | Transaction, familyId: string): Promise<void> {
+  private async revokeFamily(
+    db: Database | Transaction,
+    familyId: string,
+  ): Promise<void> {
     await db
       .update(refreshTokens)
       .set({ revokedAt: new Date() })
-      .where(and(eq(refreshTokens.familyId, familyId), isNull(refreshTokens.revokedAt)));
+      .where(
+        and(
+          eq(refreshTokens.familyId, familyId),
+          isNull(refreshTokens.revokedAt),
+        ),
+      );
   }
 }

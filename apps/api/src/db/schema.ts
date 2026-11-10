@@ -71,6 +71,8 @@ export const users = pgTable(
     passwordHash: text('password_hash').notNull(),
     status: text('status').notNull().default('ACTIVE'),
     fullName: text('full_name'),
+    /** SaaS superadministrator (§1.3): operates tenants; not a tenant role. */
+    isPlatformAdmin: boolean('is_platform_admin').notNull().default(false),
     /** E.164 digits without "+", e.g. 5491123456789 (EXH-04). */
     phone: text('phone'),
     /** Set when the account was confirmed (accepting an invitation, EXH-04); RES-01 requires it. */
