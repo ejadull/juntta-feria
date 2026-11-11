@@ -39,7 +39,7 @@ const STATUS_LABEL: Readonly<Record<LayoutVersionStatus, string>> = {
     <div class="mx-auto flex max-w-[100rem] flex-col gap-4 px-4 py-6 sm:px-8 sm:py-8">
       <header class="flex flex-wrap items-end justify-between gap-4">
         <div class="min-w-0">
-          <p class="text-sm font-semibold tracking-wider text-primary">
+          <p class="text-sm font-semibold tracking-wider text-primary-strong">
             ORGANIZADOR · PLANO DEL PREDIO
           </p>
           <h1 class="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">Editor de plano</h1>
@@ -55,7 +55,7 @@ const STATUS_LABEL: Readonly<Record<LayoutVersionStatus, string>> = {
             role="status"
             class="inline-flex items-center gap-1.5 rounded-full border border-current px-3 py-1 text-sm font-medium"
             [class.text-danger]="issueCount() > 0"
-            [class.text-primary]="issueCount() === 0"
+            [class.text-primary-strong]="issueCount() === 0"
           >
             {{ issueCount() === 0 ? '✓ Sin errores' : '⚠ ' + issueCount() + ' error(es)' }}
           </span>
@@ -72,7 +72,7 @@ const STATUS_LABEL: Readonly<Record<LayoutVersionStatus, string>> = {
           <div class="flex min-w-0 flex-wrap items-center gap-3">
             @if (store.isReadOnly()) {
               <span
-                class="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary"
+                class="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary-strong"
               >
                 v{{ v.version }} {{ statusLabel().toLowerCase() }}
               </span>

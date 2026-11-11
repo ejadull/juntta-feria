@@ -29,7 +29,7 @@ export const P12 = '/organizador/mercado-pago';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-3xl px-4 py-6 sm:px-8 sm:py-8">
-      <p class="text-sm font-semibold tracking-wider text-primary">ORGANIZADOR</p>
+      <p class="text-sm font-semibold tracking-wider text-primary-strong">ORGANIZADOR</p>
       <h1 class="mt-1 text-3xl font-semibold sm:text-4xl">Vincular Mercado Pago</h1>
       @if (problem(); as p) {
         <p role="alert" class="mt-6 rounded-xl bg-danger/10 p-4 text-text">{{ messages[p] }}</p>

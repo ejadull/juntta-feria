@@ -38,7 +38,7 @@ const UNLINK_FAILED = 'No pudimos desvincular la cuenta. Probá de nuevo.';
     <div class="mx-auto max-w-3xl px-4 py-6 sm:px-8 sm:py-8">
       <header class="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p class="text-sm font-semibold tracking-wider text-primary">ORGANIZADOR</p>
+          <p class="text-sm font-semibold tracking-wider text-primary-strong">ORGANIZADOR</p>
           <h1 class="mt-1 text-3xl font-semibold sm:text-4xl">Mercado Pago</h1>
         </div>
         <span class="rounded-full bg-reserved/15 px-3 py-1 text-xs font-medium text-text">

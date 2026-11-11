@@ -9,8 +9,9 @@
     <!-- Applies the saved palette before Angular boots (shared/theme.ts, same key). -->
     <script>
       try {
-        if (localStorage.getItem('juntta.theme') === 'corporativo')
-          document.documentElement.dataset.theme = 'corporativo';
+        const theme = localStorage.getItem('juntta.theme');
+        if (theme === 'corporativo' || theme === 'grafito')
+          document.documentElement.dataset.theme = theme;
       } catch {}
     </script>
     <link rel="icon" type="image/x-icon" href="favicon.ico" />

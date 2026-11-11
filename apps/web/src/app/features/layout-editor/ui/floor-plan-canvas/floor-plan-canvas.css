@@ -87,7 +87,7 @@
 .chip-toggle[aria-pressed='true'] {
   background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
   border-color: var(--color-primary);
-  color: var(--color-primary);
+  color: var(--color-primary-strong);
 }
 
 .chip-toggle:focus-visible {

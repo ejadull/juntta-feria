@@ -44,7 +44,7 @@ function chips<K extends keyof StandFilter>(
   template: `
     <section class="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 lg:px-8">
       <header>
-        <p class="text-sm font-semibold tracking-wider text-primary">
+        <p class="text-sm font-semibold tracking-wider text-primary-strong">
           FERIANTE · {{ eventName() }}
         </p>
         <h1 class="mt-1 text-3xl font-semibold">Elegí tu stand</h1>
@@ -200,7 +200,7 @@ function chips<K extends keyof StandFilter>(
     .chip[aria-pressed='true'] {
       border-color: var(--color-primary);
       background: var(--color-primary);
-      color: var(--color-surface);
+      color: var(--color-on-primary);
       font-weight: 600;
     }
     .chip:focus-visible,

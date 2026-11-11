@@ -8,7 +8,7 @@ import type { ValidationIssue } from '../../domain/validation';
   template: `
     <h2 class="mb-3 text-sm font-semibold text-text">Validación</h2>
     @if (issues().length === 0) {
-      <p class="text-sm text-primary">✓ Sin errores. La versión se puede publicar.</p>
+      <p class="text-sm text-primary-strong">✓ Sin errores. La versión se puede publicar.</p>
     } @else {
       <p class="mb-2 text-sm font-medium text-danger">
         {{ issues().length === 1 ? '1 error bloquea' : issues().length + ' errores bloquean' }} la

@@ -65,7 +65,7 @@
 .chip-toggle[aria-pressed='true'] {
   border-color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
-  color: var(--color-primary);
+  color: var(--color-primary-strong);
 }
 
 .swatch {

@@ -150,12 +150,12 @@ function areaOf(url: string): Area {
     >
       <a [routerLink]="area().home" class="flex items-center gap-2 font-bold tracking-wide">
         <span
-          class="grid size-9 place-items-center rounded-md bg-primary text-lg font-bold text-surface"
+          class="grid size-9 place-items-center rounded-md bg-primary text-lg font-bold text-on-primary"
           aria-hidden="true"
           >j</span
         >
         <span class="leading-tight">
-          <span class="block text-xl font-bold tracking-tight text-primary"
+          <span class="block text-xl font-bold tracking-tight text-primary-strong"
             >juntta<span class="text-secondary" aria-hidden="true">.</span></span
           >
           <span class="block text-[0.6875rem] font-semibold tracking-[0.14em] text-text-muted"
@@ -254,7 +254,7 @@ function areaOf(url: string): Area {
         } @else {
           <a class="btn w-full justify-center" routerLink="/ingresar">Ingresar</a>
         }
-        <p class="hidden rounded-xl bg-primary/10 p-3 text-xs text-primary lg:block">
+        <p class="hidden rounded-xl bg-primary/10 p-3 text-xs text-primary-strong lg:block">
           @if (area().id === 'feriante') {
             <strong>Entorno de prueba.</strong> Los pagos se hacen en el sandbox de Mercado Pago.
           } @else {
@@ -338,7 +338,7 @@ function areaOf(url: string): Area {
     }
     .nav-link[aria-current='page'] {
       background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-      color: var(--color-primary);
+      color: var(--color-primary-strong);
       font-weight: 600;
       box-shadow: inset 3px 0 0 var(--color-primary);
     }

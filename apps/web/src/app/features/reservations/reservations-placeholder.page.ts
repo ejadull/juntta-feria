@@ -11,7 +11,7 @@ import { RouterLink } from '@angular/router';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="mx-auto max-w-3xl px-6 py-10">
-      <p class="text-sm font-semibold tracking-wider text-primary">{{ eyebrow() }}</p>
+      <p class="text-sm font-semibold tracking-wider text-primary-strong">{{ eyebrow() }}</p>
       <h1 class="mt-1 text-3xl font-semibold">{{ heading() }}</h1>
       <p class="mt-3 text-text-muted">Esta sección todavía no está disponible. {{ intro() }}</p>
 

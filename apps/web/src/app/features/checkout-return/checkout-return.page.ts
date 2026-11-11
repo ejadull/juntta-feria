@@ -50,7 +50,7 @@ type View = 'loading' | 'confirmed' | 'waiting' | 'rejected' | 'expired' | 'clos
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-3xl px-4 py-6 sm:px-8 sm:py-8">
-      <p class="text-sm font-semibold tracking-wider text-primary">FERIANTE</p>
+      <p class="text-sm font-semibold tracking-wider text-primary-strong">FERIANTE</p>
 
       @switch (view()) {
         @case ('loading') {

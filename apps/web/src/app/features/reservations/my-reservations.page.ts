@@ -29,7 +29,7 @@ const time = (iso: string): string =>
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="mx-auto max-w-4xl px-4 py-6 sm:px-8 sm:py-8">
-      <p class="text-sm font-semibold tracking-wider text-primary">FERIANTE</p>
+      <p class="text-sm font-semibold tracking-wider text-primary-strong">FERIANTE</p>
       <h1 class="mt-1 text-3xl font-semibold">Mis reservas</h1>
       <p class="mt-2 text-text-muted">Tus stands, su estado de pago y cómo seguir con cada uno.</p>
 

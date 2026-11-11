@@ -31,7 +31,7 @@ const dateRange = (e: PublicEventSummaryDto): string =>
   template: `
     <section class="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 lg:px-8">
       <header>
-        <p class="text-sm font-semibold tracking-wider text-primary">VISITANTE</p>
+        <p class="text-sm font-semibold tracking-wider text-primary-strong">VISITANTE</p>
         <h1 class="mt-1 text-3xl font-semibold">Ferias de emprendedores, del plano al stand</h1>
         <p class="mt-1 text-text-muted">
           Encontrá ferias cerca tuyo, mirá el plano y conocé a quienes exponen.

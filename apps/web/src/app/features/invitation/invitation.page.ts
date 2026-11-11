@@ -49,7 +49,7 @@ const SIGN_IN_AFTER_ACCEPT =
   imports: [GoogleSignInButton, RouterLink],
   template: `
     <section class="mx-auto max-w-md px-4 py-10 sm:px-6">
-      <p class="text-sm font-semibold tracking-wider text-primary">INVITACIÓN</p>
+      <p class="text-sm font-semibold tracking-wider text-primary-strong">INVITACIÓN</p>
 
       @if (status() === 'loading') {
         <h1 class="mt-1 text-3xl font-semibold">Abriendo tu invitación…</h1>

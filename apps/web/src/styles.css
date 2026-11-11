@@ -38,6 +38,8 @@
   --color-blocked: #eceeed; /* disabled look, always with the dashed stroke */
   --color-blocked-stroke: #8a908e;
   --color-selected: #326bb5; /* selection and keyboard focus */
+  --color-on-primary: #ffffff; /* text on filled primary (buttons, active chips) */
+  --color-primary-strong: var(--color-primary); /* primary as text; a theme may lighten it */
 
   /* Feedback */
   --color-danger: #c44949; /* validation errors only — not a stand state */
@@ -81,6 +83,44 @@
   --color-selected: #2563eb;
 }
 
+/*
+ * Dark theme "Grafito" (docs/paleta2.webp): Negro Metálico 60%, Gris Niebla 30%, Naranja
+ * Fundido 10%. Adjusted for WCAG AA: buttons carry dark text on orange (5.55:1; white is 3.13),
+ * Gris Contorno #75757a is kept for borders (3:1) and secondary text uses #a1a1a6 (5.34:1 on
+ * Negro Acero); Naranja Alerta #d04800 is a fill, its lighter tone carries text.
+ */
+:root[data-theme='grafito'] {
+  color-scheme: dark;
+
+  --color-primary: #ff5a00; /* Naranja Fundido: CTAs, active and selected */
+  --color-primary-hover: #ff7a2e;
+  --color-on-primary: #1a1a1d;
+  --color-primary-strong: #ff8a47; /* orange as text: 5.13:1 on the tinted active nav */
+  --color-secondary: #d04800; /* Naranja Alerta */
+  --color-secondary-strong: #ff7a2e;
+  --color-accent: #10b981; /* Verde Éxito: confirmed payments */
+  --color-accent-strong: #10b981;
+
+  --color-background: #1a1a1d; /* Negro Metálico */
+  --color-surface: #2d2d30; /* Negro Acero */
+  --color-surface-soft: #232326;
+
+  --color-text: #e0e0e2; /* Gris Niebla */
+  --color-text-muted: #a1a1a6;
+  --color-border: #3a3a3e;
+  --color-border-strong: #75757a; /* Gris Contorno */
+
+  --color-available: #10b981;
+  --color-reserved: #0ea5e9; /* Azul Técnico */
+  --color-reserved-stroke: #0ea5e9;
+  --color-occupied: #75757a;
+  --color-occupied-strong: #a1a1a6;
+  --color-blocked: #2d2d30;
+  --color-blocked-stroke: #75757a;
+  --color-selected: #ff7a2e;
+  --color-danger: #f87171;
+}
+
 @layer base {
   body {
     @apply bg-background font-sans text-text antialiased;
@@ -106,7 +146,7 @@
   }
 
   .btn-primary {
-    @apply border-primary bg-primary text-surface hover:border-primary-hover hover:bg-primary-hover;
+    @apply border-primary bg-primary text-on-primary hover:border-primary-hover hover:bg-primary-hover;
   }
 
   .btn-danger {

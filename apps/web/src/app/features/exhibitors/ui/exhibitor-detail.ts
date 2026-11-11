@@ -5,7 +5,7 @@ import type { DocumentsStatus, ExhibitorSummaryDto } from '../data/exhibitor.rep
 export const DOCUMENTS_STATUS: Readonly<
   Record<DocumentsStatus, { label: string; icon: string; tone: string }>
 > = {
-  APPROVED: { label: 'Aprobada', icon: '✓', tone: 'bg-primary/10 text-primary' },
+  APPROVED: { label: 'Aprobada', icon: '✓', tone: 'bg-primary/10 text-primary-strong' },
   PENDING: { label: 'Pendiente', icon: '◔', tone: 'bg-reserved/15 text-text' },
   REJECTED: { label: 'Rechazada', icon: '✕', tone: 'bg-danger/10 text-text' },
   MISSING: { label: 'Sin documentación', icon: '○', tone: 'bg-surface-soft text-text-muted' },

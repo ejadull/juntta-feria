@@ -30,7 +30,7 @@ const OFFLINE = 'No pudimos conectar con el servidor. Revisá tu conexión y pro
   imports: [GoogleSignInButton],
   template: `
     <section class="mx-auto max-w-md px-4 py-10 sm:px-6">
-      <p class="text-sm font-semibold tracking-wider text-primary">INGRESAR</p>
+      <p class="text-sm font-semibold tracking-wider text-primary-strong">INGRESAR</p>
       <h1 class="mt-1 text-3xl font-semibold">Entrá a tu cuenta</h1>
       <p class="mt-2 text-text-muted">
         Entrá con tu cuenta de Google. Si todavía no tenés cuenta, pedile la invitación al

@@ -21,7 +21,7 @@ import { StandMap } from './ui/stand-map/stand-map';
         </div>
       } @else if (data(); as d) {
         <header>
-          <p class="text-sm font-semibold tracking-wider text-primary">
+          <p class="text-sm font-semibold tracking-wider text-primary-strong">
             VISITANTE · {{ d.event.city }}, {{ d.event.province }}
           </p>
           <h1 class="mt-1 text-3xl font-semibold">{{ d.event.name }}</h1>

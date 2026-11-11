@@ -49,7 +49,7 @@ const valueOf = (event: Event): string => (event.target as HTMLInputElement).val
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="mx-auto max-w-3xl px-4 py-6 sm:px-8 sm:py-8">
-      <p class="text-sm font-semibold tracking-wider text-primary">FERIANTE</p>
+      <p class="text-sm font-semibold tracking-wider text-primary-strong">FERIANTE</p>
       <h1 class="mt-1 text-3xl font-semibold">Suscripción</h1>
       <p class="mt-2 text-text-muted">
         Para reservar stands necesitás una suscripción activa a la plataforma. Se paga con Mercado
