@@ -38,8 +38,8 @@
 
 ## Flujo principal
 
-1. El organizador crea un predio y su plano reusable.
-2. Publica un evento con una versión inmutable del plano y tarifas por stand.
+1. El organizador crea un predio (Predios) y su plano reusable (Editor de plano).
+2. Crea un evento sobre una versión publicada del plano (Eventos), carga sectores y tarifas por stand y lo publica (sólo propietarios y administradores).
 3. El feriante elige un stand disponible y crea una reserva temporal.
 4. Se inicia el checkout de Mercado Pago.
 5. La API valida la notificación, consulta el pago y adjudica el stand si corresponde.

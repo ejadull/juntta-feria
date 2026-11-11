@@ -69,6 +69,42 @@ export interface ApiEvent {
   salesOpenAt: string;
   salesCloseAt: string;
   status: string;
+  venueId?: string;
+  publishedAt?: string | null;
+}
+
+export interface ApiVenue {
+  id: string;
+  type: 'FIXED' | 'TEMPORARY';
+  name: string;
+  address: string | null;
+  timezone: string;
+  widthM: number;
+  heightM: number;
+}
+
+export interface ApiTemplate {
+  id: string;
+  name: string;
+  venueId: string | null;
+  versions: { id: string; version: number; status: string; publishedAt: string | null }[];
+}
+
+export interface ApiStand {
+  id: string;
+  layoutObjectId: string;
+  code: string;
+  sectorId: string | null;
+  status: string;
+  priceCents: number;
+  hasPrice: boolean;
+  currency: string;
+}
+
+export interface ApiSector {
+  id: string;
+  name: string;
+  sortOrder: number;
 }
 
 /** `GET /events/:id/metrics` for the default event (EventMetricsDto plus the API extras). */
@@ -367,6 +403,11 @@ export interface MockApi {
   events: ApiEvent[];
   /** Layout versions by id (`/layout-versions/:id`): the editor reads, saves, publishes and clones. */
   layouts: Record<string, LayoutVersionDto>;
+  /** Organizer setup: venues, plans (templates) and, per event id, its stands and sectors. */
+  venues: ApiVenue[];
+  templates: ApiTemplate[];
+  eventStands: Record<string, ApiStand[]>;
+  eventSectors: Record<string, ApiSector[]>;
   /** Organizer's exhibitors (`GET /exhibitors`). */
   exhibitors: ApiExhibitor[];
   /** Organizer's exhibitor invitations (`/exhibitor-invitations`). */
@@ -421,6 +462,10 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
       lv1: structuredClone(LAYOUT) as unknown as LayoutVersionDto,
       [DEMO_LAYOUT.id]: structuredClone(DEMO_LAYOUT),
     },
+    venues: [],
+    templates: [],
+    eventStands: {},
+    eventSectors: {},
     exhibitors: structuredClone(EXHIBITORS),
     invitations: structuredClone(INVITATIONS),
     publicEvents: structuredClone(PUBLIC_EVENTS),
@@ -480,6 +525,140 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
       return route.fulfill({ status: 204 });
     }
     if (!api.signedIn) return problem(route, 401);
+
+    if (path === '/venues') {
+      if (method === 'POST') {
+        const body = JSON.parse(raw ?? '{}') as Omit<ApiVenue, 'id'>;
+        const created: ApiVenue = { ...body, id: `v${api.venues.length + 1}` };
+        api.venues = [...api.venues, created];
+        return json(route, created, 201);
+      }
+      return json(route, api.venues);
+    }
+    const venue = /^\/venues\/([^/]+)$/.exec(path);
+    if (venue && method === 'DELETE') {
+      api.venues = api.venues.filter((v) => v.id !== venue[1]);
+      return route.fulfill({ status: 204 });
+    }
+    if (path === '/layout-templates') {
+      if (method === 'POST') {
+        const body = JSON.parse(raw ?? '{}') as { name: string; venueId: string };
+        if (api.templates.some((t) => t.name.toLowerCase() === body.name.toLowerCase()))
+          return problem(route, 409);
+        const n = api.templates.length + 1;
+        const draft: LayoutVersionDto = {
+          id: `tpl${n}-v1`,
+          templateId: `tpl${n}`,
+          version: 1,
+          status: 'DRAFT',
+          widthM: 20,
+          heightM: 8,
+          objects: [],
+        };
+        api.layouts[draft.id] = draft;
+        api.templates = [
+          ...api.templates,
+          {
+            id: draft.templateId,
+            name: body.name,
+            venueId: body.venueId,
+            versions: [{ id: draft.id, version: 1, status: 'DRAFT', publishedAt: null }],
+          },
+        ];
+        return json(route, draft, 201);
+      }
+      return json(route, api.templates);
+    }
+    if (path === '/events' && method === 'POST') {
+      const body = JSON.parse(raw ?? '{}') as ApiEvent;
+      const created: ApiEvent = {
+        ...body,
+        id: `e-new-${api.events.length + 1}`,
+        slug: body.slug ?? body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        status: 'DRAFT',
+        publishedAt: null,
+      };
+      api.events = [created, ...api.events];
+      api.eventStands[created.id] = (api.layouts[body.layoutVersionId]?.objects ?? [])
+        .filter((o) => o.kind === 'STAND')
+        .map((o, i) => ({
+          id: `${created.id}-st${i + 1}`,
+          layoutObjectId: o.id,
+          code: o.code ?? `S${i + 1}`,
+          sectorId: null,
+          status: 'AVAILABLE',
+          priceCents: 0,
+          hasPrice: false,
+          currency: 'ARS',
+        }));
+      api.eventSectors[created.id] = [];
+      return json(route, created, 201);
+    }
+    const eventRoute = /^\/events\/([^/]+)(\/publish|\/stands|\/sectors(?:\/([^/]+))?)?$/.exec(
+      path,
+    );
+    const ownEvent = eventRoute && api.events.find((e) => e.id === eventRoute[1]);
+    if (eventRoute && ownEvent && eventRoute[2] === undefined) {
+      if (method === 'PATCH') Object.assign(ownEvent, JSON.parse(raw ?? '{}'));
+      return json(route, ownEvent);
+    }
+    if (eventRoute && ownEvent && eventRoute[2] === '/publish') {
+      const stands = api.eventStands[ownEvent.id] ?? [];
+      const unpriced = stands.filter((s) => s.status !== 'DISABLED' && !s.hasPrice);
+      const issues = [
+        ...(unpriced.length > 0
+          ? [{ code: 'STAND_WITHOUT_PRICE', objectIds: unpriced.map((s) => s.id), message: 'x' }]
+          : []),
+        ...(stands.some((s) => s.status === 'AVAILABLE')
+          ? []
+          : [{ code: 'NO_SELLABLE_STANDS', objectIds: [], message: 'y' }]),
+      ];
+      if (issues.length > 0)
+        return json(route, { title: 'Unprocessable', status: 422, detail: 'x', issues }, 422);
+      ownEvent.status = 'PUBLISHED';
+      ownEvent.publishedAt = new Date().toISOString();
+      return json(route, ownEvent);
+    }
+    if (eventRoute && api.eventStands[eventRoute[1]] && eventRoute[2] === '/stands') {
+      const stands = api.eventStands[eventRoute[1]];
+      if (method !== 'PATCH') return json(route, stands);
+      const change = JSON.parse(raw ?? '{}') as {
+        standIds: string[];
+        priceCents?: number;
+        sectorId?: string | null;
+        status?: string;
+      };
+      const touched = stands.filter((s) => change.standIds.includes(s.id));
+      for (const s of touched) {
+        if (change.priceCents !== undefined) {
+          s.priceCents = change.priceCents;
+          s.hasPrice = true;
+        }
+        if (change.sectorId !== undefined) s.sectorId = change.sectorId;
+        if (change.status) s.status = change.status;
+      }
+      return json(route, touched);
+    }
+    if (eventRoute && api.eventSectors[eventRoute[1]] && eventRoute[2]?.startsWith('/sectors')) {
+      const sectors = api.eventSectors[eventRoute[1]];
+      if (method === 'POST') {
+        const body = JSON.parse(raw ?? '{}') as { name: string; sortOrder?: number };
+        if (sectors.some((s) => s.name.toLowerCase() === body.name.toLowerCase()))
+          return problem(route, 409);
+        const created = {
+          id: `sec${sectors.length + 1}`,
+          name: body.name,
+          sortOrder: body.sortOrder ?? 0,
+        };
+        sectors.push(created);
+        return json(route, created, 201);
+      }
+      if (eventRoute[3] && method === 'DELETE') {
+        api.eventSectors[eventRoute[1]] = sectors.filter((s) => s.id !== eventRoute[3]);
+        return route.fulfill({ status: 204 });
+      }
+      return json(route, sectors);
+    }
 
     if (path === '/events') return json(route, api.events);
     const metrics = /^\/events\/([^/]+)\/metrics$/.exec(path);

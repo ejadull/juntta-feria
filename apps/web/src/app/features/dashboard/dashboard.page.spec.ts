@@ -6,6 +6,12 @@ import { EventMetricsRepository } from './data/event-metrics.repository';
 import { InMemoryEventMetricsRepository } from './data/in-memory-event-metrics.repository';
 import { InMemoryReservationsExportRepository } from '../reports/data/in-memory-reservations-export.repository';
 import { ReservationsExportRepository } from '../reports/data/reservations-export.repository';
+import { InMemoryLayoutTemplatesRepository } from '../layout-editor/data/in-memory-layout-templates.repository';
+import { LayoutTemplatesRepository } from '../layout-editor/data/layout-templates.repository';
+import { InMemoryPaymentAccountRepository } from '../payment-account/data/in-memory-payment-account.repository';
+import { PaymentAccountRepository } from '../payment-account/data/payment-account.repository';
+import { InMemoryVenueRepository } from '../venues/data/in-memory-venue.repository';
+import { VenueRepository } from '../venues/data/venue.repository';
 import { DashboardPage } from './dashboard.page';
 
 const plain = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
@@ -27,6 +33,10 @@ async function render(
       { provide: EventMetricsRepository, useValue: repo },
       { provide: EventsRepository, useValue: events },
       { provide: ReservationsExportRepository, useClass: InMemoryReservationsExportRepository },
+      // "Primeros pasos" shows when no event is on sale.
+      { provide: PaymentAccountRepository, useClass: InMemoryPaymentAccountRepository },
+      { provide: VenueRepository, useValue: new InMemoryVenueRepository() },
+      { provide: LayoutTemplatesRepository, useValue: new InMemoryLayoutTemplatesRepository() },
       provideRouter([]),
     ],
   });
@@ -133,7 +143,9 @@ describe('DashboardPage (P03)', () => {
     const { host } = await render(new InMemoryEventMetricsRepository(), { list: () => of([]) });
     const empty = host.querySelector('[data-testid="no-events"]');
     expect(plain(empty?.textContent)).toContain('Todavía no hay eventos');
-    expect(empty?.querySelector('a')?.getAttribute('href')).toBe('/organizador/mercado-pago');
+    expect(plain(empty?.querySelector('a')?.textContent)).toBe('Crear evento');
+    expect(empty?.querySelector('a')?.getAttribute('href')).toBe('/organizador/eventos?nuevo=1');
+    expect(host.querySelector('[data-testid="setup-checklist"]')).not.toBeNull();
     expect(host.querySelector('app-kpi-card')).toBeNull();
   });
 

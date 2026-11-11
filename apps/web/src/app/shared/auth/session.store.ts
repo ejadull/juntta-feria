@@ -43,6 +43,13 @@ export class SessionStore {
     );
   });
 
+  /** Role in the active organization (null without session). */
+  readonly role = computed(
+    () => this.memberships().find((m) => m.tenantId === this.tenantId())?.role ?? null,
+  );
+  /** OWNER and ADMIN: the API reserves publishing and destructive actions (OWNERS) for them. */
+  readonly canAdminister = computed(() => this.role() === 'OWNER' || this.role() === 'ADMIN');
+
   /** Area of the active organization's role (organizer, exhibitor) or visitor: the single source for menus and guards. */
   readonly area = computed(() =>
     areaFor(this.user() !== null, this.memberships(), this.tenantId()),

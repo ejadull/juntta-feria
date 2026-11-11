@@ -29,6 +29,11 @@ export function signedInAs(
     user,
     memberships,
     tenantId: chosen.asReadonly(),
+    role: computed(() => memberships().find((m) => m.tenantId === chosen())?.role ?? null),
+    canAdminister: computed(() => {
+      const role = memberships().find((m) => m.tenantId === chosen())?.role;
+      return role === 'OWNER' || role === 'ADMIN';
+    }),
     area: computed(() => areaFor(true, memberships(), chosen())),
     accessToken: () => 'token',
     selectTenant: (id: string) => chosen.set(id),

@@ -569,7 +569,8 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
   - 2026-11-03: `npm test --workspace api` 76/76, `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
 - [x] `tenantId()` en el schema: el `tenant_id` de las tablas de tenant toma por defecto el `app.tenant_id` de la transacción, así que el cliente nunca lo provee (lo usan `audit_logs` y `venues`).
 - [x] `UNIQUE (tenant_id, id)` en `venues`, como destino de las FK compuestas de layouts y eventos (INV-02).
-- Fuera de alcance: ubicación geográfica (§3.1 no la define; EP02 menciona "ubicación", alcanza con `address`), paginación del listado y pantalla P04 en el frontend. La baja de un predio en uso responde 409 desde `LAY-01` (FK `RESTRICT`).
+- Web: `/organizador/predios` (listado, alta, edición y baja con confirmación en la página; la baja sólo para OWNER/ADMIN, como la API; 409 si el predio está en uso).
+- Fuera de alcance: ubicación geográfica (§3.1 no la define; EP02 menciona "ubicación", alcanza con `address`), paginación del listado. La baja de un predio en uso responde 409 desde `LAY-01` (FK `RESTRICT`).
 
 ##### LAY-01 — Layouts versionados
 
@@ -585,7 +586,7 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
 - **Evidencia requerida:** pruebas de integración contra PostgreSQL/PostGIS real.
   - 2026-11-03: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 61/61 (17 de `test/layouts.int-spec.ts`): plantilla con versión 1 en borrador del tamaño del predio; predio ajeno → 404 y plantilla sin predio ni medidas → 400; listado por tenant con versiones; borradores con anillo abierto, tipo desconocido, coordenada no numérica, id mal formado o ids repetidos → 400; un borrador inválido se guarda y al publicar → 422 con `STAND_OVERLAP`, `OUT_OF_BOUNDS`, `CODE_MISSING`, `CODE_DUPLICATE`, `STAND_ON_RESERVED` e `INVALID_GEOMETRY` sobre los objetos exactos; `NO_STANDS`; la geometría vuelve idéntica, compartir un borde es válido y OPERATOR → 403 al publicar; versión publicada → 409 al guardar o republicar, y `UPDATE` directo en la base rechazado por los triggers; el clon es versión 2 con los mismos ids y un segundo borrador → 409; publicar la v2 archiva la v1; versión o plantilla de otro tenant → 404; borrar un predio en uso → 409; fuera de un tenant, las tres tablas devuelven 0 filas.
   - 2026-11-03: `npm test --workspace api` 78/78 (incluye `issues` en problem+json sólo para 4xx), `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
-- Pendiente para la integración con el frontend: un `HttpLayoutRepository` en el editor, que sume `INVALID_GEOMETRY` a `ValidationCode` y lea `issues` del 422 para `PublishRejectedError`.
+- Web: `/organizador/plano` lista los planos con el estado de cada versión (borrador, publicada, archivada) y permite "Nuevo plano" (elegir predio, crear la plantilla y abrir su borrador en el editor).
 - Fuera de alcance: borrar plantillas o borradores, editar las medidas de un borrador, polígonos con huecos y objetos sobre `UTILITY`/`OBSTACLE` (el editor tampoco los valida).
 
 ##### EVT-01 — Eventos, stands y tarifas
@@ -603,7 +604,7 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
 - **Evidencia requerida:** pruebas de integración contra PostgreSQL real.
   - 2026-11-03: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 76/76 (15 de `test/events.int-spec.ts`): alta en borrador con slug generado, fechas normalizadas y stands A1–A3 disponibles, sin precio y con el `layoutObjectId` del plano; plano en borrador → 409, predio de otro tenant → 404, fechas incoherentes o sin offset → 400; slug repetido → 409; listado y lectura sólo del tenant; sectores con nombre único (409) y orden por `sortOrder`; precio y sector en bloque; 400 con stands ajenos, sector de otro evento, precio negativo o con decimales, estado `ASSIGNED`, sin cambios o lista vacía; OPERATOR → 403 al publicar; publicar con un stand sin precio → 422 con ese stand; deshabilitarlo y publicar → 200; evento publicado → 409 al editar o republicar, pero el precio sigue editable; edición de borrador con fechas validadas contra las guardadas; borrar un sector deja sus stands sin sector; en la base, un evento sobre un plano en borrador es rechazado y un sector de otro evento → `23503`; alta y publicación auditadas; fuera de un tenant, las tres tablas devuelven 0 filas.
   - 2026-11-03: `npm test --workspace api` 86/86 (incluye `slugify` y `datesProblem`), `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
-- Fuera de alcance: métricas (`/events/:id/metrics`, `REP-01`), transiciones `ACTIVE`/`CLOSED`/`CANCELLED` (dependen de las reservas, `RES-01`), reglas de tarifa por m² o por sector (§4.4, posteriores al MVP), "copiar sectores de otro evento" y la pantalla P09.
+- Fuera de alcance: métricas (`/events/:id/metrics`, `REP-01`), transiciones `ACTIVE`/`CLOSED`/`CANCELLED` (dependen de las reservas, `RES-01`), reglas de tarifa por m² o por sector (§4.4, posteriores al MVP), "copiar sectores de otro evento". Web: `/organizador/eventos` (listado, alta con predio y plano publicado, fechas en horario de Argentina) y `/organizador/eventos/:id` con pestañas Datos (edición sólo en borrador), Sectores (CRUD) y Stands y precios (precio en ARS, sector y estado por fila; el guardado agrupa los cambios iguales en un `PATCH /events/:id/stands`); "Publicar" sólo para OWNER/ADMIN y muestra los `issues` del 422. La moneda no se elige: la API no la recibe.
 
 ##### EXH-01 — Expositores
 

@@ -20,27 +20,52 @@ test('the dashboard explains what to do when the organization has no events', as
   await mockApi(page, { role: 'OWNER', events: [] });
   await page.goto('/organizador/panel');
   await expect(page.getByText('Todavía no hay eventos')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Vincular Mercado Pago' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Crear evento' })).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
 });
 
-test('"Editor de plano" opens the layout of the current event', async ({ page }) => {
+test('the dashboard opens the layout of the current event in the editor', async ({ page }) => {
   await mockApi(page, { role: 'OWNER' });
   await page.goto('/organizador/panel');
-  // Wait for the panel: it also renders an "Editor de plano" link, so use the navigation's one.
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Panel del evento');
-  await page
-    .getByRole('navigation', { name: 'Secciones del organizador' })
-    .getByRole('link', { name: 'Editor de plano' })
-    .click();
+  await page.getByRole('link', { name: 'Abrir editor de plano' }).click();
   await expect(page).toHaveURL(/\/organizador\/layouts\/lv1\/editor$/);
   await expect(page.getByText('Versión 1 · Publicada')).toBeVisible();
 });
 
-test('"Editor de plano" says there is no plan when there are no events', async ({ page }) => {
+test('"Editor de plano" lists the plans and their versions', async ({ page }) => {
+  await mockApi(page, {
+    role: 'OWNER',
+    venues: [
+      {
+        id: 'v1',
+        type: 'FIXED',
+        name: 'Predio Demo',
+        address: null,
+        timezone: 'America/Argentina/Buenos_Aires',
+        widthM: 20,
+        heightM: 8,
+      },
+    ],
+    templates: [
+      {
+        id: 'tpl1',
+        name: 'Salón',
+        venueId: 'v1',
+        versions: [{ id: 'lv1', version: 1, status: 'PUBLISHED', publishedAt: null }],
+      },
+    ],
+  });
+  await page.goto('/organizador/plano');
+  await page.getByRole('link', { name: 'Abrir versión 1 · Publicada' }).click();
+  await expect(page).toHaveURL(/\/organizador\/layouts\/lv1\/editor$/);
+});
+
+test('"Editor de plano" asks for a venue first when there is none', async ({ page }) => {
   await mockApi(page, { role: 'OWNER', events: [] });
   await page.goto('/organizador/plano');
-  await expect(page.getByText('Todavía no hay un plano para editar')).toBeVisible();
+  await expect(page.getByText('Primero necesitás un predio')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Crear predio' })).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
 });
 

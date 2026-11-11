@@ -23,3 +23,16 @@ export function messageFor(
   const { status, code } = problemOf(error);
   return (code && byCode[code]) || byStatus[status] || fallback;
 }
+
+/** One entry of the `issues` extension (422 on publish): machine `code`, offending ids, English message. */
+export interface ProblemIssue {
+  readonly code: string;
+  readonly objectIds: readonly string[];
+  readonly message: string;
+}
+
+/** The `issues` list of a problem+json answer; empty when there is none. */
+export function issuesOf(error: unknown): readonly ProblemIssue[] {
+  const issues = (error as { error?: { issues?: unknown } } | null)?.error?.issues;
+  return Array.isArray(issues) ? (issues as readonly ProblemIssue[]) : [];
+}

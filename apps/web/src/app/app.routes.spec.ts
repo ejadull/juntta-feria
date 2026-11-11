@@ -70,24 +70,49 @@ describe('organizer routes (ORG-01)', () => {
     expect(host.querySelector('main app-layout-editor-page')).not.toBeNull();
   });
 
-  it('opens the layout of the current event from "Editor de plano"', async () => {
-    const { router } = await open('/organizador/plano', { as: 'OWNER', settle: false });
-    TestBed.inject(HttpTestingController)
-      .expectOne('/api/v1/events')
-      .flush([
-        {
-          id: 'e1',
-          name: 'Feria',
-          status: 'PUBLISHED',
-          startsAt: '2026-11-20T13:00:00Z',
-          layoutVersionId: 'lv-9',
-        },
-      ]);
-    // The editor then asks for that version; the redirect is what this test cares about.
-    await vi.waitFor(() =>
-      TestBed.inject(HttpTestingController).expectOne('/api/v1/layout-versions/lv-9'),
-    );
-    expect(router.url).toBe('/organizador/layouts/lv-9/editor');
+  it('opens the plan list from "Editor de plano" (LAY-01)', async () => {
+    const { current, host, harness } = await open('/organizador/plano', {
+      as: 'OWNER',
+      settle: false,
+    });
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/venues').flush([]);
+    http.expectOne('/api/v1/layout-templates').flush([]);
+    await harness.fixture.whenStable();
+    expect(current()).toEqual(['Editor de plano']);
+    expect(host.querySelector('main h1')?.textContent).toContain('Editor de plano');
+    expect(host.textContent).toContain('Primero necesitás un predio');
+  });
+
+  it('opens "Predios" and "Eventos" with their sections active (VEN-01, EVT-01)', async () => {
+    const venues = await open('/organizador/predios', { as: 'OWNER', settle: false });
+    TestBed.inject(HttpTestingController).expectOne('/api/v1/venues').flush([]);
+    await venues.harness.fixture.whenStable();
+    expect(venues.current()).toEqual(['Predios']);
+    expect(TestBed.inject(Title).getTitle()).toBe('Predios · Juntta Feria');
+    TestBed.resetTestingModule();
+
+    const events = await open('/organizador/eventos', { as: 'OWNER', settle: false });
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/events').flush([]);
+    http.expectOne('/api/v1/venues').flush([]);
+    http.expectOne('/api/v1/layout-templates').flush([]);
+    await events.harness.fixture.whenStable();
+    expect(events.current()).toEqual(['Eventos']);
+    expect(TestBed.inject(Title).getTitle()).toBe('Eventos · Juntta Feria');
+  });
+
+  it('keeps "Eventos" active on an event detail', async () => {
+    const { current, host, harness } = await open('/organizador/eventos/e-1', {
+      as: 'OWNER',
+      settle: false,
+    });
+    const http = TestBed.inject(HttpTestingController);
+    await vi.waitFor(() => http.expectOne('/api/v1/events/e-1'));
+    http.match('/api/v1/venues');
+    await harness.fixture.whenStable();
+    expect(current()).toEqual(['Eventos']);
+    expect(host.querySelector('app-event-detail-page')).not.toBeNull();
   });
 
   it('opens "Reservas y cobros" with the reservations of the API (RES-01)', async () => {
@@ -215,6 +240,8 @@ describe('areas by role (PUB-UI-01)', () => {
     const { host } = await open('/organizador/panel', { as: 'OPERATOR' });
     expect(navItems(host)).toEqual([
       'Panel',
+      'Eventos',
+      'Predios',
       'Editor de plano',
       'Reservas y cobros',
       'Expositores',

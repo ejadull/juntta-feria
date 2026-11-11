@@ -15,6 +15,7 @@ import {
 } from './data/event-metrics.repository';
 import { ExportCsvButton } from '../reports/ui/export-csv-button';
 import { occupancy } from './domain/occupancy';
+import { SetupChecklist } from './ui/setup-checklist';
 import { GmvChart } from './ui/gmv-chart';
 import { KpiCard } from './ui/kpi-card';
 
@@ -81,7 +82,7 @@ const EVENTS_FAILED = 'No pudimos cargar tus eventos. Probá de nuevo en unos mi
 /** P03 (design D2/D3): read-only KPIs of the current event (REP-01), switchable between events. */
 @Component({
   selector: 'app-dashboard-page',
-  imports: [RouterLink, KpiCard, GmvChart, ExportCsvButton],
+  imports: [RouterLink, KpiCard, GmvChart, ExportCsvButton, SetupChecklist],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
@@ -118,13 +119,21 @@ const EVENTS_FAILED = 'No pudimos cargar tus eventos. Probá de nuevo en unos mi
           <p class="font-semibold">Todavía no hay eventos</p>
           <p class="mt-1 text-sm text-text-muted">
             Cuando tu organización cree y publique su primer evento, acá vas a ver ocupación, ventas
-            y reservas. Mientras tanto, dejá lista la cuenta de cobro.
+            y reservas.
           </p>
-          <a class="btn btn-primary mt-4" routerLink="/organizador/mercado-pago">
-            Vincular Mercado Pago
+          <a
+            class="btn btn-primary mt-4"
+            routerLink="/organizador/eventos"
+            [queryParams]="{ nuevo: 1 }"
+          >
+            Crear evento
           </a>
         </div>
+        <app-setup-checklist [events]="events()" />
       } @else if (metrics(); as m) {
+        @if (!selling()) {
+          <app-setup-checklist [events]="events()" />
+        }
         <section
           aria-label="Indicadores"
           class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
@@ -197,6 +206,10 @@ export class DashboardPage {
     const s = this.eventsState();
     return !!s && 'list' in s && s.list.length === 0;
   });
+
+  protected readonly selling = computed(() =>
+    this.events().some((e) => e.status === 'PUBLISHED' || e.status === 'ACTIVE'),
+  );
 
   private readonly chosenId = signal<string | null>(null);
   /** The user's pick, else the most recent event on sale. */

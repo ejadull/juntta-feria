@@ -36,6 +36,7 @@ const ICON = {
   card: 'M3 6h18v12H3zM3 10h18',
   ticket: 'M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4z',
   calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  pin: 'M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
 };
 
 const AREAS: readonly Area[] = [
@@ -50,6 +51,18 @@ const AREAS: readonly Area[] = [
         link: '/organizador/panel',
         active: under('/organizador/panel'),
         icon: ICON.panel,
+      },
+      {
+        label: 'Eventos',
+        link: '/organizador/eventos',
+        active: under('/organizador/eventos'),
+        icon: ICON.calendar,
+      },
+      {
+        label: 'Predios',
+        link: '/organizador/predios',
+        active: under('/organizador/predios'),
+        icon: ICON.pin,
       },
       {
         label: 'Editor de plano',

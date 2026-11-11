@@ -8,6 +8,14 @@ import { ExhibitorRepository } from './features/exhibitors/data/exhibitor.reposi
 import { HttpExhibitorRepository } from './features/exhibitors/data/http-exhibitor.repository';
 import { HttpInvitationRepository } from './features/exhibitors/data/http-invitation.repository';
 import { InvitationRepository } from './features/exhibitors/data/invitation.repository';
+import { EventAdminRepository } from './features/events/data/event-admin.repository';
+import { EventInventoryRepository } from './features/events/data/event-inventory.repository';
+import { HttpEventAdminRepository } from './features/events/data/http-event-admin.repository';
+import { HttpEventInventoryRepository } from './features/events/data/http-event-inventory.repository';
+import { HttpLayoutTemplatesRepository } from './features/layout-editor/data/http-layout-templates.repository';
+import { LayoutTemplatesRepository } from './features/layout-editor/data/layout-templates.repository';
+import { HttpVenueRepository } from './features/venues/data/http-venue.repository';
+import { VenueRepository } from './features/venues/data/venue.repository';
 import { HttpLayoutRepository } from './features/layout-editor/data/http-layout.repository';
 import { LayoutRepository } from './features/layout-editor/data/layout.repository';
 import { HttpPaymentAccountRepository } from './features/payment-account/data/http-payment-account.repository';
@@ -64,7 +72,13 @@ export const routes: Routes = [
         path: 'organizador',
         canActivate: [areaGuard('organizador')],
         // The current event (Panel, Editor de plano) comes from the API.
-        providers: [{ provide: EventsRepository, useClass: HttpEventsRepository }],
+        providers: [
+          { provide: EventsRepository, useClass: HttpEventsRepository },
+          // Setup: venues, plans and events are created and read from several organizer pages.
+          { provide: VenueRepository, useClass: HttpVenueRepository },
+          { provide: LayoutTemplatesRepository, useClass: HttpLayoutTemplatesRepository },
+          { provide: EventAdminRepository, useClass: HttpEventAdminRepository },
+        ],
         children: [
           { path: '', pathMatch: 'full', redirectTo: 'panel' },
           {
@@ -75,7 +89,37 @@ export const routes: Routes = [
             providers: [
               { provide: EventMetricsRepository, useClass: HttpEventMetricsRepository },
               { provide: ReservationsExportRepository, useClass: HttpReservationsExportRepository },
+              // The "Primeros pasos" checklist asks whether Mercado Pago is linked.
+              { provide: PaymentAccountRepository, useClass: HttpPaymentAccountRepository },
             ],
+          },
+          {
+            path: 'eventos',
+            children: [
+              {
+                path: '',
+                pathMatch: 'full',
+                title: title('Eventos'),
+                loadComponent: () =>
+                  import('./features/events/events.page').then((m) => m.EventsPage),
+              },
+              {
+                path: ':id',
+                title: title('Evento'),
+                loadComponent: () =>
+                  import('./features/events/event-detail.page').then((m) => m.EventDetailPage),
+                providers: [
+                  { provide: EventInventoryRepository, useClass: HttpEventInventoryRepository },
+                  // Only to read the event plan (stand areas).
+                  { provide: LayoutRepository, useClass: HttpLayoutRepository },
+                ],
+              },
+            ],
+          },
+          {
+            path: 'predios',
+            title: title('Predios'),
+            loadComponent: () => import('./features/venues/venues.page').then((m) => m.VenuesPage),
           },
           {
             path: 'plano',

@@ -26,7 +26,30 @@ const shape = (page: Page, id: string) => page.locator(`app-floor-plan-canvas [d
 const publish = (page: Page) => page.getByRole('button', { name: 'Publicar' });
 
 test.beforeEach(async ({ page }) => {
-  await mockApi(page, { role: 'OWNER', events: [{ ...EVENT, layoutVersionId: 'demo-v1' }] });
+  await mockApi(page, {
+    role: 'OWNER',
+    events: [{ ...EVENT, layoutVersionId: 'demo-v1' }],
+    // The plan entry lists the plans: this one has the demo version.
+    venues: [
+      {
+        id: 'v1',
+        type: 'FIXED',
+        name: 'Predio Demo',
+        address: null,
+        timezone: 'America/Argentina/Buenos_Aires',
+        widthM: 40,
+        heightM: 25,
+      },
+    ],
+    templates: [
+      {
+        id: 'demo-template',
+        name: 'Plano demo',
+        venueId: 'v1',
+        versions: [{ id: 'demo-v1', version: 1, status: 'PUBLISHED', publishedAt: null }],
+      },
+    ],
+  });
   await page.goto(EDITOR);
   await expect(page.locator('app-floor-plan-canvas g.shape')).toHaveCount(43);
 });
@@ -105,8 +128,9 @@ test('AC-04: a published version is read-only and a new version leaves it untouc
     original!,
   );
 
-  // Back to v1 through the app (the plan entry resolves the event's version): unchanged, published.
+  // Back to v1 through the app (the plan entry lists the plan versions): unchanged, published.
   await page.getByRole('link', { name: 'Editor de plano' }).click();
+  await page.getByRole('link', { name: 'Abrir versión 1 · Publicada' }).click();
   await expect(page.getByText('Versión 1 · Publicada')).toBeVisible();
   await expect(shape(page, 'demo-A01').locator('polygon')).toHaveAttribute('points', original!);
 });
