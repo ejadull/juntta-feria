@@ -215,6 +215,7 @@ En Windows con Git Bash, anteponer `MSYS_NO_PATHCONV=1` a los `docker compose ex
 
 - No versionar `.env`, tokens de Mercado Pago, credenciales ni secretos; los errores de configuración nombran la variable, nunca su valor.
 - El backend es la fuente de verdad de disponibilidad, precios, pagos y adjudicaciones; nunca se acepta un precio enviado por el frontend.
+- **API pública sin autenticación (`PUB-01`):** `GET /api/v1/public/events`, `/public/events/:slug`, `/public/events/:slug/map` y `/public/events/:slug/exhibitors` no piden sesión ni `X-Tenant-Id`. Exponen sólo eventos publicados o activos de organizaciones activas (nombre, fechas, predio, sectores, estado de cada stand, precio) y, con consentimiento explícito, nombre, rubro y descripción de los expositores con stand confirmado. Nunca emails, teléfonos, razón social, CUIT, reservas ni pagos; un borrador responde 404. Los datos salen de funciones `SECURITY DEFINER` mínimas (migración `0019`) y de consultas con columnas explícitas bajo RLS. Respuestas con `Cache-Control: public` (60 s; el mapa, 15 s).
 - El código de dominio debe contemplar aislamiento por tenant, idempotencia, Webhooks verificados y restricciones de concurrencia (§6–§8 de la especificación).
 
 ## Convenciones

@@ -40,7 +40,9 @@ const { RedisCounterStore } = await import('./redis-counter-store.js');
 
 describe('RedisCounterStore', () => {
   it('lets concurrent first calls share one connection instead of failing (cold start 503)', async () => {
-    const store = new RedisCounterStore({ redisUrl: 'redis://x' } as AppConfiguration);
+    const store = new RedisCounterStore({
+      redisUrl: 'redis://x',
+    } as AppConfiguration);
 
     const results = await Promise.all([
       store.incrementWithWindow('a', 60),

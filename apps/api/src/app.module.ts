@@ -8,6 +8,7 @@ import { ExhibitorsModule } from './exhibitors/exhibitors.module.js';
 import { HealthModule } from './health/health.module.js';
 import { LayoutsModule } from './layouts/layouts.module.js';
 import { PlatformModule } from './platform/platform.module.js';
+import { PublicModule } from './public/public.module.js';
 import { ReservationsModule } from './reservations/reservations.module.js';
 import { TenancyModule } from './tenancy/tenancy.module.js';
 import { VenuesModule } from './venues/venues.module.js';
@@ -31,6 +32,7 @@ import { VenuesModule } from './venues/venues.module.js';
     LayoutsModule,
     EventsModule,
     ExhibitorsModule,
+    PublicModule,
     ReservationsModule,
   ],
 })

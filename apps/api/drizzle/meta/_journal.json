@@ -134,6 +134,13 @@
       "when": 1794372000000,
       "tag": "0018_pending_users",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794458400000,
+      "tag": "0019_public_portal",
+      "breakpoints": true
     }
   ]
 }

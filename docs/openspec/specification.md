@@ -192,6 +192,7 @@ Autenticación de panel `Authorization: Bearer <token>` (access token JWT, [ADR 
 | GET/PATCH | /api/v1/events/:id/stands | owner/admin/operator | Inventario; edición masiva de precio (centavos), sector y estado (`standIds`) |
 | GET/POST | /api/v1/events/:id/sectors | owner/admin/operator | Sectores del evento ([ADR 0002](../adr/0002-sectores-por-evento.md)) |
 | PATCH/DELETE | /api/v1/events/:id/sectors/:sectorId | owner/admin/operator | Editar / borrar sector (sus stands quedan sin sector) |
+| GET | /api/v1/public/events | público | Eventos en venta de todas las organizaciones (`PUB-01`) |
 | GET | /api/v1/public/events/:slug | público | Evento público |
 | GET | /api/v1/public/events/:slug/map | público | GeoJSON y disponibilidad |
 | GET | /api/v1/public/events/:slug/exhibitors | público | Directorio público |
@@ -469,8 +470,8 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `PAY-06` Reembolsos, cancelaciones y contracargos | `PAY-05` | (2026-11-10) vía order: `POST /v1/orders/{id}/refund` (total sin body, parcial con `transactions`) y `/cancel` (solo `created`/`action_required`). Refund total/parcial, cancelación de pendientes, chargebacks | `IN_PROGRESS` |
 | `PAY-07` Configuración Mercado Pago (P12) | `PAY-01`, `CORE-03` | (2026-11-10) el `collector` se compara con `order.user_id`. Vincular cuenta vendedora del organizador sin secretos en claro | `IN_PROGRESS` |
 | `SUB-01` Suscripción SaaS del organizador | `CORE-03`, `PAY-00` | planes (`preapproval_plan`) y suscripciones (`preapproval`); **fuera del MVP** | `PENDING` |
-| `PUB-01` Portal público | `EVT-01`, `EXH-01`, `RES-01` | catálogo, mapa, disponibilidad y accesibilidad | `PENDING` |
-| `REP-01` Reportes | `PAY-05` | ocupación, GMV y exportaciones CSV | `PENDING` |
+| `PUB-01` Portal público | `EVT-01`, `EXH-01`, `RES-01` | catálogo, mapa, disponibilidad y accesibilidad — [detalle](#pub-01--portal-público) | `IN_PROGRESS` |
+| `REP-01` Reportes | `PAY-05` | ocupación, GMV y exportaciones CSV — [detalle](#rep-01--métricas-del-evento) | `IN_PROGRESS` |
 
 Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de RLS permanecen pendientes y deberán incorporarse como subtareas verificables antes de declarar completo el Sprint 0 general. Sprint 0A no las reemplaza.
 
@@ -684,6 +685,28 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
   - 2026-11-10: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 206/206 (22 de `test/subscriptions.int-spec.ts`), repetido 2 veces sin fallos: `NONE`; 401/400/403 `EXHIBITOR_REQUIRED`; `pending` con precio del servidor, email de la cuenta, `external_reference` y `back_url`; reintento → 200 sin segundo `preapproval`; un pendiente no reserva; otro `payerEmail` cancela el anterior; fallo del proveedor reintentable con la misma clave; webhook firmado `authorized` → `ACTIVE` y `POST /reservations` 201; `ACTIVE` → 409; renovación por pago autorizado extiende el período; `pending` sin cambios; `paused` → `PAST_DUE` y 403 `SUBSCRIPTION_REQUIRED`; reanudada → `ACTIVE`; `DELETE` cancela en el proveedor, conserva el período (reserva 201) y es idempotente, un `authorized` tardío no la reactiva; 404 sin suscripción y 502 sin cambios; firma mala o ausente → 401 sin inbox; `preapproval` ajeno → `IGNORED`; error del proveedor → `FAILED`; `payment` sin `tenant` sigue `MISSING_TENANT`; sin precio → 503.
   - 2026-11-10: `npx vitest run` (apps/api) 133/133 (6 del adaptador de suscripciones, 2 de `auto_return` y 1 de configuración), `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` sin errores.
 - Fuera de alcance: pantalla `/feriante/suscripcion` (retorno del `back_url`), días de gracia al vencer, avisos por email, `PLATFORM_SUBSCRIPTION_PRICE_CENTS` en `.env.example`, implicancias fiscales (R1) y la suscripción SaaS del organizador (`SUB-01`).
+
+##### PUB-01 — Portal público
+
+- **Entrega (2026-11-11):** API pública, sin sesión ni `X-Tenant-Id`, de sólo lectura: `GET /api/v1/public/events` (eventos `PUBLISHED`/`ACTIVE` de organizaciones activas: slug, nombre, organización, predio y dirección, fechas, `salesOpen`, stands totales y disponibles), `GET /public/events/:slug` (lo mismo más los sectores), `GET /public/events/:slug/map` (GeoJSON como §5.3: stands con código, superficie, sector, precio y estado `AVAILABLE`/`RESERVED`/`OCCUPIED`/`BLOCKED`; pasillos, accesos y salidas) y `GET /public/events/:slug/exhibitors` (directorio). Mismas formas que el puerto `PublicCatalogRepository` de la web.
+- **Decisiones:**
+  - El slug de evento es único global (EVT-01), así que la ruta no lleva el slug de la organización.
+  - Sin sesión no hay tenant: la migración `0019_public_portal` agrega dos funciones `SECURITY DEFINER` (mismo patrón que `exhibitor_invitation_lookup`, `0008`): `public_event_lookup(slug)` resuelve (evento, tenant) sólo de eventos en venta y organizaciones activas, y `public_event_list()` lista columnas publicables. El resto de las lecturas corre en `withTenant` bajo RLS, con columnas explícitas. Un borrador, un evento cerrado o cancelado, una organización suspendida, un slug inexistente o mal formado dan el mismo 404.
+  - Un expositor sólo aparece (mapa y directorio) con `public_contact_opt_in` y una reserva `CONFIRMED`; una reserva retenida (`HELD`/`PAYMENT_PENDING`) muestra el stand como `RESERVED` sin nombrar a nadie. Nunca se publican razón social, CUIT, email, teléfono, ids de usuario o expositor, reservas, pagos ni `metadata` de objetos del plano.
+  - Del plano sólo salen `STAND`, `AISLE`, `ENTRY` y `EXIT`: `EMERGENCY`, `UTILITY` y `OBSTACLE` son datos operativos ("no publicar geometría de seguridad sensible", §5.3). Los stands `DISABLED` no se dibujan; `BLOCKED` o sin precio se muestran bloqueados.
+  - Caché: `Cache-Control: public, max-age=60` en lista, evento y directorio; `max-age=15` en el mapa, porque lleva la disponibilidad (§5.3).
+- **Aceptación:** AC-11 y AC-PRD-03: la ficha privada no aparece sin consentimiento; un borrador responde 404 en todas las rutas.
+- **Evidencia:**
+  - 2026-11-11: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 258/258 (9 de `test/public-portal.int-spec.ts`: sin credenciales, listado entre organizaciones, mapa con estados y expositor consentido, directorio, ningún email/teléfono/CUIT/razón social/reserva/pago en ninguna respuesta, borrador/cerrado/suspendido/slug malformado → 404, aislamiento entre organizaciones).
+- Fuera de alcance: SSE de disponibilidad (`/events/:id/stand-events`), límite de tasa (hoy sólo caché HTTP; falta un limitador por IP en el borde), ciudad y provincia del predio (el predio sólo guarda `address`), descripción y catálogo de productos del expositor (sin tabla de rubros ni productos, `EXH-02`), logo, SSR/prerender y auditoría de accesibilidad (AC-12).
+
+##### REP-01 — Métricas del evento
+
+- **Entrega (2026-11-11):** `GET /api/v1/events/:id/metrics[?days=N]` (OWNER/ADMIN/OPERATOR; EXHIBITOR → 403; otra organización → 404). Primer bloque idéntico a `EventMetricsDto` del Panel (D2 de `org-ui-shell`) y los agregados de REP-01: `stands { total, available, held, pending, confirmed, blocked }`, `pendingAmountCents`, `reservationsByDay [{ day, count }]` (últimos `days` días UTC, 30 por defecto, 1 a 90, con ceros), `latePaymentIncidents` y `occupancyBySector`.
+- **Definiciones:** `sellableStands` = stands no `DISABLED`; `approvedGmvCents` = pagos `APPROVED` de reservas `CONFIRMED` (un reembolso o un pago tardío en conflicto no suma); `pendingAmountCents` = precio de las reservas `HELD`/`PAYMENT_PENDING`; `reconciliationPending` = intentos `PENDING`; `latePaymentIncidents` = auditoría `payment.late_conflict` de reservas del evento; `gmvByMonth` por mes UTC de la última actualización del intento.
+- **Evidencia:**
+  - 2026-11-11: `test:int` → 258/258 (8 de `test/metrics.int-spec.ts`: estados de stands, ingresos confirmados sin reembolsos, monto pendiente, reservas por día con ceros, incidencias del evento, sectores, 403/401/404/400).
+- Fuera de alcance: exportación CSV (`GET /events/:id/reservations/export`) y el adaptador HTTP de la web.
 
 #### Integración Mercado Pago (EP07)
 
