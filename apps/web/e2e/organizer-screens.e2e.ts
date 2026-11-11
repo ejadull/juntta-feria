@@ -27,9 +27,12 @@ test('the dashboard explains what to do when the organization has no events', as
 test('"Editor de plano" opens the layout of the current event', async ({ page }) => {
   await mockApi(page, { role: 'OWNER' });
   await page.goto('/organizador/panel');
-  // Wait for the app to be ready: a click before the router binds the link is lost under load.
+  // Wait for the panel: it also renders an "Editor de plano" link, so use the navigation's one.
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Panel del evento');
-  await page.getByRole('link', { name: 'Editor de plano' }).click();
+  await page
+    .getByRole('navigation', { name: 'Secciones del organizador' })
+    .getByRole('link', { name: 'Editor de plano' })
+    .click();
   await expect(page).toHaveURL(/\/organizador\/layouts\/lv1\/editor$/);
   await expect(page.getByText('Versión 1 · Publicada')).toBeVisible();
 });
