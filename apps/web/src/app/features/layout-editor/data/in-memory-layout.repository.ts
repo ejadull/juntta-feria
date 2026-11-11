@@ -45,9 +45,9 @@ export class InMemoryLayoutRepository extends LayoutRepository {
     });
   }
 
-  cloneAsDraft(versionId: string): Observable<LayoutVersionDto> {
+  cloneAsDraft({ id }: Pick<LayoutVersionDto, 'id' | 'templateId'>): Observable<LayoutVersionDto> {
     return defer(() => {
-      const source = this.require(versionId);
+      const source = this.require(id);
       const siblings = [...this.versions.values()].filter(
         (v) => v.templateId === source.templateId,
       );

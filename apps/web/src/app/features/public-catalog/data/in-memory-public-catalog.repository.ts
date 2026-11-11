@@ -2,7 +2,6 @@ import { defer, of, type Observable } from 'rxjs';
 import { DEMO_LAYOUT } from '../../layout-editor/data/demo-layout';
 import { fromPolygon, round2 } from '../../layout-editor/domain/geometry';
 import { KIND_LABEL } from '../../layout-editor/domain/validation';
-import { DEMO_CONTEXT } from '../../../shared/demo-context';
 import {
   PublicCatalogRepository,
   PublicEventNotFoundError,
@@ -13,7 +12,7 @@ import {
   type PublicStandStatus,
 } from './public-catalog.repository';
 
-export const DEMO_EVENT_SLUG = DEMO_CONTEXT.event.slug;
+export const DEMO_EVENT_SLUG = 'patagonia-emprende-2026';
 
 /** Demo sectors by row (ADR 0002: sectors belong to the event) and fictitious prices per sector. */
 const SECTORS: Readonly<Record<string, { name: string; priceCents: number }>> = {
@@ -176,45 +175,39 @@ const demoStands = DEMO_MAP.features.flatMap((f) =>
 const EVENTS: readonly PublicEventSummaryDto[] = [
   {
     slug: DEMO_EVENT_SLUG,
-    name: DEMO_CONTEXT.event.name,
-    city: 'Neuquén',
-    province: 'Neuquén',
+    name: 'Patagonia Emprende 2026',
+    organizerName: 'Asociación Patagonia Emprende',
     venueName: 'Espacio Duam',
+    venueAddress: 'Av. Olascoaga 100, Neuquén',
     startsAt: '2026-11-20T13:00:00Z',
     endsAt: '2026-11-22T23:00:00Z',
-    description: 'Tres días de diseño, producción regional y sabores del norte patagónico.',
     salesOpen: true,
     availableStands: demoStands.filter((s) => s.status === 'AVAILABLE').length,
     totalStands: demoStands.length,
-    hasPublicMap: true,
   },
   {
     slug: 'feria-del-litoral-artesanal',
     name: 'Feria del Litoral Artesanal',
-    city: 'Rosario',
-    province: 'Santa Fe',
+    organizerName: 'Litoral Artesanal',
     venueName: 'Galpón 13',
+    venueAddress: null,
     startsAt: '2026-12-05T13:00:00Z',
     endsAt: '2026-12-07T23:00:00Z',
-    description: 'Oficios, cerámica y textiles frente al Paraná.',
     salesOpen: true,
     availableStands: 10,
     totalStands: 18,
-    hasPublicMap: false,
   },
   {
     slug: 'mendoza-sabores-y-diseno',
     name: 'Mendoza Sabores & Diseño',
-    city: 'Mendoza',
-    province: 'Mendoza',
+    organizerName: 'Sabores & Diseño',
     venueName: 'Nave Cultural',
+    venueAddress: null,
     startsAt: '2027-03-12T13:00:00Z',
     endsAt: '2027-03-14T23:00:00Z',
-    description: 'Vinos de autor, diseño de objetos y cocina de Cuyo.',
     salesOpen: false,
     availableStands: 0,
     totalStands: 0,
-    hasPublicMap: false,
   },
 ];
 

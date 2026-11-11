@@ -23,13 +23,18 @@ type State = { readonly list: readonly ExhibitorSummaryDto[] } | { readonly erro
           <p class="text-sm font-semibold tracking-wider text-primary-strong">ORGANIZADOR</p>
           <h1 class="mt-1 text-3xl font-semibold sm:text-4xl">Expositores</h1>
         </div>
-        <span class="rounded-full bg-reserved/15 px-3 py-1 text-xs font-medium text-text">
-          Datos de demostración
-        </span>
       </header>
 
       @if (error(); as message) {
         <p role="alert" class="mt-6 rounded-xl bg-danger/10 p-4 text-text">{{ message }}</p>
+      } @else if (loaded() && list().length === 0) {
+        <div class="card mt-6" data-testid="no-exhibitors">
+          <p class="font-semibold">Todavía no hay expositores</p>
+          <p class="mt-1 text-sm text-text-muted">
+            Cuando un feriante acepte tu invitación o cree su perfil en tu organización, aparece acá
+            con su rubro y el estado de su documentación.
+          </p>
+        </div>
       } @else {
         <div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <section class="card" aria-label="Listado de expositores">
@@ -157,6 +162,7 @@ export class ExhibitorsPage {
     const s = this.state();
     return s && 'error' in s ? s.error : null;
   });
+  protected readonly loaded = computed(() => this.state() !== null);
   protected readonly list = computed(() => {
     const s = this.state();
     return s && 'list' in s ? s.list : [];

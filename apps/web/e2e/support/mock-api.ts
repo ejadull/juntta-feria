@@ -1,5 +1,8 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page, Route } from '@playwright/test';
+import { DEMO_LAYOUT } from '../../src/app/features/layout-editor/data/demo-layout';
+import type { LayoutVersionDto } from '../../src/app/features/layout-editor/domain/layout.types';
+import { validateLayout } from '../../src/app/features/layout-editor/domain/validation';
 
 /**
  * Deterministic stand-in for the API (`/api/v1/**`) so the exhibitor flows run without Docker data
@@ -32,7 +35,7 @@ const square = (x: number): number[][][] => [
 ];
 const polygon = (x: number) => ({ type: 'Polygon', coordinates: square(x) });
 
-const EVENT = {
+export const EVENT = {
   id: 'e1',
   slug: 'feria-demo',
   name: 'Feria Demo',
@@ -45,6 +48,7 @@ const EVENT = {
 };
 const LAYOUT = {
   id: 'lv1',
+  templateId: 'tpl1',
   version: 1,
   status: 'PUBLISHED',
   widthM: 20,
@@ -55,6 +59,162 @@ const LAYOUT = {
     { id: 'o3', kind: 'STAND', code: 'S3', geometry: polygon(9), metadata: {} },
   ],
 };
+export interface ApiEvent {
+  id: string;
+  slug: string;
+  name: string;
+  layoutVersionId: string;
+  startsAt: string;
+  endsAt: string;
+  salesOpenAt: string;
+  salesCloseAt: string;
+  status: string;
+}
+
+/** `GET /events/:id/metrics` for the default event (EventMetricsDto plus the API extras). */
+const METRICS = {
+  eventId: 'e1',
+  eventName: 'Feria Demo',
+  venueName: 'Predio Demo',
+  startsAt: '2026-11-20T13:00:00Z',
+  endsAt: '2026-11-22T23:00:00Z',
+  layoutVersionId: 'lv1',
+  sellableStands: 3,
+  blockedStands: 0,
+  assignedStands: 1,
+  approvedGmvCents: 1_740_000,
+  currency: 'ARS',
+  activeReservations: 1,
+  reconciliationPending: 0,
+  gmvByMonth: [{ month: '2026-10', cents: 1_740_000 }],
+  pendingAmountCents: 0,
+  latePaymentIncidents: 0,
+};
+
+export interface ApiExhibitor {
+  id: string;
+  tradeName: string;
+  legalName: string;
+  taxId: string | null;
+  category: string;
+  description: string;
+  publicContactOptIn: boolean;
+  documentsStatus: string;
+}
+
+const EXHIBITORS: ApiExhibitor[] = [
+  {
+    id: 'x1',
+    tradeName: 'Lanas del Limay',
+    legalName: 'Quiroga Florencia',
+    taxId: '20-00000001-5',
+    category: 'Textil de autor',
+    description: 'Hilados y tejidos.',
+    publicContactOptIn: true,
+    documentsStatus: 'APPROVED',
+  },
+  {
+    id: 'x2',
+    tradeName: 'Jabonería Lafken',
+    legalName: 'Lafken SRL',
+    taxId: null,
+    category: 'Cosmética natural',
+    description: 'Jabones artesanales.',
+    publicContactOptIn: false,
+    documentsStatus: 'MISSING',
+  },
+];
+
+export interface PublicEvent {
+  slug: string;
+  name: string;
+  organizerName: string;
+  venueName: string;
+  venueAddress: string | null;
+  startsAt: string;
+  endsAt: string;
+  salesOpen: boolean;
+  availableStands: number;
+  totalStands: number;
+}
+
+const PUBLIC_EVENTS: PublicEvent[] = [
+  {
+    slug: 'feria-demo',
+    name: 'Feria Demo',
+    organizerName: 'Asociación Demo',
+    venueName: 'Predio Demo',
+    venueAddress: 'Av. Olascoaga 100, Neuquén',
+    startsAt: '2026-11-20T13:00:00Z',
+    endsAt: '2026-11-22T23:00:00Z',
+    salesOpen: true,
+    availableStands: 1,
+    totalStands: 3,
+  },
+  {
+    slug: 'feria-litoral',
+    name: 'Feria del Litoral',
+    organizerName: 'Litoral Artesanal',
+    venueName: 'Galpón 13',
+    venueAddress: null,
+    startsAt: '2026-12-05T13:00:00Z',
+    endsAt: '2026-12-07T23:00:00Z',
+    salesOpen: false,
+    availableStands: 0,
+    totalStands: 0,
+  },
+];
+
+export interface PublicExhibitor {
+  name: string;
+  category: string;
+  description: string;
+  standCode: string | null;
+}
+
+const PUBLIC_EXHIBITORS: PublicExhibitor[] = [
+  {
+    name: 'Lanas del Limay',
+    category: 'Textil de autor',
+    description: 'Hilados y tejidos.',
+    standCode: 'S1',
+  },
+];
+
+/** `GET /public/events/:slug/map`: S1 occupied by a public profile, S2 free, S3 blocked, one aisle. */
+const publicMap = (slug: string) => {
+  const standProps = (n: number, status: string, exhibitor: unknown = null) => ({
+    kind: 'STAND',
+    standId: `es${n}`,
+    code: `S${n}`,
+    areaM2: 9,
+    status,
+    sector: 'Diseño y moda',
+    price: { currency: 'ARS', valueCents: 1_740_000 },
+    exhibitor,
+  });
+  const feature = (x: number, properties: unknown) => ({
+    type: 'Feature',
+    geometry: polygon(x),
+    properties,
+  });
+  return {
+    slug,
+    layoutVersion: 1,
+    units: 'm',
+    bounds: { width: 20, height: 8 },
+    features: [
+      feature(
+        1,
+        standProps(1, 'OCCUPIED', { name: 'Lanas del Limay', category: 'Textil de autor' }),
+      ),
+      feature(5, standProps(2, 'AVAILABLE')),
+      feature(9, standProps(3, 'BLOCKED')),
+      feature(13, { kind: 'AISLE', label: null }),
+    ],
+  };
+};
+
 const stand = (n: number, status = 'AVAILABLE') => ({
   id: `es${n}`,
   layoutObjectId: `o${n}`,
@@ -163,6 +323,15 @@ export interface MockApi {
   refundProblem: { status: number; code?: string } | null;
   /** The organization's Mercado Pago seller account (`/payment-account`). */
   account: SellerAccount;
+  /** `GET /events` (staff and exhibitors); the dashboard and the plan entry take the current one. */
+  events: ApiEvent[];
+  /** Layout versions by id (`/layout-versions/:id`): the editor reads, saves, publishes and clones. */
+  layouts: Record<string, LayoutVersionDto>;
+  /** Organizer's exhibitors (`GET /exhibitors`). */
+  exhibitors: ApiExhibitor[];
+  /** Anonymous portal (`/public/events...`). */
+  publicEvents: PublicEvent[];
+  publicExhibitors: PublicExhibitor[];
   requests: { method: string; path: string; headers: Record<string, string>; body: unknown }[];
 }
 
@@ -205,6 +374,14 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
     incidents: [],
     refundProblem: null,
     account: UNLINKED_ACCOUNT,
+    events: [EVENT],
+    layouts: {
+      lv1: structuredClone(LAYOUT) as unknown as LayoutVersionDto,
+      [DEMO_LAYOUT.id]: structuredClone(DEMO_LAYOUT),
+    },
+    exhibitors: structuredClone(EXHIBITORS),
+    publicEvents: structuredClone(PUBLIC_EVENTS),
+    publicExhibitors: structuredClone(PUBLIC_EXHIBITORS),
     requests: [],
     ...initial,
   };
@@ -245,14 +422,81 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
         return problem(route, 422, 'INVITATION_EMAIL_MISMATCH');
       return json(route, { user: { id: 'u1', email: EMAIL }, tenantId: 't1' }, 201);
     }
+    // Anonymous portal: answered whether or not there is a session.
+    if (path === '/public/events') return json(route, api.publicEvents);
+    const publicEvent = /^\/public\/events\/([^/]+)\/(map|exhibitors)$/.exec(path);
+    if (publicEvent) {
+      if (!api.publicEvents.some((e) => e.slug === publicEvent[1])) return problem(route, 404);
+      return json(
+        route,
+        publicEvent[2] === 'map' ? publicMap(publicEvent[1]) : api.publicExhibitors,
+      );
+    }
     if (path === '/auth/logout') {
       api.signedIn = false;
       return route.fulfill({ status: 204 });
     }
     if (!api.signedIn) return problem(route, 401);
 
-    if (path === '/events') return json(route, [EVENT]);
-    if (path === '/layout-versions/lv1') return json(route, LAYOUT);
+    if (path === '/events') return json(route, api.events);
+    const metrics = /^\/events\/([^/]+)\/metrics$/.exec(path);
+    if (metrics) {
+      const event = api.events.find((e) => e.id === metrics[1]);
+      if (!event) return problem(route, 404);
+      return json(route, {
+        ...METRICS,
+        eventId: event.id,
+        eventName: event.name,
+        layoutVersionId: event.layoutVersionId,
+      });
+    }
+    if (path === '/exhibitors') return json(route, api.exhibitors);
+
+    const layoutVersion = /^\/layout-versions\/([^/]+)(\/objects|\/publish)?$/.exec(path);
+    if (layoutVersion) {
+      const layout = api.layouts[layoutVersion[1]];
+      if (!layout) return problem(route, 404);
+      if (!layoutVersion[2]) return json(route, layout);
+      if (layout.status !== 'DRAFT') return problem(route, 409);
+      if (layoutVersion[2] === '/objects') {
+        const body = JSON.parse(raw ?? '{}') as { objects: LayoutVersionDto['objects'] };
+        const saved = { ...layout, objects: body.objects };
+        api.layouts[layout.id] = saved;
+        return json(route, saved);
+      }
+      const issues = validateLayout(layout);
+      if (issues.length > 0)
+        return json(
+          route,
+          {
+            title: 'Unprocessable',
+            status: 422,
+            detail: 'x',
+            issues: issues.map(({ code, objectIds, message }) => ({ code, objectIds, message })),
+          },
+          422,
+        );
+      const published = { ...layout, status: 'PUBLISHED' as const };
+      api.layouts[layout.id] = published;
+      return json(route, published);
+    }
+    const cloneOf = /^\/layout-templates\/([^/]+)\/versions$/.exec(path);
+    if (cloneOf && method === 'POST') {
+      const { sourceVersionId } = JSON.parse(raw ?? '{}') as { sourceVersionId: string };
+      const source = api.layouts[sourceVersionId];
+      if (!source) return problem(route, 404);
+      const siblings = Object.values(api.layouts).filter((v) => v.templateId === cloneOf[1]);
+      const version = Math.max(...siblings.map((v) => v.version)) + 1;
+      const draft: LayoutVersionDto = {
+        ...source,
+        id: `${cloneOf[1]}-v${version}`,
+        version,
+        status: 'DRAFT',
+        objects: source.objects.map((o) => ({ ...o, id: `${o.id}-v${version}` })),
+      };
+      api.layouts[draft.id] = draft;
+      return json(route, draft, 201);
+    }
     if (path === '/events/e1/stands')
       return json(route, [stand(1, 'ASSIGNED'), stand(2), stand(3)]);
     if (path === '/events/e1/sectors') return json(route, [{ id: 'sec1', name: 'Diseño y moda' }]);

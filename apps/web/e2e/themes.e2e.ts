@@ -13,7 +13,7 @@ const PAGES: readonly (readonly [path: string, role: Role])[] = [
   ['/feriante/reservas', 'EXHIBITOR'],
   ['/ingresar', 'EXHIBITOR'],
   ['/organizador/layouts/demo-v1/editor', 'OWNER'],
-  ['/ferias/patagonia-emprende-2026', 'EXHIBITOR'],
+  ['/ferias/feria-demo', 'EXHIBITOR'],
   ['/feriante/reservas/nueva?reserva=r1', 'EXHIBITOR'],
   ['/feriante/reservas/r2/pago/aprobado', 'EXHIBITOR'],
 ];

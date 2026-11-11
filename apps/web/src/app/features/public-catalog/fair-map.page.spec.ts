@@ -1,17 +1,18 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 import { InMemoryPublicCatalogRepository } from './data/in-memory-public-catalog.repository';
 import { PublicCatalogRepository } from './data/public-catalog.repository';
 import { FairMapPage } from './fair-map.page';
 
 const plain = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
 
-async function render(slug = 'patagonia-emprende-2026') {
+async function render(
+  slug = 'patagonia-emprende-2026',
+  repo: PublicCatalogRepository = new InMemoryPublicCatalogRepository(),
+) {
   TestBed.configureTestingModule({
-    providers: [
-      provideRouter([]),
-      { provide: PublicCatalogRepository, useValue: new InMemoryPublicCatalogRepository() },
-    ],
+    providers: [provideRouter([]), { provide: PublicCatalogRepository, useValue: repo }],
   });
   const fixture = TestBed.createComponent(FairMapPage);
   fixture.componentRef.setInput('slug', slug);
@@ -60,6 +61,21 @@ describe('FairMapPage (PUB-UI-05)', () => {
     )!;
     await click(locate);
     expect(host.querySelector('app-stand-map [data-code="B05"]')?.classList).toContain('selected');
+  });
+
+  it('shows who organizes the fair and where, and says when the directory is empty', async () => {
+    const base = new InMemoryPublicCatalogRepository();
+    const { host } = await render('patagonia-emprende-2026', {
+      listEvents: () => base.listEvents(),
+      getMap: (slug) => base.getMap(slug),
+      listExhibitors: () => of([]),
+    });
+    const header = plain(host.querySelector('header')?.textContent);
+    expect(header).toContain('Asociación Patagonia Emprende');
+    expect(header).toContain('Av. Olascoaga 100');
+    expect(host.querySelector('[data-testid="no-exhibitors"]')?.textContent).toContain(
+      'Todavía no hay expositores',
+    );
   });
 
   it('explains when the fair has no public map', async () => {

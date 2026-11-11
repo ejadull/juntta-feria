@@ -1,7 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mockApi } from './support/mock-api';
+import { EVENT, mockApi } from './support/mock-api';
 
-/** LUI-10: delta-spec scenarios of `layout-editor` end to end (AC-01, AC-02, AC-04 frontend). */
+/**
+ * LUI-10: delta-spec scenarios of `layout-editor` end to end (AC-01, AC-02, AC-04 frontend),
+ * against the mocked layout API (the current event points at the demo draft).
+ */
 
 const EDITOR = '/organizador/layouts/demo-v1/editor';
 
@@ -23,7 +26,7 @@ const shape = (page: Page, id: string) => page.locator(`app-floor-plan-canvas [d
 const publish = (page: Page) => page.getByRole('button', { name: 'Publicar' });
 
 test.beforeEach(async ({ page }) => {
-  await mockApi(page, { role: 'OWNER' });
+  await mockApi(page, { role: 'OWNER', events: [{ ...EVENT, layoutVersionId: 'demo-v1' }] });
   await page.goto(EDITOR);
   await expect(page.locator('app-floor-plan-canvas g.shape')).toHaveCount(43);
 });
@@ -102,7 +105,7 @@ test('AC-04: a published version is read-only and a new version leaves it untouc
     original!,
   );
 
-  // Back to v1 through the app (same in-memory session): geometry unchanged, still published.
+  // Back to v1 through the app (the plan entry resolves the event's version): unchanged, published.
   await page.getByRole('link', { name: 'Editor de plano' }).click();
   await expect(page.getByText('Versión 1 · Publicada')).toBeVisible();
   await expect(shape(page, 'demo-A01').locator('polygon')).toHaveAttribute('points', original!);

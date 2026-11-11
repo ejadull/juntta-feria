@@ -1,8 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { catchError, map, of } from 'rxjs';
-import { DEMO_CONTEXT } from '../../shared/demo-context';
+import { catchError, filter, map, of, startWith, switchMap } from 'rxjs';
+import {
+  currentEvent,
+  EventsRepository,
+  type OrganizerEvent,
+} from '../../shared/events/events.repository';
 import { formatArs } from '../../shared/money';
 import {
   EventMetricsRepository,
@@ -69,8 +73,11 @@ function kpis(m: EventMetricsDto): readonly Kpi[] {
 }
 
 type State = { readonly metrics: EventMetricsDto } | { readonly error: string };
+type Events = { readonly list: readonly OrganizerEvent[] } | { readonly error: string };
 
-/** P03 (design D2/D3): read-only KPIs of the current event. */
+const EVENTS_FAILED = 'No pudimos cargar tus eventos. Probá de nuevo en unos minutos.';
+
+/** P03 (design D2/D3): read-only KPIs of the current event (REP-01), switchable between events. */
 @Component({
   selector: 'app-dashboard-page',
   imports: [RouterLink, KpiCard, GmvChart],
@@ -88,13 +95,33 @@ type State = { readonly metrics: EventMetricsDto } | { readonly error: string };
             </p>
           }
         </div>
-        <span class="rounded-full bg-reserved/15 px-3 py-1 text-xs font-medium text-text">
-          Datos de demostración
-        </span>
+        @if (events().length > 1) {
+          <label class="flex items-center gap-2 text-sm font-medium">
+            Evento
+            <select class="field" (change)="chooseEvent(valueOf($event))">
+              @for (event of events(); track event.id) {
+                <option [value]="event.id" [selected]="event.id === eventId()">
+                  {{ event.name }}
+                </option>
+              }
+            </select>
+          </label>
+        }
       </header>
 
       @if (error(); as message) {
         <p role="alert" class="mt-6 rounded-xl bg-danger/10 p-4 text-text">{{ message }}</p>
+      } @else if (noEvents()) {
+        <div class="card mt-6" data-testid="no-events">
+          <p class="font-semibold">Todavía no hay eventos</p>
+          <p class="mt-1 text-sm text-text-muted">
+            Cuando tu organización cree y publique su primer evento, acá vas a ver ocupación, ventas
+            y reservas. Mientras tanto, dejá lista la cuenta de cobro.
+          </p>
+          <a class="btn btn-primary mt-4" routerLink="/organizador/mercado-pago">
+            Vincular Mercado Pago
+          </a>
+        </div>
       } @else if (metrics(); as m) {
         <section
           aria-label="Indicadores"
@@ -151,16 +178,46 @@ type State = { readonly metrics: EventMetricsDto } | { readonly error: string };
 export class DashboardPage {
   private readonly repo = inject(EventMetricsRepository);
 
+  private readonly eventsState = toSignal<Events | null>(
+    inject(EventsRepository)
+      .list()
+      .pipe(
+        map((list): Events => ({ list })),
+        catchError(() => of<Events>({ error: EVENTS_FAILED })),
+      ),
+    { initialValue: null },
+  );
+  protected readonly events = computed(() => {
+    const s = this.eventsState();
+    return s && 'list' in s ? s.list : [];
+  });
+  protected readonly noEvents = computed(() => {
+    const s = this.eventsState();
+    return !!s && 'list' in s && s.list.length === 0;
+  });
+
+  private readonly chosenId = signal<string | null>(null);
+  /** The user's pick, else the most recent event on sale. */
+  protected readonly eventId = computed(
+    () => this.chosenId() ?? currentEvent(this.events())?.id ?? null,
+  );
+
   private readonly state = toSignal<State | null>(
-    this.repo.get(DEMO_CONTEXT.event.id).pipe(
-      map((metrics): State => ({ metrics })),
-      catchError((error: unknown) =>
-        of<State>({
-          error:
-            error instanceof EventNotFoundError
-              ? 'No se encontraron métricas para este evento.'
-              : 'No se pudieron cargar las métricas. Probá de nuevo en unos minutos.',
-        }),
+    toObservable(this.eventId).pipe(
+      filter((id): id is string => id !== null),
+      switchMap((id) =>
+        this.repo.get(id).pipe(
+          map((metrics): State => ({ metrics })),
+          catchError((error: unknown) =>
+            of<State>({
+              error:
+                error instanceof EventNotFoundError
+                  ? 'No se encontraron métricas para este evento.'
+                  : 'No se pudieron cargar las métricas. Probá de nuevo en unos minutos.',
+            }),
+          ),
+          startWith(null),
+        ),
       ),
     ),
     { initialValue: null },
@@ -171,6 +228,8 @@ export class DashboardPage {
     return s && 'metrics' in s ? s.metrics : null;
   });
   protected readonly error = computed(() => {
+    const events = this.eventsState();
+    if (events && 'error' in events) return events.error;
     const s = this.state();
     return s && 'error' in s ? s.error : null;
   });
@@ -182,4 +241,12 @@ export class DashboardPage {
     const m = this.metrics();
     return m ? dateRange(m.startsAt, m.endsAt) : '';
   });
+
+  protected chooseEvent(id: string): void {
+    this.chosenId.set(id);
+  }
+
+  protected valueOf(e: Event): string {
+    return (e.target as HTMLSelectElement).value;
+  }
 }

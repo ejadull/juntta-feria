@@ -1,5 +1,4 @@
 import { defer, of, type Observable } from 'rxjs';
-import { DEMO_CONTEXT } from '../../../shared/demo-context';
 import {
   EventMetricsRepository,
   EventNotFoundError,
@@ -11,12 +10,12 @@ import {
  * the monthly GMV adds up to the approved GMV. Fictitious amounts.
  */
 export const DEMO_EVENT_METRICS: EventMetricsDto = {
-  eventId: DEMO_CONTEXT.event.id,
-  eventName: DEMO_CONTEXT.event.name,
+  eventId: 'demo-event',
+  eventName: 'Patagonia Emprende 2026',
   venueName: 'Espacio Duam, Neuquén',
   startsAt: '2026-11-20T13:00:00Z',
   endsAt: '2026-11-22T23:00:00Z',
-  layoutVersionId: DEMO_CONTEXT.event.layoutVersionId,
+  layoutVersionId: 'demo-v1',
   sellableStands: 40,
   blockedStands: 2,
   assignedStands: 23,
@@ -34,7 +33,7 @@ export const DEMO_EVENT_METRICS: EventMetricsDto = {
   ],
 };
 
-/** Stand-in for REP-01 (`GET /api/v1/events/:id/metrics`). */
+/** Test double of the REP-01 adapter (`HttpEventMetricsRepository`). */
 export class InMemoryEventMetricsRepository extends EventMetricsRepository {
   private readonly byId: ReadonlyMap<string, EventMetricsDto>;
 

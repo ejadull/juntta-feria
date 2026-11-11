@@ -16,7 +16,10 @@ const membership = (tenantId: string, role: MembershipRole): MembershipDto => ({
 });
 
 /** `as`: the signed-in user's role (or memberships); omitted = anonymous. */
-async function open(url: string, { as }: { as?: MembershipRole | readonly MembershipDto[] } = {}) {
+async function open(
+  url: string,
+  { as, settle = true }: { as?: MembershipRole | readonly MembershipDto[]; settle?: boolean } = {},
+) {
   TestBed.configureTestingModule({
     providers: [
       provideRouter(routes, withComponentInputBinding()),
@@ -26,7 +29,8 @@ async function open(url: string, { as }: { as?: MembershipRole | readonly Member
     ],
   });
   const harness = await RouterTestingHarness.create(url);
-  await harness.fixture.whenStable();
+  // Pages that load on init (HTTP) keep the app unstable until the test answers the request.
+  if (settle) await harness.fixture.whenStable();
   const host = harness.fixture.nativeElement as HTMLElement;
   const current = () =>
     [...host.querySelectorAll('nav a[aria-current="page"]')].map((a) => a.textContent!.trim());
@@ -48,9 +52,42 @@ describe('organizer routes (ORG-01)', () => {
   });
 
   it('keeps "Editor de plano" active for any layout version, inside the shell', async () => {
-    const { current, host } = await open('/organizador/layouts/demo-v1/editor', { as: 'OWNER' });
+    const { current, host, harness } = await open('/organizador/layouts/lv-1/editor', {
+      as: 'OWNER',
+      settle: false,
+    });
+    TestBed.inject(HttpTestingController).expectOne('/api/v1/layout-versions/lv-1').flush({
+      id: 'lv-1',
+      templateId: 't',
+      version: 1,
+      status: 'PUBLISHED',
+      widthM: 20,
+      heightM: 10,
+      objects: [],
+    });
+    await harness.fixture.whenStable();
     expect(current()).toEqual(['Editor de plano']);
     expect(host.querySelector('main app-layout-editor-page')).not.toBeNull();
+  });
+
+  it('opens the layout of the current event from "Editor de plano"', async () => {
+    const { router } = await open('/organizador/plano', { as: 'OWNER', settle: false });
+    TestBed.inject(HttpTestingController)
+      .expectOne('/api/v1/events')
+      .flush([
+        {
+          id: 'e1',
+          name: 'Feria',
+          status: 'PUBLISHED',
+          startsAt: '2026-11-20T13:00:00Z',
+          layoutVersionId: 'lv-9',
+        },
+      ]);
+    // The editor then asks for that version; the redirect is what this test cares about.
+    await vi.waitFor(() =>
+      TestBed.inject(HttpTestingController).expectOne('/api/v1/layout-versions/lv-9'),
+    );
+    expect(router.url).toBe('/organizador/layouts/lv-9/editor');
   });
 
   it('opens "Reservas y cobros" with the reservations of the API (RES-01)', async () => {
@@ -112,10 +149,13 @@ describe('organizer routes (ORG-01)', () => {
     expect(outside.host.textContent).toContain('Página no encontrada');
   });
 
-  it('labels the navigation and the demo data', async () => {
+  it('labels the navigation and shows the organization name, with no demo data', async () => {
     const { host } = await open('/organizador/panel', { as: 'OWNER' });
     expect(host.querySelector('nav')?.getAttribute('aria-label')).toBe('Secciones del organizador');
-    expect(host.textContent).toContain('Demo de UX');
+    expect(host.textContent).toContain('Entorno de prueba');
+    expect(host.textContent).toContain('Organización');
+    expect(host.textContent).not.toContain('Demo de UX');
+    expect(host.textContent).not.toContain('Patagonia');
   });
 });
 
@@ -135,7 +175,7 @@ describe('areas by role (PUB-UI-01)', () => {
     const { router, host } = await open('/feriante/reservas');
     expect(router.url).toBe('/ingresar?volver=%2Fferiante%2Freservas');
     expect(host.querySelector('main h1')?.textContent).toContain('Entrá a tu cuenta');
-    expect(navItems(host)).toEqual(['Ferias', 'Mapa y expositores']);
+    expect(navItems(host)).toEqual(['Ferias']);
   });
 
   it('switches to the alternative "Corporativo" palette from the shell', async () => {
@@ -188,7 +228,7 @@ describe('areas by role (PUB-UI-01)', () => {
 
   it('shows only the visitor navigation, and "Ingresar", to anonymous users', async () => {
     const { host } = await open('/ferias');
-    expect(navItems(host)).toEqual(['Ferias', 'Mapa y expositores']);
+    expect(navItems(host)).toEqual(['Ferias']);
     expect(host.querySelector('aside a[href="/ingresar"]')?.textContent).toContain('Ingresar');
   });
 
@@ -226,12 +266,12 @@ describe('areas by role (PUB-UI-01)', () => {
     expect(navItems(host)).toEqual(['Explorar stands', 'Mis reservas', 'Suscripción']);
   });
 
-  it('keeps "Ferias" and "Mapa y expositores" apart in the visitor navigation', async () => {
+  it('keeps "Ferias" active on the list and on a fair map', async () => {
     const list = await open('/ferias');
     expect(list.current()).toEqual(['Ferias']);
     TestBed.resetTestingModule();
     const map = await open('/ferias/patagonia-emprende-2026');
-    expect(map.current()).toEqual(['Mapa y expositores']);
+    expect(map.current()).toEqual(['Ferias']);
   });
 
   it('opens the checkout returns of Mercado Pago back_urls, and only those (P19, PAY-04)', async () => {

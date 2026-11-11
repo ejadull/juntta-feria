@@ -20,6 +20,9 @@ const DAY_YEAR = new Intl.DateTimeFormat('es-AR', {
   timeZone: 'America/Argentina/Buenos_Aires',
 });
 
+const placeOf = (e: PublicEventSummaryDto): string =>
+  e.venueAddress ? `${e.venueName}, ${e.venueAddress}` : e.venueName;
+
 const dateRange = (e: PublicEventSummaryDto): string =>
   `${DAY.format(new Date(e.startsAt))} – ${DAY_YEAR.format(new Date(e.endsAt))}`;
 
@@ -39,7 +42,7 @@ const dateRange = (e: PublicEventSummaryDto): string =>
       </header>
 
       <label class="flex max-w-md flex-col gap-1 text-sm font-medium">
-        Buscar por nombre, ciudad o lugar
+        Buscar por nombre, organizador o lugar
         <input
           type="search"
           class="field"
@@ -53,7 +56,16 @@ const dateRange = (e: PublicEventSummaryDto): string =>
         <p role="alert" class="card text-danger">{{ message }}</p>
       } @else if (events()) {
         <p class="sr-only" aria-live="polite">{{ visible().length }} ferias encontradas</p>
-        @if (visible().length) {
+        @if (events()?.length === 0) {
+          <div class="card" data-testid="no-fairs">
+            <p class="font-semibold">Todavía no hay ferias publicadas</p>
+            <p class="mt-1 text-sm text-text-muted">
+              Cuando una organización publique su feria, la vas a encontrar acá con su plano y sus
+              expositores. Si organizás ferias, ingresá para publicar la tuya.
+            </p>
+            <a routerLink="/ingresar" class="btn mt-4">Ingresar</a>
+          </div>
+        } @else if (visible().length) {
           <ul class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             @for (e of visible(); track e.slug) {
               <li class="fair card flex flex-col gap-3">
@@ -63,20 +75,14 @@ const dateRange = (e: PublicEventSummaryDto): string =>
                     {{ e.salesOpen ? 'Venta abierta' : 'Próximamente' }}
                   </span>
                 </div>
-                <p class="text-sm text-text-muted">
-                  {{ dateRange(e) }} · {{ e.venueName }}, {{ e.city }}, {{ e.province }}
-                </p>
-                <p class="text-sm">{{ e.description }}</p>
+                <p class="text-sm text-text-muted">{{ dateRange(e) }} · {{ placeOf(e) }}</p>
+                <p class="text-sm">Organiza {{ e.organizerName }}</p>
                 <p class="text-sm font-medium">
                   {{ e.availableStands }} de {{ e.totalStands }} stands disponibles
                 </p>
-                @if (e.hasPublicMap) {
-                  <a [routerLink]="['/ferias', e.slug]" class="btn btn-primary mt-auto self-start">
-                    Ver mapa y expositores
-                  </a>
-                } @else {
-                  <p class="mt-auto text-xs text-text-muted">El plano todavía no está publicado.</p>
-                }
+                <a [routerLink]="['/ferias', e.slug]" class="btn btn-primary mt-auto self-start">
+                  Ver mapa y expositores
+                </a>
               </li>
             }
           </ul>
@@ -107,6 +113,7 @@ const dateRange = (e: PublicEventSummaryDto): string =>
 })
 export class FairsPage {
   protected readonly dateRange = dateRange;
+  protected readonly placeOf = placeOf;
   protected readonly query = signal('');
 
   private readonly state = toSignal(
@@ -121,7 +128,9 @@ export class FairsPage {
   protected readonly visible = computed(() => {
     const q = fold(this.query().trim());
     return (this.events() ?? []).filter(
-      (e) => !q || fold(`${e.name} ${e.city} ${e.province} ${e.venueName}`).includes(q),
+      (e) =>
+        !q ||
+        fold(`${e.name} ${e.organizerName} ${e.venueName} ${e.venueAddress ?? ''}`).includes(q),
     );
   });
 }

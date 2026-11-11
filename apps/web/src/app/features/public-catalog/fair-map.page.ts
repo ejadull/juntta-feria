@@ -22,10 +22,12 @@ import { StandMap } from './ui/stand-map/stand-map';
       } @else if (data(); as d) {
         <header>
           <p class="text-sm font-semibold tracking-wider text-primary-strong">
-            VISITANTE · {{ d.event.city }}, {{ d.event.province }}
+            VISITANTE · {{ d.event.organizerName }}
           </p>
           <h1 class="mt-1 text-3xl font-semibold">{{ d.event.name }}</h1>
-          <p class="mt-1 text-text-muted">{{ d.event.venueName }} · {{ d.event.description }}</p>
+          <p class="mt-1 text-text-muted">
+            {{ d.event.venueName }}{{ d.event.venueAddress ? ', ' + d.event.venueAddress : '' }}
+          </p>
         </header>
 
         <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -62,6 +64,12 @@ import { StandMap } from './ui/stand-map/stand-map';
           <h2 id="directory-title" class="text-xl font-semibold">
             Expositores <span class="text-text-muted">({{ d.exhibitors.length }})</span>
           </h2>
+          @if (d.exhibitors.length === 0) {
+            <p class="card mt-3 text-sm text-text-muted" data-testid="no-exhibitors">
+              Todavía no hay expositores con perfil público en esta feria. Mirá el plano para ver
+              qué stands están disponibles.
+            </p>
+          }
           <ul class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             @for (e of d.exhibitors; track e.name) {
               <li class="card flex flex-col gap-1 p-4">

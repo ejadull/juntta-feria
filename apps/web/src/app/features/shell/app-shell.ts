@@ -5,7 +5,6 @@ import { filter, map } from 'rxjs';
 import { ApiStatusService, type ApiStatus } from '../../shared/api/api-status.service';
 import { type AreaId } from '../../shared/auth/area';
 import { SessionStore } from '../../shared/auth/session.store';
-import { DEMO_CONTEXT } from '../../shared/demo-context';
 import { ThemePicker } from '../../shared/theme-picker';
 
 interface NavItem {
@@ -26,7 +25,6 @@ interface Area {
 
 const pathOf = (url: string): string => url.split(/[?#]/)[0];
 const under = (prefix: string) => (url: string) => pathOf(url).startsWith(prefix);
-const exactly = (path: string) => (url: string) => pathOf(url) === path;
 
 const ICON = {
   panel: 'M4 4h6v7H4zM14 4h6v4h-6zM14 12h6v8h-6zM4 15h6v5H4z',
@@ -38,7 +36,6 @@ const ICON = {
   card: 'M3 6h18v12H3zM3 10h18',
   ticket: 'M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4z',
   calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
-  pin: 'M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
 };
 
 const AREAS: readonly Area[] = [
@@ -56,8 +53,8 @@ const AREAS: readonly Area[] = [
       },
       {
         label: 'Editor de plano',
-        link: `/organizador/layouts/${DEMO_CONTEXT.event.layoutVersionId}/editor`,
-        active: under('/organizador/layouts/'),
+        link: '/organizador/plano',
+        active: (url) => under('/organizador/plano')(url) || under('/organizador/layouts/')(url),
         icon: ICON.plan,
       },
       {
@@ -112,13 +109,8 @@ const AREAS: readonly Area[] = [
     home: '/ferias',
     navLabel: 'Secciones del visitante',
     nav: [
-      { label: 'Ferias', link: '/ferias', active: exactly('/ferias'), icon: ICON.calendar },
-      {
-        label: 'Mapa y expositores',
-        link: `/ferias/${DEMO_CONTEXT.event.slug}`,
-        active: under('/ferias/'),
-        icon: ICON.pin,
-      },
+      // The list leads to each fair's map and exhibitors, so one entry covers both screens.
+      { label: 'Ferias', link: '/ferias', active: under('/ferias'), icon: ICON.calendar },
     ],
   },
 ];
@@ -167,8 +159,7 @@ const AREAS: readonly Area[] = [
       @if (area().id === 'organizador') {
         <div class="hidden rounded-xl border border-border bg-surface p-3 lg:block">
           <p class="text-xs font-semibold tracking-wider text-text-muted">ORGANIZACIÓN</p>
-          <p class="font-semibold">{{ org.name }}</p>
-          <p class="text-xs text-text-muted">{{ org.plan }}</p>
+          <p class="font-semibold">{{ orgName() }}</p>
         </div>
       }
 
@@ -225,11 +216,7 @@ const AREAS: readonly Area[] = [
           <a class="btn w-full justify-center" routerLink="/ingresar">Ingresar</a>
         }
         <p class="hidden rounded-xl bg-primary/10 p-3 text-xs text-primary-strong lg:block">
-          @if (area().id === 'feriante') {
-            <strong>Entorno de prueba.</strong> Los pagos se hacen en el sandbox de Mercado Pago.
-          } @else {
-            <strong>Demo de UX.</strong> Datos ficticios; no se procesa ningún pago real.
-          }
+          <strong>Entorno de prueba.</strong> Los pagos se hacen en el sandbox de Mercado Pago.
         </p>
       </div>
     </aside>
@@ -295,8 +282,11 @@ const AREAS: readonly Area[] = [
   `,
 })
 export class AppShell {
-  protected readonly org = DEMO_CONTEXT.organization;
   protected readonly session = inject(SessionStore);
+  protected readonly orgName = computed(
+    () =>
+      this.session.memberships().find((m) => m.tenantId === this.session.tenantId())?.tenantName,
+  );
 
   private readonly router = inject(Router);
   protected readonly currentUrl = toSignal(

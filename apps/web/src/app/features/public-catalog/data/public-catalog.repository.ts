@@ -15,16 +15,14 @@ export const STATUS_LABEL: Readonly<Record<PublicStandStatus, string>> = {
 export interface PublicEventSummaryDto {
   readonly slug: string;
   readonly name: string;
-  readonly city: string;
-  readonly province: string;
+  readonly organizerName: string;
   readonly venueName: string;
+  readonly venueAddress: string | null;
   readonly startsAt: string;
   readonly endsAt: string;
-  readonly description: string;
   readonly salesOpen: boolean;
   readonly availableStands: number;
   readonly totalStands: number;
-  readonly hasPublicMap: boolean;
 }
 
 export interface StandProperties {

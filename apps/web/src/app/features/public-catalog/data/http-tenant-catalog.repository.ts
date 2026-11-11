@@ -32,9 +32,8 @@ interface ApiReservation {
 const LIVE = new Set(['HELD', 'PAYMENT_PENDING', 'CONFIRMED']);
 
 /**
- * Real data for the exhibitor's "Explorar stands" while the public portal (PUB-01) does not exist:
- * the events, stands and plan of the exhibitor's organization (the interceptor adds the tenant).
- * Visitors keep the in-memory catalog.
+ * Real data for the exhibitor's "Explorar stands": the events, stands and plan of the exhibitor's
+ * organization (the interceptor adds the tenant). Visitors use HttpPublicCatalogRepository.
  */
 @Injectable()
 export class HttpTenantCatalogRepository extends PublicCatalogRepository {
@@ -46,17 +45,15 @@ export class HttpTenantCatalogRepository extends PublicCatalogRepository {
         events.map((e) => ({
           slug: e.slug,
           name: e.name,
-          city: '',
-          province: '',
+          organizerName: '',
           venueName: '',
+          venueAddress: null,
           startsAt: e.startsAt,
           endsAt: e.endsAt,
-          description: '',
           salesOpen:
             Date.parse(e.salesOpenAt) <= Date.now() && Date.now() <= Date.parse(e.salesCloseAt),
           availableStands: 0,
           totalStands: 0,
-          hasPublicMap: true,
         })),
       ),
     );

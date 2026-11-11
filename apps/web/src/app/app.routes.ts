@@ -1,21 +1,23 @@
 import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
 import { EventMetricsRepository } from './features/dashboard/data/event-metrics.repository';
-import { InMemoryEventMetricsRepository } from './features/dashboard/data/in-memory-event-metrics.repository';
+import { HttpEventMetricsRepository } from './features/dashboard/data/http-event-metrics.repository';
 import { ExhibitorRepository } from './features/exhibitors/data/exhibitor.repository';
-import { InMemoryExhibitorRepository } from './features/exhibitors/data/in-memory-exhibitor.repository';
-import { InMemoryLayoutRepository } from './features/layout-editor/data/in-memory-layout.repository';
+import { HttpExhibitorRepository } from './features/exhibitors/data/http-exhibitor.repository';
+import { HttpLayoutRepository } from './features/layout-editor/data/http-layout.repository';
 import { LayoutRepository } from './features/layout-editor/data/layout.repository';
 import { HttpPaymentAccountRepository } from './features/payment-account/data/http-payment-account.repository';
 import { PaymentAccountRepository } from './features/payment-account/data/payment-account.repository';
 import { HttpOrganizerReservationsRepository } from './features/organizer-reservations/data/http-organizer-reservations.repository';
 import { OrganizerReservationsRepository } from './features/organizer-reservations/data/organizer-reservations.repository';
 import { HttpTenantCatalogRepository } from './features/public-catalog/data/http-tenant-catalog.repository';
-import { InMemoryPublicCatalogRepository } from './features/public-catalog/data/in-memory-public-catalog.repository';
+import { HttpPublicCatalogRepository } from './features/public-catalog/data/http-public-catalog.repository';
 import { PublicCatalogRepository } from './features/public-catalog/data/public-catalog.repository';
 import { HttpReservationPaymentRepository } from './features/checkout-return/data/http-reservation-payment.repository';
 import { ReservationPaymentRepository } from './features/checkout-return/data/reservation-payment.repository';
 import { APP_NAME } from './shared/demo-context';
+import { EventsRepository } from './shared/events/events.repository';
+import { HttpEventsRepository } from './shared/events/http-events.repository';
 import { AREA_HOME } from './shared/auth/area';
 import { areaGuard } from './shared/auth/auth.guard';
 import { SessionStore } from './shared/auth/session.store';
@@ -25,9 +27,8 @@ const notFound = () => import('./features/not-found.page').then((m) => m.NotFoun
 const login = () => import('./features/auth/login.page').then((m) => m.LoginPage);
 const explore = () =>
   import('./features/public-catalog/explore-stands.page').then((m) => m.ExploreStandsPage);
-const publicCatalog = [
-  { provide: PublicCatalogRepository, useFactory: () => new InMemoryPublicCatalogRepository() },
-];
+// The visitor portal reads the public API anonymously (no session, no tenant).
+const publicCatalog = [{ provide: PublicCatalogRepository, useClass: HttpPublicCatalogRepository }];
 // The exhibitor area talks to the real API (stands of the exhibitor's organization, reservations).
 const feriante = [
   { provide: PublicCatalogRepository, useClass: HttpTenantCatalogRepository },
@@ -48,9 +49,6 @@ const checkoutReturns = (
     import('./features/checkout-return/checkout-return.page').then((m) => m.CheckoutReturnPage),
 }));
 
-// ponytail: reservations and the Mercado Pago account already talk to the API; the dashboard, the
-// layout editor and the exhibitor list (and the visitor portal) still use in-memory adapters until
-// their APIs are wired (REP-01, EXH-01, PUB-01); swap each `useFactory` for its Http adapter here.
 export const routes: Routes = [
   // Each role lands on its own home; anonymous users on the public fairs.
   { path: '', pathMatch: 'full', redirectTo: () => AREA_HOME[inject(SessionStore).area()] },
@@ -61,6 +59,8 @@ export const routes: Routes = [
       {
         path: 'organizador',
         canActivate: [areaGuard('organizador')],
+        // The current event (Panel, Editor de plano) comes from the API.
+        providers: [{ provide: EventsRepository, useClass: HttpEventsRepository }],
         children: [
           { path: '', pathMatch: 'full', redirectTo: 'panel' },
           {
@@ -68,21 +68,20 @@ export const routes: Routes = [
             title: title('Panel'),
             loadComponent: () =>
               import('./features/dashboard/dashboard.page').then((m) => m.DashboardPage),
-            providers: [
-              {
-                provide: EventMetricsRepository,
-                useFactory: () => new InMemoryEventMetricsRepository(),
-              },
-            ],
+            providers: [{ provide: EventMetricsRepository, useClass: HttpEventMetricsRepository }],
+          },
+          {
+            path: 'plano',
+            title: title('Editor de plano'),
+            loadComponent: () =>
+              import('./features/layout-editor/layout-entry.page').then((m) => m.LayoutEntryPage),
           },
           {
             path: 'layouts/:versionId/editor',
             title: title('Editor de plano'),
             loadComponent: () =>
               import('./features/layout-editor/layout-editor.page').then((m) => m.LayoutEditorPage),
-            providers: [
-              { provide: LayoutRepository, useFactory: () => new InMemoryLayoutRepository() },
-            ],
+            providers: [{ provide: LayoutRepository, useClass: HttpLayoutRepository }],
           },
           {
             path: 'reservas',
@@ -103,12 +102,7 @@ export const routes: Routes = [
             title: title('Expositores'),
             loadComponent: () =>
               import('./features/exhibitors/exhibitors.page').then((m) => m.ExhibitorsPage),
-            providers: [
-              {
-                provide: ExhibitorRepository,
-                useFactory: () => new InMemoryExhibitorRepository(),
-              },
-            ],
+            providers: [{ provide: ExhibitorRepository, useClass: HttpExhibitorRepository }],
           },
           {
             path: 'mercado-pago',

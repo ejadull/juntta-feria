@@ -9,8 +9,10 @@ export abstract class LayoutRepository {
   abstract saveDraft(version: LayoutVersionDto): Observable<LayoutVersionDto>;
   /** Fails with PublishRejectedError when the server-side validation finds issues. */
   abstract publish(versionId: string): Observable<LayoutVersionDto>;
-  /** Creates the next DRAFT version of the same template from `versionId`. */
-  abstract cloneAsDraft(versionId: string): Observable<LayoutVersionDto>;
+  /** Creates the next DRAFT version of the same template, starting from `source`. */
+  abstract cloneAsDraft(
+    source: Pick<LayoutVersionDto, 'id' | 'templateId'>,
+  ): Observable<LayoutVersionDto>;
 }
 
 export class LayoutNotFoundError extends Error {

@@ -173,7 +173,7 @@ export class LayoutEditorStore {
   async createNewVersion(): Promise<void> {
     const version = this._version();
     if (!version) return;
-    this.reset(await firstValueFrom(this.repo.cloneAsDraft(version.id)));
+    this.reset(await firstValueFrom(this.repo.cloneAsDraft(version)));
   }
 
   private apply(command: (objects: Objects, ctx: EditContext) => Objects): boolean {

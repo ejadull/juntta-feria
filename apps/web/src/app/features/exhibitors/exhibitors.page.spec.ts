@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { ExhibitorRepository, type ExhibitorSummaryDto } from './data/exhibitor.repository';
 import { InMemoryExhibitorRepository } from './data/in-memory-exhibitor.repository';
 import { ExhibitorsPage } from './exhibitors.page';
@@ -29,12 +29,12 @@ async function render(repo: ExhibitorRepository = new InMemoryExhibitorRepositor
 }
 
 describe('ExhibitorsPage (P11, consulta)', () => {
-  it('lists every exhibitor with the count and the demo label', async () => {
+  it('lists every exhibitor with the count', async () => {
     const { host, items } = await render();
     expect(plain(host.querySelector('h1')?.textContent)).toBe('Expositores');
     expect(items()).toHaveLength(12);
     expect(host.textContent).toContain('12 de 12');
-    expect(host.textContent).toContain('Datos de demostración');
+    expect(host.textContent).not.toContain('Datos de demostración');
   });
 
   it('searches by trade name, legal name or category ignoring case and accents (spec: "Búsqueda")', async () => {
@@ -101,5 +101,22 @@ describe('ExhibitorsPage (P11, consulta)', () => {
     expect(host.querySelector('app-exhibitor-detail')?.textContent).toContain('Sin CUIT cargado');
     await type('zzz');
     expect(host.textContent).toContain('Ningún expositor coincide');
+  });
+});
+
+describe('ExhibitorsPage empty and error states', () => {
+  it('explains there are no exhibitors yet instead of an empty filter box', async () => {
+    const { host } = await render({ list: () => of([]) } as ExhibitorRepository);
+    expect(plain(host.querySelector('[data-testid="no-exhibitors"]')?.textContent)).toContain(
+      'Todavía no hay expositores',
+    );
+    expect(host.querySelector('input[type="search"]')).toBeNull();
+  });
+
+  it('shows an alert when the list cannot be loaded', async () => {
+    const { host } = await render({
+      list: () => throwError(() => new Error('offline')),
+    } as ExhibitorRepository);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('No se pudieron cargar');
   });
 });

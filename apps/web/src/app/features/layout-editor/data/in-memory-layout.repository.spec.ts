@@ -73,7 +73,7 @@ describe('InMemoryLayoutRepository', () => {
   it('clones a version as the next draft with fresh object ids, leaving the source untouched (AC-04)', async () => {
     const repo = makeRepo();
     const source = await firstValueFrom(repo.publish(DEMO_LAYOUT.id));
-    const draft = await firstValueFrom(repo.cloneAsDraft(source.id));
+    const draft = await firstValueFrom(repo.cloneAsDraft(source));
 
     expect(draft).toMatchObject({
       status: 'DRAFT',

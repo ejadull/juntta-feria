@@ -1,14 +1,31 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { of, throwError } from 'rxjs';
+import { EventsRepository, type OrganizerEvent } from '../../shared/events/events.repository';
 import { EventMetricsRepository } from './data/event-metrics.repository';
 import { InMemoryEventMetricsRepository } from './data/in-memory-event-metrics.repository';
 import { DashboardPage } from './dashboard.page';
 
 const plain = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
 
-async function render(repo = new InMemoryEventMetricsRepository()) {
+const EVENT: OrganizerEvent = {
+  id: 'demo-event',
+  name: 'Patagonia Emprende 2026',
+  status: 'PUBLISHED',
+  startsAt: '2026-11-20T13:00:00Z',
+  layoutVersionId: 'demo-v1',
+};
+
+async function render(
+  repo = new InMemoryEventMetricsRepository(),
+  events: Pick<EventsRepository, 'list'> = { list: () => of([EVENT]) },
+) {
   TestBed.configureTestingModule({
-    providers: [{ provide: EventMetricsRepository, useValue: repo }, provideRouter([])],
+    providers: [
+      { provide: EventMetricsRepository, useValue: repo },
+      { provide: EventsRepository, useValue: events },
+      provideRouter([]),
+    ],
   });
   const fixture = TestBed.createComponent(DashboardPage);
   await fixture.whenStable();
@@ -22,12 +39,12 @@ async function render(repo = new InMemoryEventMetricsRepository()) {
 }
 
 describe('DashboardPage (P03)', () => {
-  it('shows the event, its dates and the demo-data label', async () => {
+  it('shows the event and its dates, with no demo-data label', async () => {
     const { host } = await render();
     expect(plain(host.querySelector('h1')?.textContent)).toBe('Panel del evento');
     expect(plain(host.textContent)).toContain('Patagonia Emprende 2026');
     expect(plain(host.textContent)).toContain('20–22 nov · Espacio Duam, Neuquén');
-    expect(host.textContent).toContain('Datos de demostración');
+    expect(host.textContent).not.toContain('Datos de demostración');
   });
 
   it('shows the four KPIs with their explanation', async () => {
@@ -107,5 +124,36 @@ describe('DashboardPage (P03)', () => {
   it('shows an error when the event does not exist', async () => {
     const { host } = await render(new InMemoryEventMetricsRepository([]));
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('No se encontraron');
+  });
+
+  it('explains what to do next when the organization has no events', async () => {
+    const { host } = await render(new InMemoryEventMetricsRepository(), { list: () => of([]) });
+    const empty = host.querySelector('[data-testid="no-events"]');
+    expect(plain(empty?.textContent)).toContain('Todavía no hay eventos');
+    expect(empty?.querySelector('a')?.getAttribute('href')).toBe('/organizador/mercado-pago');
+    expect(host.querySelector('app-kpi-card')).toBeNull();
+  });
+
+  it('shows an error when the events cannot be loaded', async () => {
+    const { host } = await render(new InMemoryEventMetricsRepository(), {
+      list: () => throwError(() => new Error('offline')),
+    });
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      'No pudimos cargar tus eventos',
+    );
+  });
+
+  it('opens the most recent event on sale and lets the organizer switch', async () => {
+    const other = { ...EVENT, id: 'e2', name: 'Otra feria', status: 'DRAFT' as const };
+    const { host } = await render(new InMemoryEventMetricsRepository(), {
+      list: () => of([other, EVENT]),
+    });
+    const select = host.querySelector('select') as HTMLSelectElement;
+    expect([...select.options].map((o) => plain(o.textContent))).toEqual([
+      'Otra feria',
+      'Patagonia Emprende 2026',
+    ]);
+    expect(select.value).toBe('demo-event');
+    expect(plain(host.textContent)).toContain('20–22 nov');
   });
 });
