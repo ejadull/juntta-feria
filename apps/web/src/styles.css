@@ -121,6 +121,55 @@
   --color-danger: #f87171;
 }
 
+/*
+ * "Industrial Neon": Frost White 60%, Gunmetal Grey 30%, Laser Lime 10%. Laser Lime is 1.18:1 on
+ * white, so it is only a fill (with dark text, 13.5:1) on light areas; as text there it becomes
+ * olive #3f6212 (6.2:1) and map strokes use #65a30d (3:1 for graphics). The side navigation is
+ * Gunmetal: the tokens are redefined inside it, so its cards, buttons and links follow, and there
+ * Laser Lime works as text (8.95:1).
+ */
+:root[data-theme='industrial'] {
+  --color-primary: #c6ff3d; /* Laser Lime: CTAs, selected stand */
+  --color-primary-hover: #b5f01f;
+  --color-on-primary: #1f2226;
+  --color-primary-strong: #3f6212;
+  --color-secondary: #3b3f46; /* Gunmetal Grey */
+  --color-secondary-strong: #3b3f46;
+  --color-accent: #c6ff3d;
+  --color-accent-strong: #3f6212;
+
+  --color-background: #eef0f2; /* Frost White */
+  --color-surface: #ffffff;
+  --color-surface-soft: #f6f7f8;
+
+  --color-text: #3b3f46; /* Gunmetal Grey */
+  --color-text-muted: #5b616a;
+  --color-border: #d9dde1;
+  --color-border-strong: #7c828b;
+
+  --color-available: #65a30d;
+  --color-reserved: #3b3f46;
+  --color-reserved-stroke: #3b3f46;
+  --color-occupied: #a3a9b1;
+  --color-occupied-strong: #6b7280;
+  --color-blocked: #eef0f2;
+  --color-blocked-stroke: #7c828b;
+  --color-selected: #3b3f46;
+}
+
+:root[data-theme='industrial'] app-shell > aside {
+  color-scheme: dark;
+  color: var(--color-text); /* body's color is inherited already resolved */
+  --color-surface-soft: #3b3f46;
+  --color-surface: #32353b;
+  --color-text: #eef0f2;
+  --color-text-muted: #b8bdc4;
+  --color-border: #4a4f57;
+  --color-border-strong: #8a9099;
+  --color-primary-strong: #c6ff3d;
+  --color-selected: #c6ff3d;
+}
+
 @layer base {
   body {
     @apply bg-background font-sans text-text antialiased;

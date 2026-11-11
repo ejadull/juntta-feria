@@ -1,12 +1,13 @@
 import { Injectable, signal } from '@angular/core';
 
-export type ThemeId = 'clasico' | 'corporativo' | 'grafito';
+export type ThemeId = 'clasico' | 'corporativo' | 'grafito' | 'industrial';
 
-/** Corporativo = docs/paleta1.webp, Grafito = docs/paleta2.webp. */
+/** Corporativo = docs/paleta1.webp, Grafito = docs/paleta2.webp, Industrial = "Industrial Neon". */
 export const THEMES: readonly { readonly id: ThemeId; readonly label: string }[] = [
   { id: 'clasico', label: 'Clásico' },
   { id: 'corporativo', label: 'Corporativo' },
   { id: 'grafito', label: 'Grafito' },
+  { id: 'industrial', label: 'Industrial Neon' },
 ];
 
 /** Same key index.html reads before Angular boots, so the page never flashes the other palette. */

@@ -146,7 +146,7 @@ function areaOf(url: string): Area {
   host: { class: 'flex h-dvh flex-col bg-background text-text lg:flex-row' },
   template: `
     <aside
-      class="flex shrink-0 flex-col gap-4 border-b border-border bg-surface-soft px-4 py-3 lg:w-64 lg:border-r lg:border-b-0 lg:px-5 lg:py-6"
+      class="flex shrink-0 flex-col gap-4 border-b border-border bg-surface-soft px-4 py-3 lg:w-64 lg:overflow-y-auto lg:border-r lg:border-b-0 lg:px-5 lg:py-6"
     >
       <a [routerLink]="area().home" class="flex items-center gap-2 font-bold tracking-wide">
         <span
