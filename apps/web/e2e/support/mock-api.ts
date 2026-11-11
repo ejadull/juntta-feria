@@ -125,6 +125,46 @@ const EXHIBITORS: ApiExhibitor[] = [
   },
 ];
 
+export interface ApiInvitation {
+  id: string;
+  email: string | null;
+  phone: string | null;
+  name: string | null;
+  status: 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
+  expiresAt: string;
+  acceptedAt: string | null;
+  createdAt: string;
+}
+
+export const INVITATION_URL = 'https://feria.test/invitacion/e2e-one-time-token';
+
+const INVITATIONS: ApiInvitation[] = [
+  {
+    id: 'inv1',
+    email: 'ana@example.test',
+    phone: null,
+    name: 'Ana',
+    status: 'PENDING',
+    expiresAt: '2026-11-20T12:00:00Z',
+    acceptedAt: null,
+    createdAt: '2026-11-10T12:00:00Z',
+  },
+  {
+    id: 'inv2',
+    email: null,
+    phone: null,
+    name: null,
+    status: 'ACCEPTED',
+    expiresAt: '2026-11-18T12:00:00Z',
+    acceptedAt: '2026-11-11T12:00:00Z',
+    createdAt: '2026-11-08T12:00:00Z',
+  },
+];
+
+/** What `GET /events/:id/reservations/export` answers (BOM, CRLF), named by the API. */
+export const CSV_FILENAME = 'reservas-feria-demo-2026-11-11.csv';
+export const CSV_BODY = '\uFEFFStand,Expositor\r\nS1,Textiles Ana\r\n';
+
 export interface PublicEvent {
   slug: string;
   name: string;
@@ -329,6 +369,8 @@ export interface MockApi {
   layouts: Record<string, LayoutVersionDto>;
   /** Organizer's exhibitors (`GET /exhibitors`). */
   exhibitors: ApiExhibitor[];
+  /** Organizer's exhibitor invitations (`/exhibitor-invitations`). */
+  invitations: ApiInvitation[];
   /** Anonymous portal (`/public/events...`). */
   publicEvents: PublicEvent[];
   publicExhibitors: PublicExhibitor[];
@@ -380,6 +422,7 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
       [DEMO_LAYOUT.id]: structuredClone(DEMO_LAYOUT),
     },
     exhibitors: structuredClone(EXHIBITORS),
+    invitations: structuredClone(INVITATIONS),
     publicEvents: structuredClone(PUBLIC_EVENTS),
     publicExhibitors: structuredClone(PUBLIC_EXHIBITORS),
     requests: [],
@@ -451,6 +494,49 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
       });
     }
     if (path === '/exhibitors') return json(route, api.exhibitors);
+
+    if (path === '/exhibitor-invitations') {
+      if (method === 'POST') {
+        const body = JSON.parse(raw ?? '{}') as Partial<ApiInvitation>;
+        const created: ApiInvitation = {
+          id: `inv${api.invitations.length + 1}`,
+          email: body.email ?? null,
+          phone: body.phone ?? null,
+          name: body.name ?? null,
+          status: 'PENDING',
+          expiresAt: future(60 * 24 * 7),
+          acceptedAt: null,
+          createdAt: new Date().toISOString(),
+        };
+        api.invitations = [created, ...api.invitations];
+        return json(
+          route,
+          {
+            ...created,
+            url: INVITATION_URL,
+            whatsappUrl: `https://wa.me/?text=${encodeURIComponent(INVITATION_URL)}`,
+          },
+          201,
+        );
+      }
+      return json(route, api.invitations);
+    }
+    const invitation = /^\/exhibitor-invitations\/([^/]+)$/.exec(path);
+    if (invitation && method === 'DELETE') {
+      const found = api.invitations.find((i) => i.id === invitation[1]);
+      if (!found) return problem(route, 404);
+      if (found.status !== 'PENDING') return problem(route, 409);
+      found.status = 'REVOKED';
+      return route.fulfill({ status: 204 });
+    }
+
+    if (/^\/events\/[^/]+\/reservations\/export$/.test(path))
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/csv; charset=utf-8',
+        headers: { 'Content-Disposition': `attachment; filename="${CSV_FILENAME}"` },
+        body: CSV_BODY,
+      });
 
     const layoutVersion = /^\/layout-versions\/([^/]+)(\/objects|\/publish)?$/.exec(path);
     if (layoutVersion) {

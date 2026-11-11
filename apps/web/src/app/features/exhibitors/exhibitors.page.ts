@@ -8,13 +8,14 @@ import {
   type ExhibitorSummaryDto,
 } from './data/exhibitor.repository';
 import { DOCUMENTS_STATUS, ExhibitorDetail } from './ui/exhibitor-detail';
+import { InvitationsPanel } from './ui/invitations-panel';
 
 type State = { readonly list: readonly ExhibitorSummaryDto[] } | { readonly error: string };
 
 /** P11 (design D4): read-only organizer view of exhibitors. Verification actions arrive with EXH-01. */
 @Component({
   selector: 'app-exhibitors-page',
-  imports: [ExhibitorDetail],
+  imports: [ExhibitorDetail, InvitationsPanel],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
@@ -106,6 +107,8 @@ type State = { readonly list: readonly ExhibitorSummaryDto[] } | { readonly erro
           </aside>
         </div>
       }
+
+      <app-invitations-panel />
     </div>
   `,
   styles: `

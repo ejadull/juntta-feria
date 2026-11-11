@@ -466,7 +466,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `PAY-02` Preferencia Checkout Pro | `RES-01`, `PAY-01` | payment attempt idempotente y **order** (Orders API, 2026-11-10, [ADR 0007](../adr/0007-checkout-pro-orders-api.md)) desde snapshot de precio, con `payer` del feriante logueado, `expiration_time` = hold e `X-Idempotency-Key` = intento — [detalle](#pay-02--preferencia-checkout-pro); falta la prueba en sandbox: la cuenta de prueba actual responde 403 en `/v1/orders` | `IN_PROGRESS` |
 | `PAY-03` Webhooks de pago | `PAY-02` | (2026-11-10, enmienda: `MP_CHECKOUT_API=preferences` por defecto, también se procesa el topic `payment` con `?tenant=`; Orders es opcional porque devuelve 403 con las credenciales de prueba, ver ADR 0007) topic **Order (Mercado Pago)**; el tenant sale del `order id` guardado (función `payment_attempt_tenant`), ya no de `?tenant=`; el topic `payment` no se procesa. Firma, inbox deduplicado, consulta server-to-server y confirmación — [detalle](#pay-03--webhooks-de-pago); falta la prueba con el simulador | `IN_PROGRESS` |
 | `PAY-04` Retorno de checkout (P19) | `PAY-02`, `PUB-UI-01..06` | pantallas aprobado/pendiente/rechazado sin confiar en query params | `IN_PROGRESS` |
-| `PAY-05` Conciliación y pago tardío | `PAY-03` | (2026-11-10) lee `GET /v1/orders/{id}` del intento, sin búsqueda por `external_reference`. Job de reconciliación, `LATE_PAYMENT_CONFLICT`, P10 — [detalle](#pay-05--conciliación-y-pago-tardío); falta la pantalla P10 y la prueba en sandbox | `IN_PROGRESS` |
+| `PAY-05` Conciliación y pago tardío | `PAY-03` | (2026-11-10) lee `GET /v1/orders/{id}` del intento, sin búsqueda por `external_reference`. Job de reconciliación, `LATE_PAYMENT_CONFLICT`, P10 — [detalle](#pay-05--conciliación-y-pago-tardío); P10 listo en la web (incidencias en "Reservas y cobros"); falta la prueba en sandbox | `IN_PROGRESS` |
 | `PAY-06` Reembolsos, cancelaciones y contracargos | `PAY-05` | (2026-11-10) vía order: `POST /v1/orders/{id}/refund` (total sin body, parcial con `transactions`) y `/cancel` (solo `created`/`action_required`). Refund total/parcial, cancelación de pendientes, chargebacks | `IN_PROGRESS` |
 | `PAY-07` Configuración Mercado Pago (P12) | `PAY-01`, `CORE-03` | (2026-11-10) el `collector` se compara con `order.user_id`. Vincular cuenta vendedora del organizador sin secretos en claro | `IN_PROGRESS` |
 | `SUB-01` Suscripción SaaS del organizador | `CORE-03`, `PAY-00` | planes (`preapproval_plan`) y suscripciones (`preapproval`); **fuera del MVP** | `PENDING` |
@@ -636,6 +636,7 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
   - El link no lleva tenant: la única lectura entre tenants es la función `exhibitor_invitation_lookup(hash)` (`SECURITY DEFINER`), que devuelve sólo `(id, tenant_id)` de una invitación vigente; el resto corre en `withTenant` con RLS. Por eso esta tabla tiene RLS `ENABLE` sin `FORCE`, y para `juntta_app` sigue aplicando.
   - La URL base del front se toma del primer origen de `CORS_ORIGINS`; si alguna vez difieren, se agrega una variable `APP_PUBLIC_URL`.
   - El registro de altas es el `audit_logs` de la organización: `invitation.created`, `invitation.accepted` (con el email de la cuenta nueva) e `invitation.revoked`, con autor y fecha.
+- **Web del organizador (2026-11-11):** sección "Invitaciones" en `/organizador/expositores` (`features/exhibitors/ui/invitations-panel.ts`, adaptador HTTP y en memoria): crear con nombre, email opcional (aclara que sólo esa cuenta de Google puede aceptar), teléfono y vencimiento; el link se muestra **una vez** con "Copiar link" (con respaldo de seleccionar el texto), "Compartir por WhatsApp" (`whatsappUrl` de la API) y aviso de que no se vuelve a mostrar; listado con estado (pendiente, usada, vencida, revocada), email y fechas; "Revocar" sólo en pendientes, con confirmación en la página. La API permite crear, listar y revocar a OWNER/ADMIN/OPERATOR, los mismos que ven la pantalla. E2E con API simulada y axe (la pantalla está en `e2e/themes.e2e.ts`, 5 temas). Falta una prueba manual del flujo completo (invitar, abrir el link y aceptar con Google) contra la API real.
 - **Evidencia requerida:** pruebas de integración contra PostgreSQL real.
   - 2026-11-06: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 107/107 (16 de `test/invitations.int-spec.ts`): link de 43 caracteres bajo el origen del front y `wa.me` con el teléfono normalizado y el nombre de la organización; vence en 7 días; 400 por teléfono, email o validez inválidos; el listado no expone link ni hash y no ve otra organización; el link muestra la organización y un token desconocido → 404; 400 por contraseña corta, nombre vacío, email distinto del invitado o campo extra; el alta crea la cuenta confirmada con nombre y teléfono, que puede iniciar sesión con membresía `EXHIBITOR`; el link no se puede reusar (404) y la invitación queda `ACCEPTED`; un email con cuenta → 409; `wa.me` también sin teléfono; revocar → 204, después el link da 404 y revocar de nuevo o revocar una aceptada → 409; una vencida da 404 y figura `EXPIRED`; el OWNER ve el registro con alta, aceptación (y el email) y revocación, OPERATOR → 403 y otra organización ve una lista vacía; fuera de un tenant, 0 filas.
   - 2026-11-06: `npm test --workspace api` 95/95, `test:e2e` 7/7, `tsc --noEmit` y `oxlint --type-aware` OK.
@@ -698,6 +699,7 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
 - **Aceptación:** AC-11 y AC-PRD-03: la ficha privada no aparece sin consentimiento; un borrador responde 404 en todas las rutas.
 - **Evidencia:**
   - 2026-11-11: `docker compose run --rm --no-deps db-migrate npm run test:int --workspace api` → 258/258 (9 de `test/public-portal.int-spec.ts`: sin credenciales, listado entre organizaciones, mapa con estados y expositor consentido, directorio, ningún email/teléfono/CUIT/razón social/reserva/pago en ninguna respuesta, borrador/cerrado/suspendido/slug malformado → 404, aislamiento entre organizaciones).
+- **Web (2026-11-11):** el portal del visitante (`/ferias`, `/ferias/:slug`) usa el adaptador HTTP de la API pública, sin sesión; E2E con API simulada y axe en `e2e/public-catalog.e2e.ts`. Falta una prueba manual contra la API real con datos cargados.
 - Fuera de alcance: SSE de disponibilidad (`/events/:id/stand-events`), límite de tasa (hoy sólo caché HTTP; falta un limitador por IP en el borde), ciudad y provincia del predio (el predio sólo guarda `address`), descripción y catálogo de productos del expositor (sin tabla de rubros ni productos, `EXH-02`), logo, SSR/prerender y auditoría de accesibilidad (AC-12).
 
 ##### REP-01 — Métricas del evento
@@ -706,7 +708,10 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
 - **Definiciones:** `sellableStands` = stands no `DISABLED`; `approvedGmvCents` = pagos `APPROVED` de reservas `CONFIRMED` (un reembolso o un pago tardío en conflicto no suma); `pendingAmountCents` = precio de las reservas `HELD`/`PAYMENT_PENDING`; `reconciliationPending` = intentos `PENDING`; `latePaymentIncidents` = auditoría `payment.late_conflict` de reservas del evento; `gmvByMonth` por mes UTC de la última actualización del intento.
 - **Evidencia:**
   - 2026-11-11: `test:int` → 258/258 (8 de `test/metrics.int-spec.ts`: estados de stands, ingresos confirmados sin reembolsos, monto pendiente, reservas por día con ceros, incidencias del evento, sectores, 403/401/404/400).
-- Fuera de alcance: exportación CSV (`GET /events/:id/reservations/export`) y el adaptador HTTP de la web.
+- **Web (2026-11-11):** el Panel (`/organizador/panel`) lee `GET /events/:id/metrics` con el adaptador HTTP.
+- **Exportación CSV (2026-11-11):** `GET /api/v1/events/:id/reservations/export` (OWNER/ADMIN/OPERATOR; EXHIBITOR → 403; otra organización → 404). `text/csv; charset=utf-8` con BOM UTF-8, `Content-Disposition: attachment; filename="reservas-<slug>-<AAAA-MM-DD>.csv"` y una fila por reserva: stand, sector, expositor, email, estado, monto (ARS con decimales), creada, actualizada (UTC ISO 8601), estado del último intento de pago e id de pago. Escapado RFC 4180 y protección contra inyección de fórmulas (las celdas de texto que empiezan con `=`, `+`, `-`, `@`, tab o CR llevan un `'` delante). La web lo baja con `HttpClient` (blob) desde el Panel y desde "Reservas y cobros".
+  - Evidencia: `test/reservations-export.int-spec.ts` (5: columnas y adjunto, escapado, inyección, 403/401, otra organización/id inválido → 404), `src/events/csv.spec.ts`, 3 adaptadores/componentes en `features/reports` y E2E de descarga en `e2e/organizer-screens.e2e.ts` y `e2e/organizer-reservations.e2e.ts`.
+- Fuera de alcance: otras exportaciones (pagos, expositores) y reportes por rango de fechas.
 
 #### Integración Mercado Pago (EP07)
 
@@ -816,7 +821,7 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
   - Catálogo: no existe `PUB-01`, así que "Explorar stands" lee los eventos, stands, rubros y plano **de la organización del feriante** (`GET /events`, `/events/{id}/stands|sectors`, `/layout-versions/{id}`), que se abrió al rol `EXHIBITOR` sólo para eventos `PUBLISHED`/`ACTIVE` y versiones de plano `PUBLISHED`. Los stands con reserva propia viva se ven como "Reservado". Ruta `/feriante/explorar[/{slug}]`.
   - P18 `/feriante/reservas/nueva?stand=…&feria=…` (o `?reserva={id}` para retomar el pago): resumen y términos (`termsVersion` 2026-11) → `POST /reservations` (hold, `Idempotency-Key`) → cuenta regresiva → `POST …/checkout` → `MercadoPagoWallet` (o link a `checkoutUrl`). Errores con mensaje claro: `SUBSCRIPTION_REQUIRED` (link a la suscripción), `PROFILE_INCOMPLETE`, `STAND_UNAVAILABLE`, `EVENT_SALES_CLOSED`, hold vencido.
   - "Mis reservas" `/feriante/reservas`: `GET /reservations` con evento, importe, estado en español, "Pagar" para holds vivos y enlace al estado (P19).
-  - Sigue en memoria: panel, expositores, editor de plano y Mercado Pago del organizador, y el portal del visitante (`/ferias`, hasta `PUB-01`).
+  - Actualización 2026-11-11: el panel, expositores, editor de plano, Mercado Pago, reservas y cobros del organizador y el portal del visitante (`/ferias`, `PUB-01`) ya leen la API; ya no queda ninguna pantalla con adaptador en memoria en las rutas. Lo único pendiente de `PAY-04` es pagar de punta a punta en el sandbox.
 - **Aceptación:** los query params del retorno (`payment_id`, `status`, `external_reference`, `merchant_order_id`, `preference_id`…) sólo orientan la UI; el estado mostrado sale de la API propia y se actualiza cuando llega el webhook.
 - **Evidencia requerida:** tests de página, E2E con API simulada y axe.
   - 2026-11-09: `ng test` 292/292 (7 de `checkout-return.page.spec.ts` y 1 de rutas), repetido 3 veces; Playwright 11/11 (3 de `e2e/checkout-return.e2e.ts`, axe sin violaciones serias/críticas); `tsc` y `oxlint` OK.
@@ -833,7 +838,7 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 
 ##### PAY-05 — Conciliación y pago tardío
 
-- **Estado:** `IN_PROGRESS` (API lista; falta la pantalla P10 en la web y la prueba en sandbox)
+- **Estado:** `IN_PROGRESS` (API y P10 listas; falta la prueba en sandbox)
 - **Dependencias:** `PAY-03`
 - **Entrega:** job de conciliación de attempts pendientes y vista P10 de incidencias (§6.6, §6.8, INV-07). `ReconciliationService.run(now)` y `GET /api/v1/payment-incidents` (OWNER/ADMIN).
 - **Aceptación:** el hold no se libera a ciegas si el proveedor no responde; un pago aprobado tras la adjudicación genera `LATE_PAYMENT_CONFLICT` sin doble adjudicación.
@@ -860,12 +865,12 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 - **Incidencias (P10):** `GET /payment-incidents` lee la auditoría (`payment.late_conflict` → `LATE_PAYMENT_CONFLICT`, `payment.mismatch` → `AMOUNT_MISMATCH`), de la más nueva a la más vieja. Se resuelven con `POST /reservations/{id}/refunds` (`PAY-06`).
 - [x] Consultar el pago por `external_reference` antes de expirar un hold. La orden comercial no hace falta: los pagos de la preferencia llevan el `external_reference` del attempt.
 - [ ] Alertas y KPIs de conciliación pendiente y errores de webhook (§1.4): hoy sólo `warn` en el log; falta métrica/dashboard.
-- [ ] Pantalla P10 en la web.
+- [x] Pantalla P10 en la web: las incidencias se muestran en "Reservas y cobros" (`/organizador/reservas`, `features/organizer-reservations`) y llevan a devolver la reserva; E2E con API simulada y axe en `e2e/organizer-reservations.e2e.ts`.
 - [ ] Ponytail: el job corre en el proceso de la API. Pasarlo a un job repetible de BullMQ cuando la API escale a varias instancias (hoy es correcto, pero duplica las consultas al proveedor).
 
 ##### PAY-06 — Reembolsos, cancelaciones y contracargos
 
-- **Estado:** `IN_PROGRESS` (API lista; falta la prueba en sandbox y la acción en P10)
+- **Estado:** `IN_PROGRESS` (API lista; el reembolso total/parcial y la devolución desde una incidencia ya están en "Reservas y cobros"; falta la prueba en sandbox)
 - **Dependencias:** `PAY-05`
 - **Entrega:** `POST /api/v1/reservations/:id/refunds` (OWNER/ADMIN, `Idempotency-Key`): reembolso total o parcial (`POST /v1/payments/{id}/refunds`, parcial con `amount`), cancelación de pagos pendientes (`PUT /v1/payments/{id}` → `cancelled`) y registro de contracargos. Tabla `payment_refunds` (migración `0012_payment_refunds`), una fila por `payment_id`.
 - **Aceptación:** reembolsos idempotentes y auditados; dentro de los 180 días desde la aprobación; un pago con dos medios se revierte por cada `payment_id`.
@@ -895,7 +900,7 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 
 ##### PAY-07 — Configuración Mercado Pago (P12)
 
-- **Estado:** `IN_PROGRESS` (API y pantalla P12 listas; la web usa un adaptador en memoria hasta tener sesión (`CORE-02` web); falta la prueba en sandbox con cuentas de prueba)
+- **Estado:** `IN_PROGRESS` (API y pantalla P12 listas, la web usa el adaptador HTTP desde 2026-11-10; falta la prueba en sandbox con cuentas de prueba)
 - **Dependencias:** `PAY-01`, `CORE-03`
 - **Entrega:** vinculación OAuth de la cuenta vendedora del organizador según ADR 0006 §2. `GET /api/v1/payment-account`, `POST /payment-account/authorization`, `POST /payment-account/link` y `DELETE /payment-account` (OWNER/ADMIN). Tabla `seller_accounts` (migración `0013_seller_accounts`, RLS), una por tenant.
 - **Aceptación:** sólo owner/administrador; los secretos nunca vuelven al navegador; estado de vinculación y entorno visibles.
@@ -918,7 +923,7 @@ Desglose de EP07 según §6, §7 e INV-07, con la documentación oficial relevad
 - **Renovación:** 7 días antes de vencer (el token dura 180). Serializada con `SELECT … FOR UPDATE` sobre la fila del tenant durante la llamada, porque cada refresh rota el refresh token. Si falla y el token sigue vigente, se usa y se avisa en el log; vencido → 503 y la pantalla pide revincular.
 - **Cobrador (§6.7):** con cuenta vinculada, un pago cuyo `collector_id` no es el `seller_id` → `payment.collector_mismatch` (incidencia `COLLECTOR_MISMATCH`) y no se confirma.
 - [x] Pantalla P12 en la web: `/organizador/mercado-pago` (estado con ícono y texto, entorno, id de vendedor, vencimiento; vincular, revincular y desvincular con confirmación `alertdialog` y foco en Cancelar; aviso si venció) y `/organizador/mercado-pago/vincular` (retorno: canjea `code`/`state`, explica `state` inválido o autorización cancelada con `error=access_denied`).
-- [ ] Adaptador HTTP de `PaymentAccountRepository` cuando la web tenga sesión y organización seleccionada (hoy `InMemoryPaymentAccountRepository` simula el redirect).
+- [x] Adaptador HTTP de `PaymentAccountRepository` (`HttpPaymentAccountRepository`, provisto en la ruta `/organizador/mercado-pago`); el adaptador en memoria queda sólo para tests.
 - [ ] Prueba en sandbox con cuentas de prueba: confirmar los campos de `/oauth/token` (`user_id`, `live_mode`, `expires_in`) y el comportamiento del refresh (R-MP-4).
 - [ ] Ponytail: la clave de cifrado sale de `MP_TOKEN_ENCRYPTION_KEY`. Envolverla con KMS/vault antes de producción; la rotación re-cifra las filas del `key_id` viejo.
 - [ ] Ponytail: la renovación sólo ocurre cuando se usa el token. Sumar al job de conciliación una renovación proactiva y una alerta para cuentas sin uso cerca del vencimiento.

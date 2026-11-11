@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { mockApi, seriousViolations } from './support/mock-api';
+import { CSV_FILENAME, INVITATION_URL, mockApi, seriousViolations } from './support/mock-api';
 
 /** Dashboard, plan entry and exhibitors read the API (REP-01, LAY-01, EXH-01), with their empty states. */
 
@@ -59,4 +59,52 @@ test('the exhibitors screen explains there are none yet', async ({ page }) => {
   await page.goto('/organizador/expositores');
   await expect(page.getByText('Todavía no hay expositores')).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
+});
+
+test('invites an exhibitor: the link is shown once and the invitation is listed', async ({
+  page,
+}) => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await mockApi(page, { role: 'OWNER' });
+  await page.goto('/organizador/expositores');
+  const panel = page.getByRole('region', { name: 'Invitaciones' });
+  await expect(panel.getByText('Pendiente')).toBeVisible();
+  await expect(panel.getByText('Usada')).toBeVisible();
+
+  await panel.getByLabel('Email').fill('nuevo@example.test');
+  await panel.getByRole('button', { name: 'Crear invitación' }).click();
+  await expect(panel.getByLabel('Link de invitación')).toHaveValue(INVITATION_URL);
+  await expect(panel.getByText('no lo vamos a mostrar de nuevo')).toBeVisible();
+  await expect(panel.getByRole('link', { name: 'Compartir por WhatsApp' })).toHaveAttribute(
+    'href',
+    /^https:\/\/wa\.me\//,
+  );
+  await panel.getByRole('button', { name: 'Copiar link' }).click();
+  await expect(panel.getByText('Link copiado.')).toBeVisible();
+  await expect(panel.getByText('nuevo@example.test')).toBeVisible();
+  expect(await seriousViolations(page)).toEqual([]);
+
+  await panel.getByRole('button', { name: 'Ya lo copié' }).click();
+  await expect(panel.getByLabel('Link de invitación')).toHaveCount(0);
+});
+
+test('revoking a pending invitation asks for confirmation first', async ({ page }) => {
+  const api = await mockApi(page, { role: 'OWNER' });
+  await page.goto('/organizador/expositores');
+  const panel = page.getByRole('region', { name: 'Invitaciones' });
+  await panel.getByRole('button', { name: 'Revocar' }).click();
+  await expect(page.getByRole('alertdialog')).toBeVisible();
+  await page.getByRole('button', { name: 'Sí, revocar' }).click();
+  await expect(panel.getByText('Revocada')).toBeVisible();
+  expect(api.invitations[0].status).toBe('REVOKED');
+});
+
+test('the dashboard exports the reservations CSV of the event', async ({ page }) => {
+  const api = await mockApi(page, { role: 'OWNER' });
+  await page.goto('/organizador/panel');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Exportar CSV' }).click();
+  expect((await download).suggestedFilename()).toBe(CSV_FILENAME);
+  const request = api.requests.find((r) => r.path === '/events/e1/reservations/export')!;
+  expect(request.headers['authorization']).toBe('Bearer access-token');
 });

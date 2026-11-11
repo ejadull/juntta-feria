@@ -1,9 +1,13 @@
 import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
 import { EventMetricsRepository } from './features/dashboard/data/event-metrics.repository';
+import { HttpReservationsExportRepository } from './features/reports/data/http-reservations-export.repository';
+import { ReservationsExportRepository } from './features/reports/data/reservations-export.repository';
 import { HttpEventMetricsRepository } from './features/dashboard/data/http-event-metrics.repository';
 import { ExhibitorRepository } from './features/exhibitors/data/exhibitor.repository';
 import { HttpExhibitorRepository } from './features/exhibitors/data/http-exhibitor.repository';
+import { HttpInvitationRepository } from './features/exhibitors/data/http-invitation.repository';
+import { InvitationRepository } from './features/exhibitors/data/invitation.repository';
 import { HttpLayoutRepository } from './features/layout-editor/data/http-layout.repository';
 import { LayoutRepository } from './features/layout-editor/data/layout.repository';
 import { HttpPaymentAccountRepository } from './features/payment-account/data/http-payment-account.repository';
@@ -68,7 +72,10 @@ export const routes: Routes = [
             title: title('Panel'),
             loadComponent: () =>
               import('./features/dashboard/dashboard.page').then((m) => m.DashboardPage),
-            providers: [{ provide: EventMetricsRepository, useClass: HttpEventMetricsRepository }],
+            providers: [
+              { provide: EventMetricsRepository, useClass: HttpEventMetricsRepository },
+              { provide: ReservationsExportRepository, useClass: HttpReservationsExportRepository },
+            ],
           },
           {
             path: 'plano',
@@ -95,6 +102,7 @@ export const routes: Routes = [
                 provide: OrganizerReservationsRepository,
                 useClass: HttpOrganizerReservationsRepository,
               },
+              { provide: ReservationsExportRepository, useClass: HttpReservationsExportRepository },
             ],
           },
           {
@@ -102,7 +110,10 @@ export const routes: Routes = [
             title: title('Expositores'),
             loadComponent: () =>
               import('./features/exhibitors/exhibitors.page').then((m) => m.ExhibitorsPage),
-            providers: [{ provide: ExhibitorRepository, useClass: HttpExhibitorRepository }],
+            providers: [
+              { provide: ExhibitorRepository, useClass: HttpExhibitorRepository },
+              { provide: InvitationRepository, useClass: HttpInvitationRepository },
+            ],
           },
           {
             path: 'mercado-pago',

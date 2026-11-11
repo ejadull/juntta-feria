@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { future, mockApi, reservation, seriousViolations, type MockApi } from './support/mock-api';
+import {
+  CSV_FILENAME,
+  future,
+  mockApi,
+  reservation,
+  seriousViolations,
+  type MockApi,
+} from './support/mock-api';
 
 /** P09 (RES-01, PAY-05, PAY-06): the organizer's reservations and payments, against a mocked API, with axe. */
 
@@ -136,4 +143,12 @@ test('an operator releases holds but sees no refunds or incidents', async ({ pag
   await expect(page.getByRole('button', { name: /Devolver pago/ })).toHaveCount(0);
   await expect(page.getByText('solo quienes administran')).toBeVisible();
   expect(api.requests.some((r) => r.path === '/payment-incidents')).toBe(false);
+});
+
+test('exports the CSV of the selected event from Reservas y cobros', async ({ page }) => {
+  await seed(page);
+  await page.goto('/organizador/reservas');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Exportar CSV' }).click();
+  expect((await download).suggestedFilename()).toBe(CSV_FILENAME);
 });

@@ -13,6 +13,7 @@ import {
   EventNotFoundError,
   type EventMetricsDto,
 } from './data/event-metrics.repository';
+import { ExportCsvButton } from '../reports/ui/export-csv-button';
 import { occupancy } from './domain/occupancy';
 import { GmvChart } from './ui/gmv-chart';
 import { KpiCard } from './ui/kpi-card';
@@ -80,7 +81,7 @@ const EVENTS_FAILED = 'No pudimos cargar tus eventos. Probá de nuevo en unos mi
 /** P03 (design D2/D3): read-only KPIs of the current event (REP-01), switchable between events. */
 @Component({
   selector: 'app-dashboard-page',
-  imports: [RouterLink, KpiCard, GmvChart],
+  imports: [RouterLink, KpiCard, GmvChart, ExportCsvButton],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
@@ -107,6 +108,7 @@ const EVENTS_FAILED = 'No pudimos cargar tus eventos. Probá de nuevo en unos mi
             </select>
           </label>
         }
+        <app-export-csv-button [eventId]="eventId()" />
       </header>
 
       @if (error(); as message) {

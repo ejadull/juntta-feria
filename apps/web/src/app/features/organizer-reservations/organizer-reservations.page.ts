@@ -14,6 +14,7 @@ import { problemOf } from '../../shared/auth/problem';
 import { SessionStore } from '../../shared/auth/session.store';
 import { formatArs } from '../../shared/money';
 import type { ReservationStatus } from '../checkout-return/data/reservation-payment.repository';
+import { ExportCsvButton } from '../reports/ui/export-csv-button';
 import { isPayable, STATUS_LABEL, statusText } from '../reservations/reservation-status';
 import {
   OrganizerReservationsRepository,
@@ -86,6 +87,7 @@ function parsePesos(text: string): number | null {
  */
 @Component({
   selector: 'app-organizer-reservations-page',
+  imports: [ExportCsvButton],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
@@ -94,9 +96,12 @@ function parsePesos(text: string): number | null {
           <p class="text-sm font-semibold tracking-wider text-primary-strong">ORGANIZADOR</p>
           <h1 class="mt-1 text-3xl font-semibold sm:text-4xl">Reservas y cobros</h1>
         </div>
-        <button type="button" class="btn" [disabled]="loading()" (click)="refresh()">
-          Actualizar
-        </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <app-export-csv-button [eventId]="eventId()" />
+          <button type="button" class="btn" [disabled]="loading()" (click)="refresh()">
+            Actualizar
+          </button>
+        </div>
       </header>
       <p class="mt-3 text-text-muted">
         Quién reservó cada stand, el estado de su pago y las acciones que podés hacer.

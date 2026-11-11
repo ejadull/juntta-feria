@@ -3,6 +3,8 @@ import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { signedInAs } from '../../shared/auth/testing';
 import type { MembershipRole } from '../../shared/auth/session.store';
+import { InMemoryReservationsExportRepository } from '../reports/data/in-memory-reservations-export.repository';
+import { ReservationsExportRepository } from '../reports/data/reservations-export.repository';
 import { InMemoryOrganizerReservationsRepository } from './data/in-memory-organizer-reservations.repository';
 import { OrganizerReservationsRepository } from './data/organizer-reservations.repository';
 import { OrganizerReservationsPage } from './organizer-reservations.page';
@@ -16,7 +18,11 @@ async function render(
   repo: OrganizerReservationsRepository = new InMemoryOrganizerReservationsRepository(),
 ) {
   TestBed.configureTestingModule({
-    providers: [{ provide: OrganizerReservationsRepository, useValue: repo }, signedInAs(role)],
+    providers: [
+      { provide: OrganizerReservationsRepository, useValue: repo },
+      { provide: ReservationsExportRepository, useClass: InMemoryReservationsExportRepository },
+      signedInAs(role),
+    ],
   });
   const fixture = TestBed.createComponent(OrganizerReservationsPage);
   await fixture.whenStable();

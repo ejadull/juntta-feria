@@ -35,7 +35,7 @@ export async function configureApp(
   app.enableCors({
     origin: anyOrigin ? '*' : [...env.corsOrigins],
     credentials: !anyOrigin, // refresh cookie (ADR 0004) needs credentials; never with '*'
-    exposedHeaders: [CORRELATION_HEADER],
+    exposedHeaders: [CORRELATION_HEADER, 'Content-Disposition'],
   });
   app.useGlobalFilters(new ProblemDetailsFilter());
   app

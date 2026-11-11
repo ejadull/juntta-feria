@@ -2,12 +2,19 @@ import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { ExhibitorRepository, type ExhibitorSummaryDto } from './data/exhibitor.repository';
 import { InMemoryExhibitorRepository } from './data/in-memory-exhibitor.repository';
+import { InMemoryInvitationRepository } from './data/in-memory-invitation.repository';
+import { InvitationRepository } from './data/invitation.repository';
 import { ExhibitorsPage } from './exhibitors.page';
 
 const plain = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
 
 async function render(repo: ExhibitorRepository = new InMemoryExhibitorRepository()) {
-  TestBed.configureTestingModule({ providers: [{ provide: ExhibitorRepository, useValue: repo }] });
+  TestBed.configureTestingModule({
+    providers: [
+      { provide: ExhibitorRepository, useValue: repo },
+      { provide: InvitationRepository, useValue: new InMemoryInvitationRepository() },
+    ],
+  });
   const fixture = TestBed.createComponent(ExhibitorsPage);
   await fixture.whenStable();
   const host = fixture.nativeElement as HTMLElement;

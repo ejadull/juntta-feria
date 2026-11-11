@@ -4,6 +4,8 @@ import { of, throwError } from 'rxjs';
 import { EventsRepository, type OrganizerEvent } from '../../shared/events/events.repository';
 import { EventMetricsRepository } from './data/event-metrics.repository';
 import { InMemoryEventMetricsRepository } from './data/in-memory-event-metrics.repository';
+import { InMemoryReservationsExportRepository } from '../reports/data/in-memory-reservations-export.repository';
+import { ReservationsExportRepository } from '../reports/data/reservations-export.repository';
 import { DashboardPage } from './dashboard.page';
 
 const plain = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
@@ -24,6 +26,7 @@ async function render(
     providers: [
       { provide: EventMetricsRepository, useValue: repo },
       { provide: EventsRepository, useValue: events },
+      { provide: ReservationsExportRepository, useClass: InMemoryReservationsExportRepository },
       provideRouter([]),
     ],
   });
