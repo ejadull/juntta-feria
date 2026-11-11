@@ -86,7 +86,11 @@ export class LayoutTemplatesController {
 export class LayoutVersionsController {
   constructor(private readonly layouts: LayoutsService) {}
 
-  /** Exhibitors read the plan of a published version (stand map); drafts stay organizer-only. */
+  /**
+   * Exhibitors read the plan of a published or archived version (stand map): an event keeps the
+   * version it was created on, which is archived when a newer one is published. Drafts stay
+   * organizer-only.
+   */
   @Get(':id')
   @TenantScoped(...MANAGERS, 'EXHIBITOR')
   async get(
@@ -99,7 +103,7 @@ export class LayoutVersionsController {
     );
     if (
       !version ||
-      (request.tenant.role === 'EXHIBITOR' && version.status !== 'PUBLISHED')
+      (request.tenant.role === 'EXHIBITOR' && version.status === 'DRAFT')
     )
       throw new NotFoundException('Layout not found.');
     return version;

@@ -92,8 +92,8 @@ async function seed(): Promise<void> {
       );
       if (p.profile) {
         const ex = await c.query<{ id: string }>(
-          `INSERT INTO exhibitors (tenant_id, user_id, legal_name, trade_name, tax_id, category)
-           VALUES ($1, $2, $3, $3, $4, 'Textiles') RETURNING id`,
+          `INSERT INTO exhibitors (tenant_id, user_id, legal_name, trade_name, tax_id)
+           VALUES ($1, $2, $3, $3, $4) RETURNING id`,
           [
             R_A,
             userIds[who],
@@ -367,6 +367,52 @@ describe('reservations (RES-01)', () => {
       ]),
     );
     expect(rows[0].status).toBe('EXPIRED');
+  });
+
+  it('lets exhibitors keep reading an event plan after a newer version archives it; never drafts', async () => {
+    const first = (
+      await call('POST', '/layout-templates', 'owner', {
+        name: 'Plano que se archiva',
+        venueId: VENUE,
+      })
+    ).json();
+    await call('PUT', `/layout-versions/${first.id}/objects`, 'owner', {
+      objects: [
+        {
+          id: randomUUID(),
+          kind: 'STAND',
+          code: 'Z1',
+          geometry: rect(0, 0, 3, 3),
+          metadata: {},
+        },
+      ],
+    });
+    expect(
+      (await call('POST', `/layout-versions/${first.id}/publish`, 'owner'))
+        .statusCode,
+    ).toBe(200);
+    const draft = (
+      await call(
+        'POST',
+        `/layout-templates/${first.templateId}/versions`,
+        'owner',
+        {
+          sourceVersionId: first.id,
+        },
+      )
+    ).json();
+    expect(
+      (await call('GET', `/layout-versions/${draft.id}`, 'ana')).statusCode,
+    ).toBe(404);
+
+    // Publishing the new version archives the first one, which events keep using.
+    expect(
+      (await call('POST', `/layout-versions/${draft.id}/publish`, 'owner'))
+        .statusCode,
+    ).toBe(200);
+    const archived = await call('GET', `/layout-versions/${first.id}`, 'ana');
+    expect(archived.statusCode).toBe(200);
+    expect(archived.json().status).toBe('ARCHIVED');
   });
 
   it('lets each exhibitor read only its reservations; organizers read them all', async () => {
