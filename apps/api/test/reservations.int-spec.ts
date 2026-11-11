@@ -391,6 +391,39 @@ describe('reservations (RES-01)', () => {
     ).toEqual(new Set([exhibitorIds.ana, exhibitorIds.beto]));
   });
 
+  it('gives organizers the exhibitor and the last payment attempt of each reservation; exhibitors do not get them', async () => {
+    await owner((c) =>
+      c.query(
+        `INSERT INTO payment_attempts (tenant_id, reservation_id, status, amount_cents, currency, payment_id, payment_status, expires_at, idempotency_key)
+         VALUES ($1, $2, 'APPROVED', $3, 'ARS', 'mp-1', 'approved', now() + interval '1 hour', $4)`,
+        [R_A, anaReservation, PRICE, randomUUID()],
+      ),
+    );
+    const all: {
+      id: string;
+      exhibitor?: { tradeName: string; email: string };
+      payment?: { status: string; paymentStatus: string | null } | null;
+    }[] = (
+      await call('GET', `/reservations?eventId=${open.id}`, 'owner')
+    ).json();
+    const ana = all.find((r) => r.id === anaReservation);
+    expect(ana?.exhibitor).toEqual({
+      tradeName: 'Feriante ana',
+      email: 'ana@reservations.test',
+    });
+    expect(ana?.payment).toMatchObject({
+      status: 'APPROVED',
+      paymentStatus: 'approved',
+    });
+    const beto = all.find((r) => r.id !== anaReservation);
+    expect(beto?.exhibitor?.email).toBe('beto@reservations.test');
+    expect(beto?.payment).toBeNull();
+
+    const mine = (await call('GET', '/reservations', 'ana')).json();
+    expect(mine[0]).not.toHaveProperty('exhibitor');
+    expect(mine[0]).not.toHaveProperty('payment');
+  });
+
   it('cancels a hold (owner of the reservation or organizer); a cancelled one cannot be cancelled again', async () => {
     const mine = (
       await call('GET', `/reservations?eventId=${open.id}`, 'beto')

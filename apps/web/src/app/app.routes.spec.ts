@@ -53,10 +53,22 @@ describe('organizer routes (ORG-01)', () => {
     expect(host.querySelector('main app-layout-editor-page')).not.toBeNull();
   });
 
-  it('shows the reservations placeholder', async () => {
-    const { current, host } = await open('/organizador/reservas', { as: 'OWNER' });
+  it('opens "Reservas y cobros" with the reservations of the API (RES-01)', async () => {
+    const { current, host, harness } = await open('/organizador/reservas', { as: 'OWNER' });
     expect(current()).toEqual(['Reservas y cobros']);
+    expect(TestBed.inject(Title).getTitle()).toBe('Reservas y cobros · Juntta Feria');
+    const http = TestBed.inject(HttpTestingController);
+    http
+      .expectOne('/api/v1/events')
+      .flush([
+        { id: 'e1', name: 'Feria Sandbox', status: 'PUBLISHED', startsAt: '2026-11-20T13:00:00Z' },
+      ]);
+    http.expectOne('/api/v1/payment-incidents').flush([]);
+    await harness.fixture.whenStable();
+    http.expectOne((r) => r.url === '/api/v1/reservations').flush([]);
+    await harness.fixture.whenStable();
     expect(host.querySelector('main h1')?.textContent).toContain('Reservas y cobros');
+    expect(host.textContent).toContain('Todavía no hay reservas en este evento');
   });
 
   it('links Mercado Pago through its return page and keeps the section active (P12, PAY-07)', async () => {
@@ -65,11 +77,25 @@ describe('organizer routes (ORG-01)', () => {
     });
     expect(current()).toEqual(['Mercado Pago']);
     expect(TestBed.inject(Title).getTitle()).toBe('Mercado Pago · Juntta Feria');
+    const http = TestBed.inject(HttpTestingController);
+    const unlinked = {
+      status: 'NOT_LINKED',
+      environment: 'sandbox',
+      sellerId: null,
+      liveMode: null,
+      expiresAt: null,
+      linkedAt: null,
+    };
+    http.expectOne('/api/v1/payment-account').flush(unlinked);
+    await harness.fixture.whenStable();
     expect(host.querySelector('main .status')?.textContent).toContain('Sin vincular');
 
-    await harness.navigateByUrl(
-      '/organizador/mercado-pago/vincular?code=demo-code&state=demo-state',
-    );
+    await harness.navigateByUrl('/organizador/mercado-pago/vincular?code=c&state=s');
+    const link = http.expectOne('/api/v1/payment-account/link');
+    expect(link.request.body).toEqual({ code: 'c', state: 's' });
+    link.flush({ ...unlinked, status: 'LINKED', sellerId: '123' });
+    await harness.fixture.whenStable();
+    http.expectOne('/api/v1/payment-account').flush({ ...unlinked, status: 'LINKED' });
     await harness.fixture.whenStable();
     expect(router.url).toBe('/organizador/mercado-pago');
     expect(current()).toEqual(['Mercado Pago']);

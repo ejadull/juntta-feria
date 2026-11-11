@@ -23,7 +23,7 @@ test('organizer links and unlinks the Mercado Pago account', async ({ page }) =>
   await expect(page.locator('.status')).toContainText('Sin vincular');
   expect(await seriousViolations(page)).toEqual([]);
 
-  // The demo adapter skips Mercado Pago and lands on the return page, like the real redirect.
+  // The mocked authorization URL sends the browser straight to the return page, as Mercado Pago does.
   await page.getByRole('button', { name: 'Vincular cuenta de Mercado Pago' }).click();
   await expect(page).toHaveURL(/\/organizador\/mercado-pago$/);
   await expect(page.locator('.status')).toContainText('Vinculada');

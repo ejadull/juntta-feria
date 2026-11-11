@@ -73,7 +73,36 @@ export interface Reservation {
   amount: { currency: string; valueCents: number };
   stand: { id: string; code: string; areaM2: number };
   eventId: string;
+  /** What staff also get from `GET /reservations` (organizer back office). */
+  createdAt: string;
+  exhibitor: { tradeName: string; email: string };
+  payment: { status: string; paymentStatus: string | null; updatedAt: string } | null;
 }
+
+export interface PaymentIncident {
+  id: string;
+  code: string;
+  reservationId: string | null;
+  createdAt: string;
+}
+
+export interface SellerAccount {
+  status: 'NOT_LINKED' | 'LINKED' | 'EXPIRED';
+  environment: 'sandbox' | 'production';
+  sellerId: string | null;
+  liveMode: boolean | null;
+  expiresAt: string | null;
+  linkedAt: string | null;
+}
+
+export const UNLINKED_ACCOUNT: SellerAccount = {
+  status: 'NOT_LINKED',
+  environment: 'sandbox',
+  sellerId: null,
+  liveMode: null,
+  expiresAt: null,
+  linkedAt: null,
+};
 
 export interface Subscription {
   status: 'NONE' | 'PENDING' | 'ACTIVE' | 'PAST_DUE' | 'CANCELLED';
@@ -129,6 +158,11 @@ export interface MockApi {
   /** Problem answered by `POST /reservations` instead of creating the hold. */
   holdProblem: { status: number; code?: string } | null;
   reservations: Reservation[];
+  incidents: PaymentIncident[];
+  /** Problem answered by `POST /reservations/:id/refunds` instead of refunding. */
+  refundProblem: { status: number; code?: string } | null;
+  /** The organization's Mercado Pago seller account (`/payment-account`). */
+  account: SellerAccount;
   requests: { method: string; path: string; headers: Record<string, string>; body: unknown }[];
 }
 
@@ -143,6 +177,9 @@ export function reservation(patch: Partial<Reservation> = {}): Reservation {
     amount: { currency: 'ARS', valueCents: 1_740_000 },
     stand: { id: 'es2', code: 'S2', areaM2: 9 },
     eventId: 'e1',
+    createdAt: '2026-11-10T15:00:00Z',
+    exhibitor: { tradeName: 'Textiles Ana', email: 'ana@example.test' },
+    payment: null,
     ...patch,
   };
 }
@@ -165,6 +202,9 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
     subscription: { status: 'ACTIVE', currentPeriodEnd: future(60 * 24 * 20) },
     holdProblem: null,
     reservations: [],
+    incidents: [],
+    refundProblem: null,
+    account: UNLINKED_ACCOUNT,
     requests: [],
     ...initial,
   };
@@ -239,9 +279,43 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
       api.reservations = [created, ...api.reservations];
       return json(route, created, 201);
     }
-    if (path === '/reservations') return json(route, api.reservations);
+    if (path === '/reservations')
+      return json(
+        route,
+        api.reservations.filter(
+          (r) => !new URL(request.url()).searchParams.has('eventId') || r.eventId === 'e1',
+        ),
+      );
 
-    const match = /^\/reservations\/([^/]+)(\/checkout|\/cancel)?$/.exec(path);
+    if (path === '/payment-incidents') return json(route, api.incidents);
+
+    if (path === '/payment-account') {
+      if (method === 'DELETE') {
+        api.account = UNLINKED_ACCOUNT;
+        return route.fulfill({ status: 204 });
+      }
+      return json(route, api.account);
+    }
+    if (path === '/payment-account/authorization')
+      // Same-origin, as if Mercado Pago sent the browser straight back after authorizing.
+      return json(route, {
+        authorizationUrl: '/organizador/mercado-pago/vincular?code=mp-code&state=mp-state',
+      });
+    if (path === '/payment-account/link') {
+      const body = JSON.parse(raw ?? '{}') as { state?: string };
+      if (body.state !== 'mp-state') return problem(route, 400, 'INVALID_OAUTH_STATE');
+      api.account = {
+        status: 'LINKED',
+        environment: 'sandbox',
+        sellerId: '123456789',
+        liveMode: false,
+        expiresAt: '2027-05-01T12:00:00Z',
+        linkedAt: '2026-11-11T12:00:00Z',
+      };
+      return json(route, api.account);
+    }
+
+    const match = /^\/reservations\/([^/]+)(\/checkout|\/cancel|\/refunds)?$/.exec(path);
     const found = match && api.reservations.find((r) => r.id === match[1]);
     if (!match || !found) return problem(route, 404);
     if (match[2] === '/checkout')
@@ -256,6 +330,14 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
         },
         201,
       );
+    if (match[2] === '/refunds') {
+      if (api.refundProblem)
+        return problem(route, api.refundProblem.status, api.refundProblem.code);
+      const partial = !!(JSON.parse(raw ?? '{}') as { amountCents?: number }).amountCents;
+      if (!partial && found.status === 'CONFIRMED') found.status = 'REFUNDED';
+      if (!partial && found.status === 'PAYMENT_PENDING') found.status = 'CANCELLED';
+      return json(route, { reservationStatus: found.status, refunds: [] }, 201);
+    }
     if (match[2] === '/cancel') {
       found.status = 'CANCELLED';
       return json(route, found);

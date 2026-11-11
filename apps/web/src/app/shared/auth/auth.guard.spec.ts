@@ -65,4 +65,9 @@ describe('safeReturnUrl', () => {
     for (const bad of ['https://evil.test', '//evil.test', '/\\evil.test', '', null, undefined])
       expect(safeReturnUrl(bad)).toBe('/feriante/explorar');
   });
+
+  it('falls back to the given home when the path is not accepted', () => {
+    expect(safeReturnUrl('https://evil.test', '/organizador/panel')).toBe('/organizador/panel');
+    expect(safeReturnUrl('/feriante/reservas', '/organizador/panel')).toBe('/feriante/reservas');
+  });
 });

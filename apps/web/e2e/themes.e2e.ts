@@ -7,6 +7,7 @@ import { mockApi, reservation, seriousViolations, type Role } from './support/mo
 const PAGES: readonly (readonly [path: string, role: Role])[] = [
   ['/organizador/panel', 'OWNER'],
   ['/organizador/expositores', 'OWNER'],
+  ['/organizador/reservas', 'OWNER'],
   ['/ferias', 'EXHIBITOR'],
   ['/feriante/explorar', 'EXHIBITOR'],
   ['/feriante/reservas', 'EXHIBITOR'],

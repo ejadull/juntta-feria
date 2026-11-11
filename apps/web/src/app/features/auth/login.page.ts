@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angu
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { AuthProviders } from '../../shared/auth/auth-providers';
+import { AREA_HOME } from '../../shared/auth/area';
 import { safeReturnUrl } from '../../shared/auth/auth.guard';
 import { messageFor } from '../../shared/auth/problem';
 import { SessionStore } from '../../shared/auth/session.store';
@@ -77,7 +78,11 @@ export class LoginPage {
     this.busy.set(true);
     this.error.set(null);
     this.session.loginWithGoogle(credential).subscribe({
-      next: () => void this.router.navigateByUrl(safeReturnUrl(this.volver())),
+      // Without a (valid) `volver`, each role goes straight to its own home.
+      next: () =>
+        void this.router.navigateByUrl(
+          safeReturnUrl(this.volver(), AREA_HOME[this.session.area()]),
+        ),
       error: (e: unknown) => {
         this.busy.set(false);
         this.error.set(messageFor(e, GOOGLE_ERRORS, GOOGLE_STATUS, OFFLINE));

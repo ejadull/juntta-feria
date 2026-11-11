@@ -5,7 +5,11 @@ import { provideRouter, Router } from '@angular/router';
 import { GOOGLE_SIGN_IN, type GoogleButtonOptions } from '../../shared/google-sign-in';
 import { InvitationPage } from './invitation.page';
 
-const SESSION = { accessToken: 'a', user: { id: 'u', email: 'n@example.test' }, memberships: [] };
+const SESSION = {
+  accessToken: 'a',
+  user: { id: 'u', email: 'n@example.test' },
+  memberships: [{ tenantId: 't', tenantSlug: 'org', tenantName: 'Org', role: 'EXHIBITOR' }],
+};
 const INVITATION = { organizationName: 'Feria Norte', email: 'n@example.test', name: 'Nora' };
 const TOKEN = 'T'.repeat(43);
 const INVITATION_URL = `/api/v1/public/invitations/${TOKEN}`;

@@ -13,6 +13,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { switchMap } from 'rxjs';
 import { API_BASE } from '../../shared/api/api-base';
+import { AREA_HOME } from '../../shared/auth/area';
 import { AuthProviders } from '../../shared/auth/auth-providers';
 import { problemOf, messageFor } from '../../shared/auth/problem';
 import { SessionStore } from '../../shared/auth/session.store';
@@ -134,7 +135,7 @@ export class InvitationPage implements OnInit {
       // The ID token is still valid and the account now exists: signing in with it is one more call.
       .pipe(switchMap(() => this.session.loginWithGoogle(credential)))
       .subscribe({
-        next: () => void this.router.navigateByUrl('/feriante/explorar'),
+        next: () => void this.router.navigateByUrl(AREA_HOME[this.session.area()]),
         error: (e: unknown) => {
           this.busy.set(false);
           // A 401 without a code after a successful accept is the sign-in, not a bad credential.

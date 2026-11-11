@@ -6,8 +6,10 @@ import { ExhibitorRepository } from './features/exhibitors/data/exhibitor.reposi
 import { InMemoryExhibitorRepository } from './features/exhibitors/data/in-memory-exhibitor.repository';
 import { InMemoryLayoutRepository } from './features/layout-editor/data/in-memory-layout.repository';
 import { LayoutRepository } from './features/layout-editor/data/layout.repository';
-import { InMemoryPaymentAccountRepository } from './features/payment-account/data/in-memory-payment-account.repository';
+import { HttpPaymentAccountRepository } from './features/payment-account/data/http-payment-account.repository';
 import { PaymentAccountRepository } from './features/payment-account/data/payment-account.repository';
+import { HttpOrganizerReservationsRepository } from './features/organizer-reservations/data/http-organizer-reservations.repository';
+import { OrganizerReservationsRepository } from './features/organizer-reservations/data/organizer-reservations.repository';
 import { HttpTenantCatalogRepository } from './features/public-catalog/data/http-tenant-catalog.repository';
 import { InMemoryPublicCatalogRepository } from './features/public-catalog/data/in-memory-public-catalog.repository';
 import { PublicCatalogRepository } from './features/public-catalog/data/public-catalog.repository';
@@ -20,10 +22,6 @@ import { SessionStore } from './shared/auth/session.store';
 
 const title = (section: string): string => `${section} · ${APP_NAME}`;
 const notFound = () => import('./features/not-found.page').then((m) => m.NotFoundPage);
-const reservationsPlaceholder = () =>
-  import('./features/reservations/reservations-placeholder.page').then(
-    (m) => m.ReservationsPlaceholderPage,
-  );
 const login = () => import('./features/auth/login.page').then((m) => m.LoginPage);
 const explore = () =>
   import('./features/public-catalog/explore-stands.page').then((m) => m.ExploreStandsPage);
@@ -50,8 +48,9 @@ const checkoutReturns = (
     import('./features/checkout-return/checkout-return.page').then((m) => m.CheckoutReturnPage),
 }));
 
-// ponytail: the organizer screens and the visitor portal still use in-memory adapters until their
-// APIs are wired (REP-01, EXH-01, PUB-01); swap each `useFactory` for its Http adapter here.
+// ponytail: reservations and the Mercado Pago account already talk to the API; the dashboard, the
+// layout editor and the exhibitor list (and the visitor portal) still use in-memory adapters until
+// their APIs are wired (REP-01, EXH-01, PUB-01); swap each `useFactory` for its Http adapter here.
 export const routes: Routes = [
   // Each role lands on its own home; anonymous users on the public fairs.
   { path: '', pathMatch: 'full', redirectTo: () => AREA_HOME[inject(SessionStore).area()] },
@@ -88,15 +87,16 @@ export const routes: Routes = [
           {
             path: 'reservas',
             title: title('Reservas y cobros'),
-            loadComponent: reservationsPlaceholder,
-            data: {
-              eyebrow: 'ORGANIZADOR',
-              heading: 'Reservas y cobros',
-              intro:
-                'Va a mostrar las reservas del evento por estado (retenidas, pendientes de pago, confirmadas, vencidas), la conciliación con Mercado Pago, los pagos tardíos y los reembolsos.',
-              backLink: '/organizador/panel',
-              backLabel: 'Volver al panel',
-            },
+            loadComponent: () =>
+              import('./features/organizer-reservations/organizer-reservations.page').then(
+                (m) => m.OrganizerReservationsPage,
+              ),
+            providers: [
+              {
+                provide: OrganizerReservationsRepository,
+                useClass: HttpOrganizerReservationsRepository,
+              },
+            ],
           },
           {
             path: 'expositores',
@@ -114,10 +114,7 @@ export const routes: Routes = [
             path: 'mercado-pago',
             // One repository for both pages: the return page links, P12 shows the result.
             providers: [
-              {
-                provide: PaymentAccountRepository,
-                useFactory: () => new InMemoryPaymentAccountRepository(),
-              },
+              { provide: PaymentAccountRepository, useClass: HttpPaymentAccountRepository },
             ],
             children: [
               {

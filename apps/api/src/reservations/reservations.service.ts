@@ -18,9 +18,11 @@ import {
   eventStands,
   exhibitors,
   layoutObjects,
+  paymentAttempts,
   platformSubscriptions,
   reservations,
   users,
+  type PaymentAttemptStatus,
   type ReservationStatus,
 } from '../db/schema.js';
 import { AuditService } from '../tenancy/audit.service.js';
@@ -44,6 +46,16 @@ export interface ReservationView {
   readonly exhibitorId: string;
   readonly termsVersion: string;
   readonly createdAt: Date;
+}
+
+/** What the organizer sees besides the reservation: who holds it and how its last payment went. */
+export interface ReservationListItem extends ReservationView {
+  readonly exhibitor: { readonly tradeName: string; readonly email: string };
+  readonly payment: {
+    readonly status: PaymentAttemptStatus;
+    readonly paymentStatus: string | null;
+    readonly updatedAt: Date;
+  } | null;
 }
 
 /** HttpException carrying the §5 machine-readable `code` (problem+json extension). */
@@ -92,15 +104,19 @@ export class ReservationsService {
     }
   }
 
+  /** Exhibitors read their own; managers (`ownerId` null) also get exhibitor and payment data. */
   list(
     tenantId: string,
     ownerId: string | null,
     eventId?: string,
-  ): Promise<ReservationView[]> {
+  ): Promise<ReservationView[] | ReservationListItem[]> {
     const filters: SQL[] = [];
     if (ownerId) filters.push(eq(reservations.userId, ownerId));
     if (eventId) filters.push(eq(eventStands.eventId, eventId));
-    return this.database.withTenant(tenantId, (tx) => this.select(tx, filters));
+    return this.database.withTenant(tenantId, async (tx) => {
+      const views = await this.select(tx, filters);
+      return ownerId ? views : this.withBackOffice(tx, views);
+    });
   }
 
   async get(
@@ -382,6 +398,60 @@ export class ReservationsService {
       eq(reservations.idempotencyKey, key),
     ]);
     return reservation ?? null;
+  }
+
+  private async withBackOffice(
+    tx: Transaction,
+    views: ReservationView[],
+  ): Promise<ReservationListItem[]> {
+    if (views.length === 0) return [];
+    const people = await tx
+      .select({
+        id: exhibitors.id,
+        tradeName: exhibitors.tradeName,
+        email: users.email,
+      })
+      .from(exhibitors)
+      .innerJoin(users, eq(users.id, exhibitors.userId))
+      .where(
+        inArray(
+          exhibitors.id,
+          views.map((v) => v.exhibitorId),
+        ),
+      );
+    const attempts = await tx
+      .select({
+        reservationId: paymentAttempts.reservationId,
+        status: paymentAttempts.status,
+        paymentStatus: paymentAttempts.paymentStatus,
+        updatedAt: paymentAttempts.updatedAt,
+      })
+      .from(paymentAttempts)
+      .where(
+        inArray(
+          paymentAttempts.reservationId,
+          views.map((v) => v.id),
+        ),
+      )
+      .orderBy(desc(paymentAttempts.createdAt));
+    return views.map((view) => {
+      const person = people.find((p) => p.id === view.exhibitorId);
+      const last = attempts.find((a) => a.reservationId === view.id);
+      return {
+        ...view,
+        exhibitor: {
+          tradeName: person?.tradeName ?? '',
+          email: person?.email ?? '',
+        },
+        payment: last
+          ? {
+              status: last.status,
+              paymentStatus: last.paymentStatus,
+              updatedAt: last.updatedAt,
+            }
+          : null,
+      };
+    });
   }
 
   private scope(id: string, ownerId: string | null): SQL[] {

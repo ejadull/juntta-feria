@@ -36,14 +36,9 @@ const UNLINK_FAILED = 'No pudimos desvincular la cuenta. Probá de nuevo.';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-3xl px-4 py-6 sm:px-8 sm:py-8">
-      <header class="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p class="text-sm font-semibold tracking-wider text-primary-strong">ORGANIZADOR</p>
-          <h1 class="mt-1 text-3xl font-semibold sm:text-4xl">Mercado Pago</h1>
-        </div>
-        <span class="rounded-full bg-reserved/15 px-3 py-1 text-xs font-medium text-text">
-          Datos de demostración
-        </span>
+      <header>
+        <p class="text-sm font-semibold tracking-wider text-primary-strong">ORGANIZADOR</p>
+        <h1 class="mt-1 text-3xl font-semibold sm:text-4xl">Mercado Pago</h1>
       </header>
       <p class="mt-3 text-text-muted">
         Los pagos de las reservas entran directo en la cuenta de Mercado Pago de tu organización. La

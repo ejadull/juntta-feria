@@ -5,11 +5,13 @@ import { provideRouter, Router } from '@angular/router';
 import { GOOGLE_SIGN_IN, type GoogleButtonOptions } from '../../shared/google-sign-in';
 import { LoginPage } from './login.page';
 
+const EXHIBITOR_ORG = { tenantId: 't', tenantSlug: 'org', tenantName: 'Org', role: 'EXHIBITOR' };
 const SESSION = {
   accessToken: 'a',
   user: { id: 'u', email: 'f@example.test' },
-  memberships: [],
+  memberships: [EXHIBITOR_ORG],
 };
+const STAFF_SESSION = { ...SESSION, memberships: [{ ...EXHIBITOR_ORG, role: 'OWNER' }] };
 
 /** A fake GIS: remembers the options so the test can play "the user picked an account". */
 async function render(providers: object, volver?: string) {
@@ -83,6 +85,14 @@ describe('LoginPage (P01, CORE-05)', () => {
     rendered[0].options.onCredential('id-token');
     http.expectOne('/api/v1/auth/google').flush(SESSION);
     expect(navigate).toHaveBeenCalledWith('/feriante/explorar');
+  });
+
+  it('lands staff on their own home when there is no `volver`', async () => {
+    const { rendered, http } = await render({ google: { clientId: 'cid.test' } });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    rendered[0].options.onCredential('id-token');
+    http.expectOne('/api/v1/auth/google').flush(STAFF_SESSION);
+    expect(navigate).toHaveBeenCalledWith('/organizador/panel');
   });
 
   it.each([

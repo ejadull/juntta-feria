@@ -24,8 +24,11 @@ export const areaGuard =
   };
 
 /** Only same-app paths: `volver` comes from the URL, so an absolute URL would be an open redirect. */
-export function safeReturnUrl(value: string | null | undefined): string {
+export function safeReturnUrl(
+  value: string | null | undefined,
+  fallback = '/feriante/explorar',
+): string {
   const internal =
     !!value && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\');
-  return internal ? value : '/feriante/explorar';
+  return internal ? value : fallback;
 }
