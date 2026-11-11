@@ -49,6 +49,38 @@
   --radius-xl: 24px;
 }
 
+/*
+ * Alternative theme "Corporativo" (data-theme on <html>, chosen in the shell). Only the tokens
+ * change, so every component follows. Contrast checked (WCAG AA): text 13.98, muted 4.55 on
+ * background and surface-soft, white on primary 5.47, secondary as text 4.80.
+ */
+:root[data-theme='corporativo'] {
+  --color-primary: #0f766e; /* Teal Elegante: brand, CTAs, plan tools */
+  --color-primary-hover: #115e59;
+  --color-secondary: #b45309; /* Dorado Ocre: highlights, featured stands */
+  --color-secondary-strong: #b45309;
+  --color-accent: #065f46; /* Verde Gestión: payments and confirmed reservations */
+  --color-accent-strong: #065f46;
+
+  --color-background: #f8fafc; /* Fondo Natural */
+  --color-surface: #ffffff;
+  --color-surface-soft: #f8fafc; /* #f1f5f9 drops muted text to 4.34:1 */
+
+  --color-text: #1e293b; /* Azul Corporativo */
+  --color-text-muted: #64748b; /* Gris de Soporte */
+  --color-border: #e2e8f0;
+  --color-border-strong: #64748b;
+
+  --color-available: #065f46;
+  --color-reserved: #d97706;
+  --color-reserved-stroke: #b45309;
+  --color-occupied: #94a3b8;
+  --color-occupied-strong: #64748b;
+  --color-blocked: #f1f5f9;
+  --color-blocked-stroke: #64748b;
+  --color-selected: #2563eb;
+}
+
 @layer base {
   body {
     @apply bg-background font-sans text-text antialiased;

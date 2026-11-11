@@ -104,6 +104,24 @@ describe('areas and "Ver como" (PUB-UI-01)', () => {
     expect(pressed(host)).toEqual(['Feriante']);
   });
 
+  it('switches to the alternative "Corporativo" palette from the shell', async () => {
+    const { host, harness } = await open('/ferias');
+    const button = (label: string) =>
+      [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Tema de colores"] button')].find(
+        (b) => b.textContent!.trim() === label,
+      )!;
+    expect(button('Clásico').getAttribute('aria-pressed')).toBe('true');
+
+    button('Corporativo').click();
+    await harness.fixture.whenStable();
+    expect(document.documentElement.dataset['theme']).toBe('corporativo');
+    expect(button('Corporativo').getAttribute('aria-pressed')).toBe('true');
+
+    button('Clásico').click();
+    expect(document.documentElement.dataset['theme']).toBeUndefined();
+    localStorage.removeItem('juntta.theme');
+  });
+
   it('keeps the visitor pages public', async () => {
     const { router } = await open('/ferias');
     expect(router.url).toBe('/ferias');
