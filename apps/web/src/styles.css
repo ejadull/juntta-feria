@@ -287,6 +287,7 @@
   }
 
   .btn-danger {
-    @apply border-danger/40 text-danger hover:bg-danger/10;
+    /* Hover strengthens the border: a danger tint behind danger text dropped below 4.5:1 (Grafito). */
+    @apply border-danger/40 text-danger hover:border-danger;
   }
 }
