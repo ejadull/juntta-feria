@@ -110,7 +110,7 @@ describe('areas and "Ver como" (PUB-UI-01)', () => {
       [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Tema de colores"] button')].find(
         (b) => b.textContent!.trim() === label,
       )!;
-    expect(button('Clásico').getAttribute('aria-pressed')).toBe('true');
+    expect(button('Grafito').getAttribute('aria-pressed')).toBe('true'); // default (paleta 2)
 
     button('Corporativo').click();
     await harness.fixture.whenStable();

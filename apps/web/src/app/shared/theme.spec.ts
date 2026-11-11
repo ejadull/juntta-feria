@@ -9,9 +9,15 @@ describe('ThemeStore', () => {
     delete root.dataset['theme'];
   });
 
-  it('starts with the classic palette and no data-theme', () => {
+  it('starts with the Grafito palette (docs/paleta2.webp) when nothing was chosen', () => {
     const theme = TestBed.inject(ThemeStore);
-    expect(theme.current()).toBe('clasico');
+    expect(theme.current()).toBe('grafito');
+    expect(root.dataset['theme']).toBe('grafito');
+  });
+
+  it('keeps the classic palette when the user chose it', () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'clasico');
+    TestBed.inject(ThemeStore);
     expect(root.dataset['theme']).toBeUndefined();
   });
 
@@ -26,6 +32,6 @@ describe('ThemeStore', () => {
 
   it('ignores an unknown stored value', () => {
     localStorage.setItem(THEME_STORAGE_KEY, 'neon');
-    expect(TestBed.inject(ThemeStore).current()).toBe('clasico');
+    expect(TestBed.inject(ThemeStore).current()).toBe('grafito');
   });
 });

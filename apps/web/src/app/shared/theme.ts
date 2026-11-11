@@ -14,12 +14,15 @@ export const THEME_STORAGE_KEY = 'juntta.theme';
 
 const isTheme = (value: unknown): value is ThemeId => THEMES.some((t) => t.id === value);
 
+/** Default palette when the browser has no choice saved (also in index.html). */
+export const DEFAULT_THEME: ThemeId = 'grafito';
+
 function stored(): ThemeId {
   try {
     const value = localStorage.getItem(THEME_STORAGE_KEY);
-    return isTheme(value) ? value : 'clasico';
+    return isTheme(value) ? value : DEFAULT_THEME;
   } catch {
-    return 'clasico'; // storage blocked: the classic palette still works
+    return DEFAULT_THEME; // storage blocked: the default palette still applies
   }
 }
 

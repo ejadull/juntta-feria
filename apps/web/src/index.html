@@ -5,14 +5,18 @@
     <title>Juntta Feria</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#055851" />
+    <meta name="theme-color" content="#1a1a1d" />
     <!-- Applies the saved palette before Angular boots (shared/theme.ts, same key). -->
     <script>
       try {
         const theme = localStorage.getItem('juntta.theme');
-        if (theme === 'corporativo' || theme === 'grafito')
-          document.documentElement.dataset.theme = theme;
-      } catch {}
+        if (theme === 'clasico') {
+          // classic palette: no data-theme
+        } else if (theme === 'corporativo') document.documentElement.dataset.theme = theme;
+        else document.documentElement.dataset.theme = 'grafito'; // default (paleta 2)
+      } catch {
+        document.documentElement.dataset.theme = 'grafito';
+      }
     </script>
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
     <!-- Inter from Google Fonts (UX-01 decision); system font is the fallback while it loads. -->
