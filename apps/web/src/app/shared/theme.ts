@@ -3,11 +3,18 @@ import { Injectable, signal } from '@angular/core';
 export type ThemeId = 'clasico' | 'corporativo' | 'grafito' | 'industrial';
 
 /** Corporativo = docs/paleta1.webp, Grafito = docs/paleta2.webp, Industrial = "Industrial Neon". */
-export const THEMES: readonly { readonly id: ThemeId; readonly label: string }[] = [
-  { id: 'clasico', label: 'Clásico' },
-  { id: 'corporativo', label: 'Corporativo' },
-  { id: 'grafito', label: 'Grafito' },
-  { id: 'industrial', label: 'Industrial Neon' },
+export interface ThemeOption {
+  readonly id: ThemeId;
+  readonly label: string;
+  /** Preview of the palette (structure, accent, base): raw hex on purpose, they are other themes. */
+  readonly swatches: readonly [string, string, string];
+}
+
+export const THEMES: readonly ThemeOption[] = [
+  { id: 'clasico', label: 'Clásico', swatches: ['#055851', '#d94f80', '#faf9f7'] },
+  { id: 'corporativo', label: 'Corporativo', swatches: ['#1e293b', '#0f766e', '#f8fafc'] },
+  { id: 'grafito', label: 'Grafito', swatches: ['#1a1a1d', '#ff5a00', '#e0e0e2'] },
+  { id: 'industrial', label: 'Industrial Neon', swatches: ['#3b3f46', '#c6ff3d', '#eef0f2'] },
 ];
 
 /** Same key index.html reads before Angular boots, so the page never flashes the other palette. */

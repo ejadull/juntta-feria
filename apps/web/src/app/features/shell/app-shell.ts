@@ -5,7 +5,7 @@ import { filter, map } from 'rxjs';
 import { ApiStatusService, type ApiStatus } from '../../shared/api/api-status.service';
 import { SessionStore } from '../../shared/auth/session.store';
 import { DEMO_CONTEXT } from '../../shared/demo-context';
-import { THEMES, ThemeStore } from '../../shared/theme';
+import { ThemePicker } from '../../shared/theme-picker';
 
 type AreaId = 'organizador' | 'feriante' | 'visitante';
 
@@ -141,7 +141,7 @@ function areaOf(url: string): Area {
  */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink],
+  imports: [RouterOutlet, RouterLink, ThemePicker],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'flex h-dvh flex-col bg-background text-text lg:flex-row' },
   template: `
@@ -184,18 +184,9 @@ function areaOf(url: string): Area {
             </button>
           }
         </div>
-        <div class="segmented mt-2" role="group" aria-label="Tema de colores">
-          @for (t of themes; track t.id) {
-            <button
-              type="button"
-              [attr.aria-pressed]="t.id === theme.current()"
-              (click)="theme.set(t.id)"
-            >
-              {{ t.label }}
-            </button>
-          }
-        </div>
       </div>
+
+      <app-theme-picker />
 
       @if (area().id === 'organizador') {
         <div class="hidden rounded-xl border border-border bg-surface p-3 lg:block">
@@ -352,8 +343,6 @@ export class AppShell {
   protected readonly org = DEMO_CONTEXT.organization;
   protected readonly session = inject(SessionStore);
   protected readonly areas = AREAS;
-  protected readonly theme = inject(ThemeStore);
-  protected readonly themes = THEMES;
 
   private readonly router = inject(Router);
   protected readonly currentUrl = toSignal(

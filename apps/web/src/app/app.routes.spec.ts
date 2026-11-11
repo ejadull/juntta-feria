@@ -106,18 +106,18 @@ describe('areas and "Ver como" (PUB-UI-01)', () => {
 
   it('switches to the alternative "Corporativo" palette from the shell', async () => {
     const { host, harness } = await open('/ferias');
-    const button = (label: string) =>
-      [...host.querySelectorAll<HTMLButtonElement>('[aria-label="Tema de colores"] button')].find(
-        (b) => b.textContent!.trim() === label,
+    const radio = (label: string) =>
+      [...host.querySelectorAll<HTMLInputElement>('app-theme-picker input[type="radio"]')].find(
+        (r) => r.closest('label')!.textContent!.trim() === label,
       )!;
-    expect(button('Grafito').getAttribute('aria-pressed')).toBe('true'); // default (paleta 2)
+    expect(radio('Grafito').checked).toBe(true); // default (paleta 2)
 
-    button('Corporativo').click();
+    radio('Corporativo').click();
     await harness.fixture.whenStable();
     expect(document.documentElement.dataset['theme']).toBe('corporativo');
-    expect(button('Corporativo').getAttribute('aria-pressed')).toBe('true');
+    expect(radio('Corporativo').checked).toBe(true);
 
-    button('Clásico').click();
+    radio('Clásico').click();
     expect(document.documentElement.dataset['theme']).toBeUndefined();
     localStorage.removeItem('juntta.theme');
   });
