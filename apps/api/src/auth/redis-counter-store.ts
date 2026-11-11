@@ -10,6 +10,7 @@ import type { CounterStore } from './login-rate-limiter.js';
 @Injectable()
 export class RedisCounterStore implements CounterStore, OnModuleDestroy {
   private readonly redis: Redis;
+  private connecting?: Promise<void>;
 
   constructor(@Inject(configuration.KEY) env: AppConfiguration) {
     this.redis = new Redis(env.redisUrl, {
@@ -45,8 +46,12 @@ export class RedisCounterStore implements CounterStore, OnModuleDestroy {
     this.redis.disconnect();
   }
 
+  /** Concurrent first calls (hit() runs two in parallel) await the same connection. */
   private async connect(): Promise<void> {
     if (this.redis.status === 'wait' || this.redis.status === 'end')
-      await this.redis.connect();
+      this.connecting = this.redis.connect().finally(() => {
+        this.connecting = undefined;
+      });
+    await this.connecting;
   }
 }
