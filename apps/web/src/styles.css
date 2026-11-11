@@ -214,6 +214,50 @@
   color: var(--color-text);
 }
 
+/*
+ * "Matcha Organic": Matcha Latte #b9c9a0 60% (background), Ivory Cream #f2ebdd 30% (cards,
+ * panels, sidebar), Cherry Pop #ff3355 10% (CTAs, selected stand, countdown, critical alerts).
+ * Cherry Pop reaches 4.5:1 with neither white (3.59) nor the organic dark (4.43), so buttons keep
+ * the exact cherry with near-black text #1a1410 (5.09). Cherry as text is #8f0b22 (5.33 on matcha,
+ * 7.91 on ivory). Selected stands are a 55% cherry tint so their label stays legible (~5:1).
+ */
+:root[data-theme='matcha'] {
+  --color-primary: #ff3355; /* Cherry Pop */
+  --color-primary-hover: #ff4d6a;
+  --color-on-primary: #1a1410;
+  --color-primary-strong: #8f0b22;
+  --color-secondary: #ff3355;
+  --color-secondary-strong: #8f0b22;
+  --color-accent: #2e5a1c; /* confirmed payments: deep leaf green */
+  --color-accent-strong: #2e5a1c;
+
+  --color-background: #b9c9a0; /* Matcha Latte */
+  --color-surface: #f2ebdd; /* Ivory Cream */
+  --color-surface-soft: #f2ebdd;
+
+  --color-text: #2f3a28; /* organic dark green */
+  --color-text-muted: #3f4a36;
+  --color-border: #a3b28a;
+  --color-border-strong: #5e6b52;
+
+  --color-available: #5e6b52;
+  --color-reserved: #7a5c2e;
+  --color-reserved-stroke: #7a5c2e;
+  --color-occupied: #8a9677;
+  --color-occupied-strong: #4a5640;
+  --color-blocked: #e6dfcf;
+  --color-blocked-stroke: #5e6b52;
+  --color-selected: #8f0b22;
+  --color-danger: #8a0a20;
+
+  --stand-selected-fill: color-mix(in srgb, #ff3355 55%, #f2ebdd);
+}
+
+/* Countdown digits in Cherry (text tone). */
+:root[data-theme='matcha'] [data-ui='hold-timer'] strong {
+  color: var(--color-primary-strong);
+}
+
 @layer base {
   body {
     @apply bg-background font-sans text-text antialiased;

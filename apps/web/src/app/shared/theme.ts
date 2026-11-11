@@ -1,6 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 
-export type ThemeId = 'clasico' | 'corporativo' | 'grafito' | 'industrial';
+export type ThemeId = 'clasico' | 'corporativo' | 'grafito' | 'industrial' | 'matcha';
 
 /** Corporativo = docs/paleta1.webp, Grafito = docs/paleta2.webp, Industrial = "Industrial Neon". */
 export interface ThemeOption {
@@ -15,6 +15,7 @@ export const THEMES: readonly ThemeOption[] = [
   { id: 'corporativo', label: 'Corporativo', swatches: ['#1e293b', '#0f766e', '#f8fafc'] },
   { id: 'grafito', label: 'Grafito', swatches: ['#1a1a1d', '#ff5a00', '#e0e0e2'] },
   { id: 'industrial', label: 'Industrial Neon', swatches: ['#3b3f46', '#c6ff3d', '#eef0f2'] },
+  { id: 'matcha', label: 'Matcha Organic', swatches: ['#b9c9a0', '#ff3355', '#f2ebdd'] },
 ];
 
 /** Same key index.html reads before Angular boots, so the page never flashes the other palette. */

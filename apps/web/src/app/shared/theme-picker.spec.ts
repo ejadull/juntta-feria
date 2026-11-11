@@ -23,7 +23,13 @@ describe('ThemePicker', () => {
     const { host, radio } = render();
     expect(host.querySelector('fieldset legend')?.textContent?.trim()).toBe('Tema de colores');
     const labels = [...host.querySelectorAll('label')].map((l) => l.textContent!.trim());
-    expect(labels).toEqual(['Clásico', 'Corporativo', 'Grafito', 'Industrial Neon']);
+    expect(labels).toEqual([
+      'Clásico',
+      'Corporativo',
+      'Grafito',
+      'Industrial Neon',
+      'Matcha Organic',
+    ]);
     expect(radio('Grafito').checked).toBe(true);
   });
 
@@ -38,6 +44,6 @@ describe('ThemePicker', () => {
   it('previews each palette with its swatches, hidden from assistive tech', () => {
     const { host } = render();
     const swatches = host.querySelectorAll('label [aria-hidden="true"] span');
-    expect(swatches.length).toBe(12); // 3 per palette
+    expect(swatches.length).toBe(15); // 3 per palette
   });
 });

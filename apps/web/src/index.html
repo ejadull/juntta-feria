@@ -12,7 +12,7 @@
         const theme = localStorage.getItem('juntta.theme');
         if (theme === 'clasico') {
           // classic palette: no data-theme
-        } else if (theme === 'corporativo' || theme === 'industrial')
+        } else if (theme === 'corporativo' || theme === 'industrial' || theme === 'matcha')
           document.documentElement.dataset.theme = theme;
         else document.documentElement.dataset.theme = 'grafito'; // default (paleta 2)
       } catch {

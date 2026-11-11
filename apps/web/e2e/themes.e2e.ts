@@ -16,7 +16,7 @@ const PAGES = [
   '/feriante/reservas/r2/pago/aprobado',
 ];
 
-for (const theme of ['clasico', 'corporativo', 'grafito', 'industrial'] as const) {
+for (const theme of ['clasico', 'corporativo', 'grafito', 'industrial', 'matcha'] as const) {
   test(`the "${theme}" palette keeps every main page accessible`, async ({ page }) => {
     await page.addInitScript((value) => localStorage.setItem('juntta.theme', value), theme);
     await mockApi(page, {
