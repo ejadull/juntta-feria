@@ -104,7 +104,7 @@ function chips<K extends keyof StandFilter>(
           />
 
           <div class="flex min-w-0 flex-col gap-4">
-            <section class="stand-detail card" aria-live="polite">
+            <section class="stand-detail card" data-ui="stand-card" aria-live="polite">
               @if (selected(); as s) {
                 <h2 class="text-lg font-semibold">Stand {{ s.code }}</h2>
                 <dl class="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">

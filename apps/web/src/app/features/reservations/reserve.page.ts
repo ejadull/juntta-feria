@@ -46,7 +46,10 @@ const NOT_PAYABLE = 'Esta reserva ya no se puede pagar.';
         <p role="alert" class="mt-6 rounded-xl bg-danger/10 p-4">{{ message }}</p>
         <a class="btn mt-4" [routerLink]="exploreLink()">Volver a explorar stands</a>
       } @else if (reservation(); as r) {
-        <dl class="card mt-6 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
+        <dl
+          data-ui="stand-card"
+          class="card mt-6 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-3"
+        >
           <div>
             <dt class="text-text-muted">Stand</dt>
             <dd class="font-medium">{{ r.stand.code }}</dd>
@@ -70,7 +73,7 @@ const NOT_PAYABLE = 'Esta reserva ya no se puede pagar.';
           <section class="mt-6" aria-labelledby="pay-title">
             <h2 id="pay-title" class="text-xl font-semibold">Pagá para confirmar tu stand</h2>
             @if (remainingMs() !== null) {
-              <p class="mt-2">
+              <p class="mt-2" data-ui="hold-timer">
                 El stand es tuyo por
                 <strong role="timer" data-testid="hold-clock">{{ clockText() }}</strong
                 >. Si no pagás a tiempo, se libera.
@@ -107,7 +110,7 @@ const NOT_PAYABLE = 'Esta reserva ya no se puede pagar.';
           <div role="alert" class="mt-4 rounded-xl bg-danger/10 p-4 text-sm">{{ e.text }}</div>
         }
       } @else if (stand(); as s) {
-        <section class="card mt-6" aria-labelledby="summary-title">
+        <section data-ui="stand-card" class="card mt-6" aria-labelledby="summary-title">
           <h2 id="summary-title" class="text-lg font-semibold">Resumen</h2>
           <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
             <dt class="text-text-muted">Stand</dt>

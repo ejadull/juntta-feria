@@ -162,7 +162,7 @@
 .sector-label {
   font-size: 0.55px;
   font-weight: 600;
-  fill: var(--color-primary);
+  fill: var(--color-primary-strong); /* text: primary may be too light (lime, orange) */
   pointer-events: none;
 }
 
@@ -175,23 +175,35 @@
   stroke-width: 1.5;
 }
 .stand.status-available .body {
-  fill: color-mix(in srgb, var(--color-available) 14%, var(--color-surface));
+  --body-fill: color-mix(in srgb, var(--color-available) 14%, var(--color-surface));
+  fill: var(--body-fill);
   stroke: var(--color-available);
 }
 .stand.status-reserved .body {
-  fill: color-mix(in srgb, var(--color-reserved) 18%, var(--color-surface));
+  --body-fill: color-mix(
+    in srgb,
+    var(--color-reserved) var(--stand-reserved-tint, 18%),
+    var(--color-surface)
+  );
+  fill: var(--body-fill);
   stroke: var(--color-reserved-stroke);
   stroke-dasharray: 5 3;
 }
 .stand.status-occupied .body {
-  fill: color-mix(in srgb, var(--color-occupied) 22%, var(--color-surface));
+  --body-fill: color-mix(
+    in srgb,
+    var(--color-occupied) var(--stand-occupied-tint, 22%),
+    var(--color-surface)
+  );
+  fill: var(--body-fill);
   stroke: var(--color-occupied);
 }
 .stand.status-occupied .strip {
   fill: var(--color-occupied-strong);
 }
 .stand.status-blocked .body {
-  fill: var(--color-blocked);
+  --body-fill: var(--color-blocked);
+  fill: var(--body-fill);
   stroke: var(--color-blocked-stroke);
   stroke-dasharray: 2 2;
 }
@@ -216,7 +228,11 @@
 .stand.dimmed {
   opacity: 0.28;
 }
+.stand.status-occupied .code {
+  fill: var(--color-occupied-label, var(--color-text));
+}
 .stand.selected .body {
+  fill: var(--stand-selected-fill, var(--body-fill));
   stroke: var(--color-selected);
   stroke-width: 3;
   stroke-dasharray: none;

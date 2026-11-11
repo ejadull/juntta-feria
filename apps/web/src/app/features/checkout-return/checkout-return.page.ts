@@ -61,7 +61,11 @@ type View = 'loading' | 'confirmed' | 'waiting' | 'rejected' | 'expired' | 'clos
         }
         @case ('confirmed') {
           <h1 class="mt-1 text-3xl font-semibold sm:text-4xl">¡Listo! Tu stand está confirmado</h1>
-          <p role="status" class="mt-6 rounded-xl bg-available/15 p-4 text-text">
+          <p
+            role="status"
+            data-ui="confirmed"
+            class="mt-6 rounded-xl bg-available/15 p-4 text-text"
+          >
             <span aria-hidden="true">✓</span> Recibimos el pago. Ya podés ver la reserva en tus
             reservas.
           </p>

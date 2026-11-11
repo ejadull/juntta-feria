@@ -147,17 +147,28 @@
   --color-border: #d9dde1;
   --color-border-strong: #7c828b;
 
-  --color-available: #65a30d;
-  --color-reserved: #3b3f46;
+  /* Maps: available = Gunmetal outline on light fill; reserved and selected "light up" in lime
+     with a dark stroke; occupied = Gunmetal fill with a lime strip and a light label. */
+  --color-available: #3b3f46;
+  --color-reserved: #c6ff3d;
   --color-reserved-stroke: #3b3f46;
-  --color-occupied: #a3a9b1;
-  --color-occupied-strong: #6b7280;
+  --color-occupied: #3b3f46;
+  --color-occupied-strong: #c6ff3d;
+  --color-occupied-label: #eef0f2; /* 9.26:1 on Gunmetal */
   --color-blocked: #eef0f2;
   --color-blocked-stroke: #7c828b;
   --color-selected: #3b3f46;
+  --stand-reserved-tint: 100%;
+  --stand-occupied-tint: 100%;
+  --stand-selected-fill: #c6ff3d;
+  --plan-stand-stroke: #3b3f46;
+  --plan-stand-strip: #3b3f46;
+  --plan-grid-color: color-mix(in srgb, var(--color-text) 14%, var(--color-surface));
+  --plan-grid-major-color: color-mix(in srgb, var(--color-text) 34%, var(--color-surface));
 }
 
-:root[data-theme='industrial'] app-shell > aside {
+/* "Dark islands": the side navigation, KPI cards and the hold timer are Gunmetal. */
+:root[data-theme='industrial'] :is(app-shell > aside, [data-ui='metric'], [data-ui='hold-timer']) {
   color-scheme: dark;
   color: var(--color-text); /* body's color is inherited already resolved */
   --color-surface-soft: #3b3f46;
@@ -168,6 +179,39 @@
   --color-border-strong: #8a9099;
   --color-primary-strong: #c6ff3d;
   --color-selected: #c6ff3d;
+  --color-available: #c6ff3d;
+}
+
+:root[data-theme='industrial'] :is([data-ui='metric'], [data-ui='hold-timer']) {
+  --color-surface: var(--color-secondary); /* Gunmetal */
+}
+
+:root[data-theme='industrial'] [data-ui='hold-timer'] {
+  padding: 1rem;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+}
+
+:root[data-theme='industrial'] [data-ui='hold-timer'] strong {
+  color: var(--color-primary); /* Laser Lime digits, 8.95:1 on Gunmetal */
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stand cards: white, subtle Gunmetal border, Gunmetal outline for secondary buttons. */
+:root[data-theme='industrial'] [data-ui='stand-card'] {
+  border-color: color-mix(in srgb, var(--color-text) 30%, var(--color-surface));
+}
+
+:root[data-theme='industrial'] [data-ui='stand-card'] .btn:not(.btn-primary) {
+  border-color: var(--color-text);
+}
+
+/* Confirmed payment: lime tint with Gunmetal text and an olive edge. */
+:root[data-theme='industrial'] [data-ui='confirmed'] {
+  border: 1px solid var(--color-primary-strong);
+  background: color-mix(in srgb, var(--color-primary) 28%, var(--color-surface));
+  color: var(--color-text);
 }
 
 @layer base {

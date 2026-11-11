@@ -51,6 +51,7 @@ const time = (iso: string): string =>
               <li
                 class="card flex flex-wrap items-center gap-x-6 gap-y-3"
                 data-testid="reservation"
+                [attr.data-ui]="row.reservation.status === 'CONFIRMED' ? 'confirmed' : null"
               >
                 <div class="min-w-0 flex-1">
                   <p class="font-semibold">Stand {{ row.reservation.stand.code }}</p>

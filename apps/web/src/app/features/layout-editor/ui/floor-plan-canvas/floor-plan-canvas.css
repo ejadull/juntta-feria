@@ -2,8 +2,14 @@
   /* Design tokens (UX-01). Kinds are layout categories, not commercial stand states. */
   --plan-bg: var(--color-surface-soft);
   --plan-floor: var(--color-surface);
-  --plan-grid: color-mix(in srgb, var(--color-border) 85%, var(--color-surface));
-  --plan-grid-major: color-mix(in srgb, var(--color-text-muted) 22%, var(--color-surface));
+  --plan-grid: var(
+    --plan-grid-color,
+    color-mix(in srgb, var(--color-border) 85%, var(--color-surface))
+  );
+  --plan-grid-major: var(
+    --plan-grid-major-color,
+    color-mix(in srgb, var(--color-text-muted) 22%, var(--color-surface))
+  );
   --plan-wall: var(--color-text);
   --plan-text: var(--color-text);
   --plan-muted: var(--color-text-muted);
@@ -180,12 +186,15 @@
 .shape[data-kind='STAND'] :is(.body, .free),
 .swatch[data-swatch='STAND'] {
   --swatch-fill: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
-  --swatch-stroke: color-mix(in srgb, var(--color-primary) 60%, var(--color-surface));
+  --swatch-stroke: var(
+    --plan-stand-stroke,
+    color-mix(in srgb, var(--color-primary) 60%, var(--color-surface))
+  );
   fill: var(--swatch-fill);
   stroke: var(--swatch-stroke);
 }
 .shape[data-kind='STAND'] .strip {
-  fill: color-mix(in srgb, var(--color-primary) 70%, var(--color-surface));
+  fill: var(--plan-stand-strip, color-mix(in srgb, var(--color-primary) 70%, var(--color-surface)));
 }
 
 .shape[data-kind='AISLE'] :is(.body, .free),
@@ -234,6 +243,7 @@
 
 /* State: selection, validation error and keyboard focus (on the visible shape). */
 .shape.selected :is(.body, .free) {
+  fill: var(--stand-selected-fill, var(--swatch-fill));
   stroke: var(--plan-selected);
   stroke-width: 2.5;
   stroke-dasharray: none;
