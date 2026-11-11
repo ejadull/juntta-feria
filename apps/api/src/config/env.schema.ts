@@ -31,6 +31,8 @@ export type AppEnvironment = Readonly<{
   s3: Readonly<{
     /** Undefined means the provider's default endpoint (real AWS S3). */
     endpoint: string | undefined;
+    /** EXH-03: endpoint the browser reaches for presigned URLs; defaults to `endpoint`. */
+    publicEndpoint: string | undefined;
     region: string;
     bucket: string;
     accessKey: string;
@@ -186,6 +188,15 @@ const schema = z
     DB_POOL_MAX: optionalInt(1, 1000, 10),
     REDIS_URL: urlWith(['redis:', 'rediss:']),
     S3_ENDPOINT: z.preprocess(
+      blankAsUndefined,
+      z
+        .string()
+        .refine((v) => hasProtocol(v, ['http:', 'https:']), {
+          error: 'must be an http(s) URL',
+        })
+        .optional(),
+    ),
+    S3_PUBLIC_ENDPOINT: z.preprocess(
       blankAsUndefined,
       z
         .string()
@@ -353,6 +364,7 @@ export function parseEnvironment(input: NodeJS.ProcessEnv): AppEnvironment {
     redisUrl: e.REDIS_URL,
     s3: {
       endpoint: e.S3_ENDPOINT,
+      publicEndpoint: e.S3_PUBLIC_ENDPOINT ?? e.S3_ENDPOINT,
       region: e.S3_REGION,
       bucket: e.S3_BUCKET,
       accessKey: e.S3_ACCESS_KEY,

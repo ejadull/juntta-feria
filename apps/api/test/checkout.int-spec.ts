@@ -73,8 +73,8 @@ async function seed(): Promise<void> {
       );
       if (who === 'owner') continue;
       await c.query(
-        `INSERT INTO exhibitors (tenant_id, user_id, legal_name, trade_name, tax_id, category)
-         VALUES ($1, $2, $3, $3, '20123456786', 'Textiles')`,
+        `INSERT INTO exhibitors (tenant_id, user_id, legal_name, trade_name, tax_id)
+         VALUES ($1, $2, $3, $3, '20123456786')`,
         [T, id, `Feriante ${who}`],
       );
       await c.query(

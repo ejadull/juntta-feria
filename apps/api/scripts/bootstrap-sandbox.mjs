@@ -98,8 +98,13 @@ async function seed(client, plan, withSubscription) {
     [tenantId, exhibitorId],
   );
   await client.query(
-    `INSERT INTO exhibitors (tenant_id, user_id, legal_name, trade_name, tax_id, category)
-     VALUES ($1, $2, 'Feriante Sandbox', 'Feriante Sandbox', '20123456786', 'Textiles')`,
+    `WITH category AS (
+       INSERT INTO exhibitor_categories (tenant_id, name) VALUES ($1, 'Textiles')
+       ON CONFLICT (tenant_id, lower(btrim(name))) DO UPDATE SET name = excluded.name
+       RETURNING id
+     )
+     INSERT INTO exhibitors (tenant_id, user_id, legal_name, trade_name, tax_id, category_id)
+     SELECT $1, $2, 'Feriante Sandbox', 'Feriante Sandbox', '20123456786', category.id FROM category`,
     [tenantId, exhibitorId],
   );
   if (withSubscription)

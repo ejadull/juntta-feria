@@ -25,7 +25,8 @@ export const exhibitorProfileInput = z.strictObject({
   legalName: z.string().trim().min(1).max(200),
   tradeName: z.string().trim().min(1).max(120),
   taxId,
-  category: z.string().trim().min(1).max(80),
+  /** A rubro of the same organization (EXH-02); checked against the tenant on save. */
+  categoryId: z.uuid(),
   description: z.string().trim().max(2000).default(''),
   /** Consent to appear in the public directory of the organization's events (AC-11). */
   publicContactOptIn: z.boolean(),

@@ -132,10 +132,31 @@ export interface ApiExhibitor {
   tradeName: string;
   legalName: string;
   taxId: string | null;
-  category: string;
+  categoryId?: string | null;
+  category: string | null;
   description: string;
   publicContactOptIn: boolean;
   documentsStatus: string;
+}
+
+export interface ApiCategory {
+  id: string;
+  name: string;
+  exhibitorCount: number;
+}
+
+export interface ApiDocument {
+  id: string;
+  exhibitorId: string;
+  type: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  fileName: string;
+  contentType: string;
+  sizeBytes: number | null;
+  uploadedAt: string | null;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+  createdAt: string;
 }
 
 const EXHIBITORS: ApiExhibitor[] = [
@@ -410,6 +431,14 @@ export interface MockApi {
   eventSectors: Record<string, ApiSector[]>;
   /** Organizer's exhibitors (`GET /exhibitors`). */
   exhibitors: ApiExhibitor[];
+  /** The organization's rubros (`/exhibitor-categories`). */
+  categories: ApiCategory[];
+  /** The signed-in exhibitor's own profile (`/me/exhibitor-profile`); null answers 404. */
+  profile: Record<string, unknown> | null;
+  /** Confirmed documents (own list for the exhibitor, `/exhibitors/:id/documents` for staff). */
+  documents: ApiDocument[];
+  /** Files the browser PUT to a presigned URL, by document id. */
+  uploads: { documentId: string; contentType: string | undefined; size: number }[];
   /** Organizer's exhibitor invitations (`/exhibitor-invitations`). */
   invitations: ApiInvitation[];
   /** Anonymous portal (`/public/events...`). */
@@ -467,12 +496,42 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
     eventStands: {},
     eventSectors: {},
     exhibitors: structuredClone(EXHIBITORS),
+    categories: [],
+    profile: null,
+    documents: [],
+    uploads: [],
     invitations: structuredClone(INVITATIONS),
     publicEvents: structuredClone(PUBLIC_EVENTS),
     publicExhibitors: structuredClone(PUBLIC_EXHIBITORS),
     requests: [],
     ...initial,
   };
+
+  // The presigned storage URLs (EXH-03): the browser PUTs and GETs them directly, cross-origin.
+  const cors = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'PUT, GET',
+    'Access-Control-Allow-Headers': '*',
+  };
+  const pendingDocs = new Map<string, ApiDocument>();
+  await page.route('https://storage.test/**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    if (request.method() === 'PUT') {
+      api.uploads.push({
+        documentId: new URL(request.url()).pathname.split('/').pop()!,
+        contentType: request.headers()['content-type'],
+        size: request.postDataBuffer()?.length ?? 0,
+      });
+      return route.fulfill({ status: 200, headers: cors, body: '' });
+    }
+    return route.fulfill({
+      status: 200,
+      headers: { ...cors, 'Content-Disposition': 'attachment; filename="doc.pdf"' },
+      contentType: 'application/pdf',
+      body: '%PDF-1.4',
+    });
+  });
 
   await page.route(/\/api\/v1\//, async (route) => {
     const request = route.request();
@@ -671,6 +730,125 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
         eventName: event.name,
         layoutVersionId: event.layoutVersionId,
       });
+    }
+    if (path === '/exhibitor-categories') {
+      if (method === 'POST') {
+        const { name } = JSON.parse(raw ?? '{}') as { name: string };
+        if (api.categories.some((c) => c.name.toLowerCase() === name.toLowerCase()))
+          return problem(route, 409, 'CATEGORY_EXISTS');
+        const created = { id: `cat${api.categories.length + 1}`, name, exhibitorCount: 0 };
+        api.categories.push(created);
+        return json(route, created, 201);
+      }
+      return json(route, api.categories);
+    }
+    const category = /^\/exhibitor-categories\/([^/]+)$/.exec(path);
+    if (category) {
+      const found = api.categories.find((c) => c.id === category[1]);
+      if (!found) return problem(route, 404);
+      if (method === 'DELETE') {
+        if (found.exhibitorCount > 0) return problem(route, 409, 'CATEGORY_IN_USE');
+        api.categories = api.categories.filter((c) => c !== found);
+        return route.fulfill({ status: 204 });
+      }
+      found.name = (JSON.parse(raw ?? '{}') as { name: string }).name;
+      return json(route, found);
+    }
+    if (path === '/me/exhibitor-profile') {
+      if (method === 'PUT') {
+        const body = JSON.parse(raw ?? '{}') as { categoryId: string };
+        const name = api.categories.find((c) => c.id === body.categoryId)?.name ?? null;
+        api.profile = { id: 'p1', ...body, category: name };
+        return json(route, api.profile);
+      }
+      return api.profile ? json(route, api.profile) : problem(route, 404);
+    }
+    if (path === '/exhibitors/me/documents' && method === 'POST') {
+      const body = JSON.parse(raw ?? '{}') as Partial<ApiDocument>;
+      const document: ApiDocument = {
+        id: `doc${api.documents.length + pendingDocs.size + 1}`,
+        exhibitorId: 'x1',
+        type: body.type ?? 'OTRO',
+        status: 'PENDING',
+        fileName: body.fileName ?? 'f.pdf',
+        contentType: body.contentType ?? 'application/pdf',
+        sizeBytes: body.sizeBytes ?? null,
+        uploadedAt: null,
+        reviewedAt: null,
+        rejectionReason: null,
+        createdAt: new Date().toISOString(),
+      };
+      pendingDocs.set(document.id, document);
+      return json(
+        route,
+        {
+          document,
+          upload: {
+            url: `https://storage.test/upload/${document.id}?signature=fake`,
+            method: 'PUT',
+            headers: { 'Content-Type': document.contentType },
+            expiresAt: future(5),
+          },
+        },
+        201,
+      );
+    }
+    if (path === '/exhibitors/me/documents') return json(route, api.documents);
+    const own = /^\/exhibitors\/me\/documents\/([^/]+)(\/complete|\/download)?$/.exec(path);
+    if (own) {
+      if (own[2] === '/complete') {
+        const document = pendingDocs.get(own[1]);
+        if (!document || !api.uploads.some((u) => u.documentId === own[1]))
+          return problem(route, 409, 'UPLOAD_MISSING');
+        pendingDocs.delete(own[1]);
+        const done = { ...document, uploadedAt: new Date().toISOString() };
+        api.documents.push(done);
+        return json(route, done);
+      }
+      const found = api.documents.find((d) => d.id === own[1]);
+      if (!found) return problem(route, 404);
+      if (own[2] === '/download')
+        return json(route, {
+          url: `https://storage.test/download/${found.id}?signature=fake`,
+          fileName: found.fileName,
+          expiresAt: future(1),
+        });
+      if (found.status === 'APPROVED') return problem(route, 409, 'DOCUMENT_APPROVED');
+      api.documents = api.documents.filter((d) => d !== found);
+      return route.fulfill({ status: 204 });
+    }
+    const staffDocs = /^\/exhibitors\/([^/]+)\/documents(?:\/([^/]+)\/(download|review))?$/.exec(
+      path,
+    );
+    if (staffDocs) {
+      const exhibitor = api.exhibitors.find((e) => e.id === staffDocs[1]);
+      if (!exhibitor) return problem(route, 404);
+      const mine = api.documents.filter((d) => d.exhibitorId === exhibitor.id);
+      if (!staffDocs[2]) return json(route, mine);
+      const found = mine.find((d) => d.id === staffDocs[2]);
+      if (!found) return problem(route, 404);
+      if (staffDocs[3] === 'download')
+        return json(route, {
+          url: `https://storage.test/download/${found.id}?signature=fake`,
+          fileName: found.fileName,
+          expiresAt: future(1),
+        });
+      const { decision, reason } = JSON.parse(raw ?? '{}') as {
+        decision: 'APPROVED' | 'REJECTED';
+        reason?: string;
+      };
+      found.status = decision;
+      found.reviewedAt = new Date().toISOString();
+      found.rejectionReason = decision === 'REJECTED' ? (reason ?? null) : null;
+      const statuses = api.documents
+        .filter((d) => d.exhibitorId === exhibitor.id)
+        .map((d) => d.status);
+      exhibitor.documentsStatus = statuses.includes('REJECTED')
+        ? 'REJECTED'
+        : statuses.includes('PENDING')
+          ? 'PENDING'
+          : 'APPROVED';
+      return json(route, found);
     }
     if (path === '/exhibitors') return json(route, api.exhibitors);
 

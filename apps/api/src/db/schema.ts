@@ -531,6 +531,28 @@ export const eventStands = pgTable(
 );
 
 /**
+ * Rubros (categories) of an organization's exhibitors (EXH-02): the organizer curates the list,
+ * exhibitors pick one. A rubro in use cannot be deleted (FK `restrict`).
+ */
+export const exhibitorCategories = pgTable(
+  'exhibitor_categories',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    name: text('name').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('exhibitor_categories_tenant_id_unique').on(t.tenantId, t.id),
+    uniqueIndex('exhibitor_categories_name_unique').on(
+      t.tenantId,
+      sql`lower(btrim(${t.name}))`,
+    ),
+    check('exhibitor_categories_name_check', sql`btrim(${t.name}) <> ''`),
+  ],
+);
+
+/**
  * Commercial profile of an exhibitor member in one organization (EXH-01, §3.1). The member owns
  * it and its public consent (Ley 25.326); `public_consent_at` records when consent was given.
  * Private data (legal name, CUIT) never leaves organizer views (INV-08).
@@ -546,7 +568,7 @@ export const exhibitors = pgTable(
     legalName: text('legal_name').notNull(),
     tradeName: text('trade_name').notNull(),
     taxId: text('tax_id'),
-    category: text('category').notNull(),
+    categoryId: uuid('category_id'),
     description: text('description').notNull().default(''),
     logoKey: text('logo_key'),
     publicContactOptIn: boolean('public_contact_opt_in')
@@ -566,7 +588,11 @@ export const exhibitors = pgTable(
       'exhibitors_names_check',
       sql`btrim(${t.legalName}) <> '' AND btrim(${t.tradeName}) <> ''`,
     ),
-    check('exhibitors_category_check', sql`btrim(${t.category}) <> ''`),
+    foreignKey({
+      name: 'exhibitors_category_fk',
+      columns: [t.tenantId, t.categoryId],
+      foreignColumns: [exhibitorCategories.tenantId, exhibitorCategories.id],
+    }).onDelete('restrict'),
     check(
       'exhibitors_tax_id_check',
       sql`${t.taxId} IS NULL OR ${t.taxId} ~ '^[0-9]{11}$'`,
@@ -574,6 +600,61 @@ export const exhibitors = pgTable(
     check(
       'exhibitors_consent_check',
       sql`${t.publicContactOptIn} = (${t.publicConsentAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
+ * Document an exhibitor uploads for the organizer to review (EXH-03). The file lives in private
+ * object storage under `storage_key` (chosen by the server); nothing here is ever public (INV-08).
+ */
+export const exhibitorDocuments = pgTable(
+  'exhibitor_documents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    exhibitorId: uuid('exhibitor_id').notNull(),
+    type: text('type').notNull(),
+    status: text('status').notNull().default('PENDING'),
+    storageKey: text('storage_key').notNull(),
+    fileName: text('file_name').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }),
+    /** Null until the upload is confirmed (HEAD on the object): such rows are not listed. */
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
+    uploadedBy: uuid('uploaded_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    reviewedBy: uuid('reviewed_by').references(() => users.id, {
+      onDelete: 'restrict',
+    }),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    rejectionReason: text('rejection_reason'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('exhibitor_documents_storage_key_unique').on(t.storageKey),
+    index('exhibitor_documents_exhibitor_idx').on(t.tenantId, t.exhibitorId),
+    foreignKey({
+      name: 'exhibitor_documents_exhibitor_fk',
+      columns: [t.tenantId, t.exhibitorId],
+      foreignColumns: [exhibitors.tenantId, exhibitors.id],
+    }).onDelete('restrict'),
+    check(
+      'exhibitor_documents_type_check',
+      sql`${t.type} IN ('CONSTANCIA_AFIP', 'SEGURO', 'HABILITACION', 'OTRO')`,
+    ),
+    check(
+      'exhibitor_documents_status_check',
+      sql`${t.status} IN ('PENDING', 'APPROVED', 'REJECTED')`,
+    ),
+    check(
+      'exhibitor_documents_review_check',
+      sql`(${t.status} = 'PENDING') = (${t.reviewedAt} IS NULL)`,
+    ),
+    check(
+      'exhibitor_documents_size_check',
+      sql`${t.sizeBytes} IS NULL OR ${t.sizeBytes} > 0`,
     ),
   ],
 );

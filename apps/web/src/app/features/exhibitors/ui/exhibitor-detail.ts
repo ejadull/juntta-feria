@@ -1,5 +1,6 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import type { DocumentsStatus, ExhibitorSummaryDto } from '../data/exhibitor.repository';
+import { ExhibitorDocuments } from './exhibitor-documents';
 
 /** Icon + text, never color only (§8 UX). */
 export const DOCUMENTS_STATUS: Readonly<
@@ -14,11 +15,12 @@ export const DOCUMENTS_STATUS: Readonly<
 /** Organizer-only record: includes private data (INV-08). */
 @Component({
   selector: 'app-exhibitor-detail',
+  imports: [ExhibitorDocuments],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (exhibitor(); as e) {
       <h2 class="text-xl font-semibold">{{ e.tradeName }}</h2>
-      <p class="text-sm text-text-muted">{{ e.category }}</p>
+      <p class="text-sm text-text-muted">{{ e.category ?? 'Sin rubro' }}</p>
       <p class="mt-3 text-sm text-text">{{ e.description }}</p>
 
       <dl class="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
@@ -27,7 +29,7 @@ export const DOCUMENTS_STATUS: Readonly<
         <dt class="text-text-muted">CUIT</dt>
         <dd class="tabular-nums">{{ e.taxId ?? 'Sin CUIT cargado' }}</dd>
         <dt class="text-text-muted">Rubro</dt>
-        <dd>{{ e.category }}</dd>
+        <dd>{{ e.category ?? 'Sin rubro' }}</dd>
         <dt class="text-text-muted">Contacto público</dt>
         <dd>
           {{
@@ -46,9 +48,9 @@ export const DOCUMENTS_STATUS: Readonly<
           </span>
         </dd>
       </dl>
+      <app-exhibitor-documents [exhibitorId]="e.id" (reviewed)="reviewed.emit()" />
       <p class="mt-4 text-xs text-text-muted">
-        Datos privados: solo visibles para la organización. La verificación de documentos llega con
-        EXH-01.
+        Datos privados: solo visibles para la organización.
       </p>
     } @else {
       <p class="text-sm text-text-muted">Seleccioná un expositor para ver su ficha.</p>
@@ -57,6 +59,8 @@ export const DOCUMENTS_STATUS: Readonly<
 })
 export class ExhibitorDetail {
   readonly exhibitor = input<ExhibitorSummaryDto | null>(null);
+  /** A document was approved or rejected: the exhibitor's documentation status changed. */
+  readonly reviewed = output<void>();
 
   protected status(e: ExhibitorSummaryDto) {
     return DOCUMENTS_STATUS[e.documentsStatus];

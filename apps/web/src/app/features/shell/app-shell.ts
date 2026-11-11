@@ -36,6 +36,8 @@ const ICON = {
   card: 'M3 6h18v12H3zM3 10h18',
   ticket: 'M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4z',
   calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-1a8 8 0 0 1 16 0v1',
+  file: 'M6 3h9l3 3v15H6zM14 3v4h4M9 12h6M9 16h6',
   pin: 'M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
 };
 
@@ -107,6 +109,18 @@ const AREAS: readonly Area[] = [
         link: '/feriante/reservas',
         active: under('/feriante/reservas'),
         icon: ICON.ticket,
+      },
+      {
+        label: 'Mi perfil',
+        link: '/feriante/perfil',
+        active: under('/feriante/perfil'),
+        icon: ICON.user,
+      },
+      {
+        label: 'Mis documentos',
+        link: '/feriante/documentos',
+        active: under('/feriante/documentos'),
+        icon: ICON.file,
       },
       {
         label: 'Suscripción',

@@ -5,11 +5,15 @@ import {
   eventSectors,
   events,
   eventStands,
+  exhibitorCategories,
   exhibitors,
   layoutObjects,
   layoutVersions,
   reservations,
 } from '../db/schema.js';
+
+/** Shown when an exhibitor has no rubro yet (EXH-02 keeps `category_id` nullable). */
+const NO_CATEGORY = 'Sin rubro';
 
 export type PublicStandStatus =
   'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'BLOCKED';
@@ -214,7 +218,7 @@ export class PublicEventsService {
           sector: eventSectors.name,
           reservation: reservations.status,
           exhibitorName: exhibitors.tradeName,
-          exhibitorCategory: exhibitors.category,
+          exhibitorCategory: sql<string>`coalesce(${exhibitorCategories.name}, ${NO_CATEGORY})`,
           exhibitorPublic: exhibitors.publicContactOptIn,
         })
         .from(eventStands)
@@ -237,6 +241,13 @@ export class PublicEventsService {
           and(
             eq(exhibitors.tenantId, reservations.tenantId),
             eq(exhibitors.id, reservations.exhibitorId),
+          ),
+        )
+        .leftJoin(
+          exhibitorCategories,
+          and(
+            eq(exhibitorCategories.tenantId, exhibitors.tenantId),
+            eq(exhibitorCategories.id, exhibitors.categoryId),
           ),
         )
         .where(eq(eventStands.eventId, target.id));
@@ -298,7 +309,7 @@ export class PublicEventsService {
       tx
         .select({
           name: exhibitors.tradeName,
-          category: exhibitors.category,
+          category: sql<string>`coalesce(${exhibitorCategories.name}, ${NO_CATEGORY})`,
           description: exhibitors.description,
           standCode: eventStands.code,
         })
@@ -315,6 +326,13 @@ export class PublicEventsService {
           and(
             eq(exhibitors.tenantId, reservations.tenantId),
             eq(exhibitors.id, reservations.exhibitorId),
+          ),
+        )
+        .leftJoin(
+          exhibitorCategories,
+          and(
+            eq(exhibitorCategories.tenantId, exhibitors.tenantId),
+            eq(exhibitorCategories.id, exhibitors.categoryId),
           ),
         )
         .where(

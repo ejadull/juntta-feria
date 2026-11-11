@@ -49,6 +49,7 @@ describe('parseEnvironment (FND-02)', () => {
       redisUrl: 'redis://localhost:6379',
       s3: {
         endpoint: 'http://localhost:4566',
+        publicEndpoint: 'http://localhost:4566',
         region: 'us-east-1',
         bucket: 'local-bucket',
         accessKey: 'test',
@@ -256,6 +257,20 @@ describe('parseEnvironment (FND-02)', () => {
     });
     expect(env.s3.endpoint).toBeUndefined();
     expect(env.s3.forcePathStyle).toBe(false);
+  });
+
+  it('serves presigned URLs from S3_PUBLIC_ENDPOINT when set, else from S3_ENDPOINT (EXH-03)', () => {
+    const base = valid();
+    expect(
+      parseEnvironment({ ...base, S3_PUBLIC_ENDPOINT: 'http://localhost:9000' })
+        .s3,
+    ).toMatchObject({
+      endpoint: 'http://localhost:4566',
+      publicEndpoint: 'http://localhost:9000',
+    });
+    expect(() =>
+      parseEnvironment({ ...base, S3_PUBLIC_ENDPOINT: 'not-a-url' }),
+    ).toThrow(/S3_PUBLIC_ENDPOINT/);
   });
 
   it.each([

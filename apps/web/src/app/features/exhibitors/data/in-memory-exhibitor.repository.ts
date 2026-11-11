@@ -129,6 +129,7 @@ export const DEMO_EXHIBITORS: readonly ExhibitorSummaryDto[] = ROWS.map(
     tradeName,
     legalName,
     taxId,
+    categoryId: `demo-cat-${category}`,
     category,
     description,
     publicContactOptIn,

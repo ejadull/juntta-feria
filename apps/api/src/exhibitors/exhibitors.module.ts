@@ -1,4 +1,12 @@
 import { Module } from '@nestjs/common';
+import { StorageModule } from '../storage/storage.module.js';
+import { CategoriesController } from './categories.controller.js';
+import { CategoriesService } from './categories.service.js';
+import {
+  ExhibitorDocumentsController,
+  MyDocumentsController,
+} from './documents.controller.js';
+import { ExhibitorDocumentsService } from './documents.service.js';
 import {
   ExhibitorsController,
   MyExhibitorProfileController,
@@ -10,14 +18,26 @@ import {
 } from './invitations.controller.js';
 import { InvitationsService } from './invitations.service.js';
 
-/** EXH-01 exhibitor profiles and EXH-04 invitations (§2.1 ExhibitorsModule). */
+/**
+ * EXH-01 exhibitor profiles, EXH-02 rubros, EXH-03 documents and EXH-04 invitations
+ * (§2.1 ExhibitorsModule).
+ */
 @Module({
+  imports: [StorageModule],
   controllers: [
+    CategoriesController,
+    MyDocumentsController,
+    ExhibitorDocumentsController,
     MyExhibitorProfileController,
     ExhibitorsController,
     InvitationsController,
     PublicInvitationsController,
   ],
-  providers: [ExhibitorsService, InvitationsService],
+  providers: [
+    ExhibitorsService,
+    InvitationsService,
+    CategoriesService,
+    ExhibitorDocumentsService,
+  ],
 })
 export class ExhibitorsModule {}

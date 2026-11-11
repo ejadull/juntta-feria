@@ -17,6 +17,9 @@ const X_B = 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd';
 
 let app: NestFastifyApplication;
 let database: DatabaseService;
+let textiles = '';
+let ceramica = '';
+let otherTenantCategory = '';
 const tokens = { owner: '', ana: '', beto: '' };
 
 async function seed(): Promise<void> {
@@ -68,12 +71,29 @@ beforeAll(async () => {
   tokens.owner = await login('owner@exhibitors.test');
   tokens.ana = await login('ana@exhibitors.test');
   tokens.beto = await login('beto@exhibitors.test');
+  textiles = await createCategory(X_A, 'Textiles');
+  ceramica = await createCategory(X_A, 'Cerámica');
+  otherTenantCategory = await createCategory(X_B, 'Textiles');
+  perfil.categoryId = textiles;
 }, 60_000);
 
 afterAll(async () => {
   await app?.close();
   vi.unstubAllEnvs();
 });
+
+async function createCategory(tenant: string, name: string): Promise<string> {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/v1/exhibitor-categories',
+    headers: {
+      authorization: `Bearer ${tokens.owner}`,
+      'x-tenant-id': tenant,
+    },
+    payload: { name },
+  });
+  return res.json().id as string;
+}
 
 const call = (
   method: 'GET' | 'PUT',
@@ -93,7 +113,7 @@ const perfil = {
   legalName: 'Lanas del Sur S.R.L.',
   tradeName: 'Lanas del Sur',
   taxId: '30-71234567-1',
-  category: 'Textiles',
+  categoryId: '',
   description: 'Hilados artesanales de oveja y llama.',
   publicContactOptIn: false,
 };
@@ -112,6 +132,7 @@ describe('exhibitor profile (EXH-01)', () => {
     expect(res.statusCode).toBe(201);
     expect(res.json()).toMatchObject({
       ...perfil,
+      category: 'Textiles',
       taxId: '30712345671',
       publicConsentAt: null,
     });
@@ -157,14 +178,23 @@ describe('exhibitor profile (EXH-01)', () => {
   it.each([
     ['an invalid CUIT', { taxId: '20-12345678-5' }],
     ['a blank trade name', { tradeName: '  ' }],
-    ['a missing category', { category: undefined }],
+    ['a missing category', { categoryId: undefined }],
+    ['a category that is not a UUID', { categoryId: 'Textiles' }],
+    [
+      'an unknown category',
+      { categoryId: '00000000-0000-4000-8000-000000000000' },
+    ],
+    ['a category of another organization', { categoryId: 'OTHER_TENANT' }],
     ['an owner field', { userId: '00000000-0000-4000-8000-000000000000' }],
     ['a consent that is not a boolean', { publicContactOptIn: 'yes' }],
   ])('rejects %s (400)', async (_case, change) => {
-    const res = await call('PUT', '/me/exhibitor-profile', 'ana', X_A, {
-      ...perfil,
-      ...change,
-    });
+    const body = JSON.parse(
+      JSON.stringify({ ...perfil, ...change }).replace(
+        'OTHER_TENANT',
+        otherTenantCategory,
+      ),
+    );
+    const res = await call('PUT', '/me/exhibitor-profile', 'ana', X_A, body);
     expect(res.statusCode).toBe(400);
   });
 
@@ -174,7 +204,7 @@ describe('exhibitor profile (EXH-01)', () => {
       legalName: 'Beto Pérez',
       tradeName: 'Cerámicas Beto',
       taxId: null,
-      category: 'Cerámica',
+      categoryId: ceramica,
     });
     expect(res.statusCode).toBe(201);
     expect(res.json().taxId).toBeNull();

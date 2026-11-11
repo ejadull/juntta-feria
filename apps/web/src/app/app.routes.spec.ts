@@ -191,7 +191,13 @@ describe('areas by role (PUB-UI-01)', () => {
   it('shows the feriante area with its navigation to an exhibitor', async () => {
     const { host, current } = await open('/feriante/explorar', { as: 'EXHIBITOR' });
     expect(host.textContent).not.toContain('Ver como');
-    expect(navItems(host)).toEqual(['Explorar stands', 'Mis reservas', 'Suscripción']);
+    expect(navItems(host)).toEqual([
+      'Explorar stands',
+      'Mis reservas',
+      'Mi perfil',
+      'Mis documentos',
+      'Suscripción',
+    ]);
     expect(current()).toEqual(['Explorar stands']);
     expect(host.querySelector('main h1')?.textContent).toContain('Elegí tu stand');
   });
@@ -290,7 +296,13 @@ describe('areas by role (PUB-UI-01)', () => {
     select.dispatchEvent(new Event('change'));
     await harness.fixture.whenStable();
     expect(router.url).toBe('/feriante/explorar');
-    expect(navItems(host)).toEqual(['Explorar stands', 'Mis reservas', 'Suscripción']);
+    expect(navItems(host)).toEqual([
+      'Explorar stands',
+      'Mis reservas',
+      'Mi perfil',
+      'Mis documentos',
+      'Suscripción',
+    ]);
   });
 
   it('keeps "Ferias" active on the list and on a fair map', async () => {

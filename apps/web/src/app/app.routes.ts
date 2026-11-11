@@ -4,6 +4,20 @@ import { EventMetricsRepository } from './features/dashboard/data/event-metrics.
 import { HttpReservationsExportRepository } from './features/reports/data/http-reservations-export.repository';
 import { ReservationsExportRepository } from './features/reports/data/reservations-export.repository';
 import { HttpEventMetricsRepository } from './features/dashboard/data/http-event-metrics.repository';
+import {
+  DocumentReviewRepository,
+  FileUploader,
+  OwnDocumentsRepository,
+} from './features/documents/data/document.repository';
+import {
+  HttpDocumentReviewRepository,
+  HttpFileUploader,
+  HttpOwnDocumentsRepository,
+} from './features/documents/data/http-documents.repository';
+import { ExhibitorProfileRepository } from './features/exhibitor-profile/data/exhibitor-profile.repository';
+import { HttpExhibitorProfileRepository } from './features/exhibitor-profile/data/http-exhibitor-profile.repository';
+import { CategoryRepository } from './features/exhibitors/data/category.repository';
+import { HttpCategoryRepository } from './features/exhibitors/data/http-category.repository';
 import { ExhibitorRepository } from './features/exhibitors/data/exhibitor.repository';
 import { HttpExhibitorRepository } from './features/exhibitors/data/http-exhibitor.repository';
 import { HttpInvitationRepository } from './features/exhibitors/data/http-invitation.repository';
@@ -45,6 +59,11 @@ const publicCatalog = [{ provide: PublicCatalogRepository, useClass: HttpPublicC
 const feriante = [
   { provide: PublicCatalogRepository, useClass: HttpTenantCatalogRepository },
   { provide: ReservationPaymentRepository, useClass: HttpReservationPaymentRepository },
+  // Own profile (rubro picked from the organization's list) and own documents (EXH-01..03).
+  { provide: ExhibitorProfileRepository, useClass: HttpExhibitorProfileRepository },
+  { provide: CategoryRepository, useClass: HttpCategoryRepository },
+  { provide: OwnDocumentsRepository, useClass: HttpOwnDocumentsRepository },
+  { provide: FileUploader, useClass: HttpFileUploader },
 ];
 /** P19 (PAY-04): one route per Mercado Pago `back_urls` entry (checkout.service.ts). */
 const checkoutReturns = (
@@ -157,6 +176,8 @@ export const routes: Routes = [
             providers: [
               { provide: ExhibitorRepository, useClass: HttpExhibitorRepository },
               { provide: InvitationRepository, useClass: HttpInvitationRepository },
+              { provide: CategoryRepository, useClass: HttpCategoryRepository },
+              { provide: DocumentReviewRepository, useClass: HttpDocumentReviewRepository },
             ],
           },
           {
@@ -219,6 +240,20 @@ export const routes: Routes = [
               import('./features/reservations/my-reservations.page').then(
                 (m) => m.MyReservationsPage,
               ),
+          },
+          {
+            path: 'perfil',
+            title: title('Mi perfil'),
+            loadComponent: () =>
+              import('./features/exhibitor-profile/exhibitor-profile.page').then(
+                (m) => m.ExhibitorProfilePage,
+              ),
+          },
+          {
+            path: 'documentos',
+            title: title('Mis documentos'),
+            loadComponent: () =>
+              import('./features/documents/my-documents.page').then((m) => m.MyDocumentsPage),
           },
           {
             path: 'suscripcion',

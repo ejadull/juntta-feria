@@ -12,7 +12,9 @@ export interface ExhibitorSummaryDto {
   readonly tradeName: string;
   readonly legalName: string;
   readonly taxId: string | null;
-  readonly category: string;
+  /** Null while the exhibitor has not picked one of the organization's rubros (EXH-02). */
+  readonly categoryId: string | null;
+  readonly category: string | null;
   readonly description: string;
   readonly publicContactOptIn: boolean;
   readonly documentsStatus: DocumentsStatus;

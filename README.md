@@ -24,7 +24,7 @@
 | Configuración y auth | entorno validado con Zod; JWT + refresh rotativo HttpOnly — [ADR 0004](docs/adr/0004-contrato-de-entorno-y-autenticacion.md) | entorno y auth en uso (`CORE-02`: login, refresh, logout, `/auth/me`) |
 | Persistencia | PostgreSQL 16 + PostGIS con Drizzle y SQL explícito — [ADR 0005](docs/adr/0005-drizzle-y-sql-explicito-postgis.md) | migraciones y roles en uso (`CORE-01`); RLS por tenant y auditoría en uso (`CORE-03`) |
 | Cache y colas | Redis | contenedor listo |
-| Archivos | S3 (en desarrollo: LocalStack, bucket creado al iniciar) | contenedor listo |
+| Archivos | S3 (en desarrollo: LocalStack, bucket creado al iniciar, con CORS para `http://localhost:4200`); documentos de expositores por URL firmada (`EXH-03`) | en uso (`EXH-03`) |
 | Pagos | Mercado Pago Checkout Pro + Webhooks | pendiente (`PAY-00..07`) |
 | Entorno local | Docker Compose (sólo desarrollo) | en uso |
 
@@ -187,6 +187,8 @@ npm run db:setup --workspace api         # rol juntta_app + migraciones (DATABAS
 npm run dev:api                          # API en :3000 como juntta_app, lee ../../.env
 npm run dev:web                          # web en :4200; proxy a http://localhost:3000 por defecto
 ```
+
+Los documentos de los expositores (`EXH-03`) suben directo del navegador al bucket con una URL firmada, así que la URL tiene que ser alcanzable desde el navegador. `S3_ENDPOINT` es la que usa la API (en Compose, `http://s3:4566`); `S3_PUBLIC_ENDPOINT` (opcional, por defecto `S3_ENDPOINT`) es la que se firma para el navegador (en Compose, `http://localhost:4566`). Con npm, donde ambas son `localhost`, no hace falta definirla. El bucket de LocalStack ya existente recibe el CORS con `docker compose exec s3 sh /etc/localstack/init/ready.d/init-s3.sh`.
 
 Si las dependencias del contenedor `api` o `web` quedan desactualizadas después de cambiar `package.json` (volúmenes `*_node_modules`), reinstalarlas dentro del contenedor:
 

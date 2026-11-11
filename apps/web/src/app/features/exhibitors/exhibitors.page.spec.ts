@@ -1,17 +1,36 @@
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
+import { DocumentReviewRepository } from '../documents/data/document.repository';
+import { InMemoryDocuments } from '../documents/data/in-memory-documents.repository';
+import { CategoryRepository, type CategoryDto } from './data/category.repository';
 import { ExhibitorRepository, type ExhibitorSummaryDto } from './data/exhibitor.repository';
-import { InMemoryExhibitorRepository } from './data/in-memory-exhibitor.repository';
+import { InMemoryCategoryRepository } from './data/in-memory-category.repository';
+import {
+  DEMO_EXHIBITORS,
+  InMemoryExhibitorRepository,
+} from './data/in-memory-exhibitor.repository';
 import { InMemoryInvitationRepository } from './data/in-memory-invitation.repository';
 import { InvitationRepository } from './data/invitation.repository';
 import { ExhibitorsPage } from './exhibitors.page';
 
 const plain = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
 
+/** One rubro per distinct category of the demo exhibitors, with the ids the demo repo uses. */
+const DEMO_CATEGORIES: readonly CategoryDto[] = [
+  ...new Map(
+    DEMO_EXHIBITORS.map((e) => [
+      e.categoryId!,
+      { id: e.categoryId!, name: e.category!, exhibitorCount: 1 },
+    ]),
+  ).values(),
+];
+
 async function render(repo: ExhibitorRepository = new InMemoryExhibitorRepository()) {
   TestBed.configureTestingModule({
     providers: [
       { provide: ExhibitorRepository, useValue: repo },
+      { provide: CategoryRepository, useValue: new InMemoryCategoryRepository(DEMO_CATEGORIES) },
+      { provide: DocumentReviewRepository, useValue: new InMemoryDocuments().review },
       { provide: InvitationRepository, useValue: new InMemoryInvitationRepository() },
     ],
   });
@@ -68,7 +87,7 @@ describe('ExhibitorsPage (P11, consulta)', () => {
 
   it('filters by category', async () => {
     const { names, choose } = await render();
-    await choose('Rubro', 'Cerámica');
+    await choose('Rubro', 'demo-cat-Cerámica');
     expect(names()).toEqual(['Barro Cordillerano', 'Alfarería Collón Curá']);
   });
 
@@ -96,6 +115,7 @@ describe('ExhibitorsPage (P11, consulta)', () => {
       tradeName: 'Sin CUIT',
       legalName: 'Persona X',
       taxId: null,
+      categoryId: 'demo-cat-Servicios',
       category: 'Servicios',
       description: '—',
       publicContactOptIn: false,

@@ -141,6 +141,13 @@
       "when": 1794458400000,
       "tag": "0019_public_portal",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794544800000,
+      "tag": "0020_exhibitor_categories_documents",
+      "breakpoints": true
     }
   ]
 }

@@ -251,10 +251,16 @@ export async function addExhibitor(
 ): Promise<string> {
   return asOwner(async (c) => {
     const { rows } = await c.query<{ id: string }>(
-      `INSERT INTO exhibitors (tenant_id, user_id, legal_name, trade_name, tax_id, category, description,
+      `WITH category AS (
+         INSERT INTO exhibitor_categories (tenant_id, name) VALUES ($1, 'Textiles')
+         ON CONFLICT (tenant_id, lower(btrim(name))) DO UPDATE SET name = excluded.name
+         RETURNING id
+       )
+       INSERT INTO exhibitors (tenant_id, user_id, legal_name, trade_name, tax_id, category_id, description,
                                public_contact_opt_in, public_consent_at)
-       VALUES ($1, $2, $3, $4, '20123456786', 'Textiles', 'Tejidos artesanales', $5::boolean,
-               CASE WHEN $5::boolean THEN now() END)
+       SELECT $1, $2, $3, $4, '20123456786', category.id, 'Tejidos artesanales', $5::boolean,
+              CASE WHEN $5::boolean THEN now() END
+       FROM category
        RETURNING id`,
       [
         tenant,

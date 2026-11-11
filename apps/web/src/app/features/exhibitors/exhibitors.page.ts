@@ -1,21 +1,21 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { catchError, map, of } from 'rxjs';
 import { fold } from '../../shared/text';
 import {
   ExhibitorRepository,
   type DocumentsStatus,
   type ExhibitorSummaryDto,
 } from './data/exhibitor.repository';
+import { CategoryRepository, type CategoryDto } from './data/category.repository';
+import { CategoriesPanel } from './ui/categories-panel';
 import { DOCUMENTS_STATUS, ExhibitorDetail } from './ui/exhibitor-detail';
 import { InvitationsPanel } from './ui/invitations-panel';
 
 type State = { readonly list: readonly ExhibitorSummaryDto[] } | { readonly error: string };
 
-/** P11 (design D4): read-only organizer view of exhibitors. Verification actions arrive with EXH-01. */
+/** P11 (design D4): organizer view of exhibitors, their rubros (EXH-02) and documents (EXH-03). */
 @Component({
   selector: 'app-exhibitors-page',
-  imports: [ExhibitorDetail, InvitationsPanel],
+  imports: [CategoriesPanel, ExhibitorDetail, InvitationsPanel],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
@@ -50,8 +50,8 @@ type State = { readonly list: readonly ExhibitorSummaryDto[] } | { readonly erro
               />
               <select class="field" aria-label="Rubro" (change)="category.set(valueOf($event))">
                 <option value="">Todos los rubros</option>
-                @for (c of categories(); track c) {
-                  <option [value]="c">{{ c }}</option>
+                @for (c of categories(); track c.id) {
+                  <option [value]="c.id">{{ c.name }}</option>
                 }
               </select>
               <select
@@ -82,7 +82,7 @@ type State = { readonly list: readonly ExhibitorSummaryDto[] } | { readonly erro
                     <span class="min-w-0">
                       <span class="name block truncate font-medium">{{ e.tradeName }}</span>
                       <span class="block truncate text-xs text-text-muted"
-                        >{{ e.category }} · {{ e.legalName }}</span
+                        >{{ e.category ?? 'Sin rubro' }} · {{ e.legalName }}</span
                       >
                     </span>
                     <span
@@ -103,11 +103,12 @@ type State = { readonly list: readonly ExhibitorSummaryDto[] } | { readonly erro
           </section>
 
           <aside class="card self-start" aria-label="Ficha del expositor">
-            <app-exhibitor-detail [exhibitor]="selected()" />
+            <app-exhibitor-detail [exhibitor]="selected()" (reviewed)="reload()" />
           </aside>
         </div>
       }
 
+      <app-categories-panel (changed)="reloadAll()" />
       <app-invitations-panel />
     </div>
   `,
@@ -140,18 +141,10 @@ type State = { readonly list: readonly ExhibitorSummaryDto[] } | { readonly erro
 })
 export class ExhibitorsPage {
   private readonly repo = inject(ExhibitorRepository);
+  private readonly categoryRepo = inject(CategoryRepository);
 
-  private readonly state = toSignal<State | null>(
-    this.repo.list().pipe(
-      map((list): State => ({ list })),
-      catchError(() =>
-        of<State>({
-          error: 'No se pudieron cargar los expositores. Probá de nuevo en unos minutos.',
-        }),
-      ),
-    ),
-    { initialValue: null },
-  );
+  private readonly state = signal<State | null>(null);
+  protected readonly categories = signal<readonly CategoryDto[]>([]);
 
   protected readonly query = signal('');
   protected readonly category = signal('');
@@ -170,23 +163,53 @@ export class ExhibitorsPage {
     const s = this.state();
     return s && 'list' in s ? s.list : [];
   });
-  protected readonly categories = computed(() =>
-    [...new Set(this.list().map((e) => e.category))].sort((a, b) => a.localeCompare(b, 'es')),
-  );
   protected readonly filtered = computed(() => {
     const q = fold(this.query().trim());
     const category = this.category();
     const docs = this.docs();
     return this.list().filter(
       (e) =>
-        (!category || e.category === category) &&
+        (!category || e.categoryId === category) &&
         (!docs || e.documentsStatus === docs) &&
-        (!q || fold(`${e.tradeName} ${e.legalName} ${e.category}`).includes(q)),
+        (!q || fold(`${e.tradeName} ${e.legalName} ${e.category ?? ''}`).includes(q)),
     );
   });
   protected readonly selected = computed(
     () => this.list().find((e) => e.id === this.selectedId()) ?? null,
   );
+
+  constructor() {
+    this.reload();
+    this.loadCategories();
+  }
+
+  /** Refreshes the list, e.g. after a document review changed an exhibitor's status. */
+  protected reload(): void {
+    this.repo.list().subscribe({
+      next: (list) => this.state.set({ list }),
+      error: () =>
+        this.state.set({
+          error: 'No se pudieron cargar los expositores. Probá de nuevo en unos minutos.',
+        }),
+    });
+  }
+
+  /** Rubros were added, renamed or removed: the filter and the exhibitors' rubro names change. */
+  protected reloadAll(): void {
+    this.reload();
+    this.loadCategories();
+  }
+
+  private loadCategories(): void {
+    // The filter only narrows the list: without rubros it simply offers none.
+    this.categoryRepo.list().subscribe({
+      next: (list) => {
+        this.categories.set(list);
+        if (!list.some((c) => c.id === this.category())) this.category.set('');
+      },
+      error: () => this.categories.set([]),
+    });
+  }
 
   protected valueOf(e: Event): string {
     return (e.target as HTMLInputElement | HTMLSelectElement).value;

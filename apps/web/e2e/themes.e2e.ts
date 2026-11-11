@@ -15,6 +15,8 @@ const PAGES: readonly (readonly [path: string, role: Role])[] = [
   ['/ferias', 'EXHIBITOR'],
   ['/feriante/explorar', 'EXHIBITOR'],
   ['/feriante/reservas', 'EXHIBITOR'],
+  ['/feriante/perfil', 'EXHIBITOR'],
+  ['/feriante/documentos', 'EXHIBITOR'],
   ['/ingresar', 'EXHIBITOR'],
   ['/organizador/layouts/demo-v1/editor', 'OWNER'],
   ['/ferias/feria-demo', 'EXHIBITOR'],
@@ -24,6 +26,7 @@ const PAGES: readonly (readonly [path: string, role: Role])[] = [
 
 for (const theme of ['clasico', 'corporativo', 'grafito', 'industrial', 'matcha'] as const) {
   test(`the "${theme}" palette keeps every main page accessible`, async ({ page }) => {
+    test.setTimeout(60_000); // one axe pass per page, in five palettes
     await page.addInitScript((value) => localStorage.setItem('juntta.theme', value), theme);
     const api = await mockApi(page, {
       reservations: [reservation({ id: 'r1' }), reservation({ id: 'r2', status: 'CONFIRMED' })],
