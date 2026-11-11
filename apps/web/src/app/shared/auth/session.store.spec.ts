@@ -44,6 +44,16 @@ describe('SessionStore (CORE-02, P01)', () => {
     expect(store.tenantId()).toBe('t-exh');
   });
 
+  it('derives the area from the role in the active organization', () => {
+    const { store, http } = setup();
+    expect(store.area()).toBe('visitante');
+    store.loginWithGoogle('id-token').subscribe();
+    http.expectOne('/api/v1/auth/google').flush(SESSION);
+    expect(store.area()).toBe('feriante');
+    store.selectTenant('t-owner');
+    expect(store.area()).toBe('organizador');
+  });
+
   it('refreshes with one request however many callers ask (single-flight)', () => {
     const { store, http } = setup();
     const results: boolean[] = [];

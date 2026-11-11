@@ -12,38 +12,44 @@ describe('ThemePicker', () => {
     const fixture = TestBed.createComponent(ThemePicker);
     fixture.detectChanges();
     const host = fixture.nativeElement as HTMLElement;
-    const radio = (label: string) =>
-      [...host.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find(
-        (r) => r.closest('label')!.textContent!.trim() === label,
-      )!;
-    return { fixture, host, radio };
+    const select = host.querySelector<HTMLSelectElement>('select')!;
+    const choose = (value: string) => {
+      select.value = value;
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    };
+    return { fixture, host, select, choose };
   }
 
-  it('lists every palette as a labelled radio group with the current one checked', () => {
-    const { host, radio } = render();
-    expect(host.querySelector('fieldset legend')?.textContent?.trim()).toBe('Tema de colores');
-    const labels = [...host.querySelectorAll('label')].map((l) => l.textContent!.trim());
-    expect(labels).toEqual([
+  it('lists every palette in a select with a visible label, the current one selected', () => {
+    const { host, select } = render();
+    const label = host.querySelector('label[for="juntta-theme"]');
+    expect(label?.textContent?.trim()).toBe('Tema de colores');
+    expect(select.id).toBe('juntta-theme');
+    const options = [...select.options].map((o) => o.textContent!.trim());
+    expect(options).toEqual([
       'Clásico',
       'Corporativo',
       'Grafito',
       'Industrial Neon',
       'Matcha Organic',
     ]);
-    expect(radio('Grafito').checked).toBe(true);
+    expect(select.value).toBe('grafito');
   });
 
-  it('applies the chosen palette', () => {
-    const { fixture, radio } = render();
-    radio('Industrial Neon').click();
-    fixture.detectChanges();
+  it('applies and remembers the chosen palette', () => {
+    const { choose } = render();
+    choose('industrial');
     expect(document.documentElement.dataset['theme']).toBe('industrial');
-    expect(radio('Industrial Neon').checked).toBe(true);
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('industrial');
   });
 
-  it('previews each palette with its swatches, hidden from assistive tech', () => {
-    const { host } = render();
-    const swatches = host.querySelectorAll('label [aria-hidden="true"] span');
-    expect(swatches.length).toBe(15); // 3 per palette
+  it('previews the current palette with 3 swatches, hidden from assistive tech', () => {
+    const { host, choose } = render();
+    const swatches = () => host.querySelectorAll('[aria-hidden="true"] span');
+    expect(swatches().length).toBe(3);
+    expect((swatches()[1] as HTMLElement).style.background).toContain('255, 90, 0'); // Grafito accent
+    choose('matcha');
+    expect((swatches()[1] as HTMLElement).style.background).toContain('255, 51, 85');
   });
 });

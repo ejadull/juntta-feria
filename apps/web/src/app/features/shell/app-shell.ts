@@ -3,11 +3,10 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { ApiStatusService, type ApiStatus } from '../../shared/api/api-status.service';
+import { type AreaId } from '../../shared/auth/area';
 import { SessionStore } from '../../shared/auth/session.store';
 import { DEMO_CONTEXT } from '../../shared/demo-context';
 import { ThemePicker } from '../../shared/theme-picker';
-
-type AreaId = 'organizador' | 'feriante' | 'visitante';
 
 interface NavItem {
   readonly label: string;
@@ -124,20 +123,9 @@ const AREAS: readonly Area[] = [
   },
 ];
 
-function areaOf(url: string): Area {
-  const path = pathOf(url);
-  const id: AreaId =
-    path.startsWith('/feriante') || path.startsWith('/ingresar')
-      ? 'feriante'
-      : path.startsWith('/ferias')
-        ? 'visitante'
-        : 'organizador';
-  return AREAS.find((a) => a.id === id)!;
-}
-
 /**
  * App layout for the three areas (mockup "App de escritorio"): side navigation on desktop, top bar
- * on mobile. "Ver como" is a demo control until the area comes from the session (CORE-02).
+ * on mobile. Only the navigation of the area the session's role belongs to is shown.
  */
 @Component({
   selector: 'app-shell',
@@ -164,27 +152,15 @@ function areaOf(url: string): Area {
         </span>
       </a>
 
-      <div>
-        <div class="mb-1.5 flex items-center justify-between gap-2">
-          <p class="text-xs font-semibold tracking-wider text-text-muted">VER COMO · DEMO</p>
-          <span
-            data-testid="api-status"
-            role="status"
-            class="api-status"
-            [attr.data-state]="apiStatus()"
-          >
-            <span class="dot" aria-hidden="true"></span>
-            API: {{ apiStatusLabel[apiStatus()] }}
-          </span>
-        </div>
-        <div class="segmented" role="group" aria-label="Ver como (demo)">
-          @for (a of areas; track a.id) {
-            <button type="button" [attr.aria-pressed]="a.id === area().id" (click)="go(a.home)">
-              {{ a.label }}
-            </button>
-          }
-        </div>
-      </div>
+      <span
+        data-testid="api-status"
+        role="status"
+        class="api-status"
+        [attr.data-state]="apiStatus()"
+      >
+        <span class="dot" aria-hidden="true"></span>
+        API: {{ apiStatusLabel[apiStatus()] }}
+      </span>
 
       <app-theme-picker />
 
@@ -226,6 +202,9 @@ function areaOf(url: string): Area {
           <div class="rounded-xl border border-border bg-surface p-3 text-sm">
             <p class="text-xs font-semibold tracking-wider text-text-muted">SESIÓN</p>
             <p class="truncate font-medium" data-testid="session-email">{{ user.email }}</p>
+            <p class="text-xs text-text-muted" data-testid="session-area">
+              Área: {{ area().label }}
+            </p>
             @if (session.memberships().length > 1) {
               <label class="mt-2 block text-xs text-text-muted">
                 Organización
@@ -289,30 +268,6 @@ function areaOf(url: string): Area {
     .api-status[data-state='down'] .dot {
       background: var(--color-danger);
     }
-    .segmented {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 0.25rem;
-      padding: 0.25rem;
-      border-radius: 0.75rem;
-      background: color-mix(in srgb, var(--color-text-muted) 12%, var(--color-surface-soft));
-    }
-    .segmented button {
-      min-height: 2.25rem;
-      padding: 0 0.375rem;
-      border-radius: 0.5rem;
-      font-size: 0.8125rem;
-      color: var(--color-text);
-    }
-    .segmented button[aria-pressed='true'] {
-      background: var(--color-surface);
-      font-weight: 600;
-      box-shadow: 0 1px 3px rgb(38 53 50 / 0.12);
-    }
-    .segmented button:focus-visible {
-      outline: 2px solid var(--color-selected);
-      outline-offset: 1px;
-    }
     .nav-link {
       display: flex;
       align-items: center;
@@ -342,7 +297,6 @@ function areaOf(url: string): Area {
 export class AppShell {
   protected readonly org = DEMO_CONTEXT.organization;
   protected readonly session = inject(SessionStore);
-  protected readonly areas = AREAS;
 
   private readonly router = inject(Router);
   protected readonly currentUrl = toSignal(
@@ -352,7 +306,7 @@ export class AppShell {
     ),
     { initialValue: this.router.url },
   );
-  protected readonly area = computed(() => areaOf(this.currentUrl()));
+  protected readonly area = computed(() => AREAS.find((a) => a.id === this.session.area())!);
 
   // ponytail: checked once per load; add polling or a retry button when a page depends on the API.
   protected readonly apiStatus = toSignal<ApiStatus | 'checking', 'checking'>(
@@ -367,13 +321,11 @@ export class AppShell {
 
   protected chooseTenant(event: Event): void {
     this.session.selectTenant((event.target as HTMLSelectElement).value);
+    // The new organization may mean another kind of role, so land on that area's home.
+    void this.router.navigateByUrl(this.area().home);
   }
 
   protected logout(): void {
     this.session.logout().subscribe(() => void this.router.navigateByUrl('/ingresar'));
-  }
-
-  protected go(home: string): void {
-    void this.router.navigateByUrl(home);
   }
 }

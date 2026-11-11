@@ -6,20 +6,39 @@ import { mockApi } from './support/mock-api';
  * demo data; the exhibitor area reads the real API, mocked here.
  */
 
-test('"Ver como" switches between the three areas', async ({ page }) => {
-  await mockApi(page);
+test('an exhibitor sees only the feriante area and is kept out of the organizer one', async ({
+  page,
+}) => {
+  await mockApi(page, { role: 'EXHIBITOR' });
   await page.goto('/organizador/panel');
-  const seeAs = page.getByRole('group', { name: /Ver como/ });
-  await seeAs.getByRole('button', { name: 'Feriante' }).click();
   await expect(page).toHaveURL(/\/feriante\/explorar$/);
-  await expect(seeAs.getByRole('button', { name: 'Feriante' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
   await expect(page.getByRole('navigation', { name: 'Secciones del feriante' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Secciones del organizador' })).toHaveCount(0);
+  await expect(page.getByText('Ver como')).toHaveCount(0);
+});
 
-  await seeAs.getByRole('button', { name: 'Visitante' }).click();
+test('staff sees only the organizer area and is kept out of the exhibitor one', async ({
+  page,
+}) => {
+  await mockApi(page, { role: 'ADMIN' });
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/organizador\/panel$/);
+  await expect(page.getByRole('navigation', { name: 'Secciones del organizador' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Secciones del feriante' })).toHaveCount(0);
+
+  await page.goto('/feriante/reservas');
+  await expect(page).toHaveURL(/\/organizador\/panel$/);
+});
+
+test('an anonymous visitor sees only the visitor navigation and can sign in', async ({ page }) => {
+  await mockApi(page, { signedIn: false });
+  await page.goto('/');
   await expect(page).toHaveURL(/\/ferias$/);
+  await expect(page.getByRole('navigation', { name: 'Secciones del visitante' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Ingresar' })).toBeVisible();
+
+  await page.goto('/organizador/panel');
+  await expect(page).toHaveURL(/\/ingresar\?volver=%2Forganizador%2Fpanel$/);
 });
 
 test('feriante filters by sector and picks a stand from the list', async ({ page }) => {

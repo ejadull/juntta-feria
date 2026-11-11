@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { mockApi } from './support/mock-api';
 
 /** P12 (PAY-07): link, see and unlink the organization's Mercado Pago account, with axe. */
 
@@ -7,6 +8,10 @@ const seriousViolations = async (page: Page) =>
   (await new AxeBuilder({ page }).analyze()).violations
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')
     .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`);
+
+test.beforeEach(async ({ page }) => {
+  await mockApi(page, { role: 'OWNER' });
+});
 
 test('organizer links and unlinks the Mercado Pago account', async ({ page }) => {
   await page.goto('/organizador/panel');

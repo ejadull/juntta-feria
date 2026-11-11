@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { mockApi } from './support/mock-api';
 
 /** LUI-10: delta-spec scenarios of `layout-editor` end to end (AC-01, AC-02, AC-04 frontend). */
 
@@ -22,6 +23,7 @@ const shape = (page: Page, id: string) => page.locator(`app-floor-plan-canvas [d
 const publish = (page: Page) => page.getByRole('button', { name: 'Publicar' });
 
 test.beforeEach(async ({ page }) => {
+  await mockApi(page, { role: 'OWNER' });
   await page.goto(EDITOR);
   await expect(page.locator('app-floor-plan-canvas g.shape')).toHaveCount(43);
 });

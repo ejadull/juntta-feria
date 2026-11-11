@@ -1,3 +1,4 @@
+import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
 import { EventMetricsRepository } from './features/dashboard/data/event-metrics.repository';
 import { InMemoryEventMetricsRepository } from './features/dashboard/data/in-memory-event-metrics.repository';
@@ -13,7 +14,9 @@ import { PublicCatalogRepository } from './features/public-catalog/data/public-c
 import { HttpReservationPaymentRepository } from './features/checkout-return/data/http-reservation-payment.repository';
 import { ReservationPaymentRepository } from './features/checkout-return/data/reservation-payment.repository';
 import { APP_NAME } from './shared/demo-context';
-import { authGuard } from './shared/auth/auth.guard';
+import { AREA_HOME } from './shared/auth/area';
+import { areaGuard } from './shared/auth/auth.guard';
+import { SessionStore } from './shared/auth/session.store';
 
 const title = (section: string): string => `${section} · ${APP_NAME}`;
 const notFound = () => import('./features/not-found.page').then((m) => m.NotFoundPage);
@@ -50,13 +53,15 @@ const checkoutReturns = (
 // ponytail: the organizer screens and the visitor portal still use in-memory adapters until their
 // APIs are wired (REP-01, EXH-01, PUB-01); swap each `useFactory` for its Http adapter here.
 export const routes: Routes = [
-  { path: '', pathMatch: 'full', redirectTo: 'organizador/panel' },
+  // Each role lands on its own home; anonymous users on the public fairs.
+  { path: '', pathMatch: 'full', redirectTo: () => AREA_HOME[inject(SessionStore).area()] },
   {
     path: '',
     loadComponent: () => import('./features/shell/app-shell').then((m) => m.AppShell),
     children: [
       {
         path: 'organizador',
+        canActivate: [areaGuard('organizador')],
         children: [
           { path: '', pathMatch: 'full', redirectTo: 'panel' },
           {
@@ -149,7 +154,7 @@ export const routes: Routes = [
       {
         path: 'feriante',
         providers: feriante,
-        canActivate: [authGuard],
+        canActivate: [areaGuard('feriante')],
         children: [
           { path: '', pathMatch: 'full', redirectTo: 'explorar' },
           { path: 'explorar', title: title('Explorar stands'), loadComponent: explore },

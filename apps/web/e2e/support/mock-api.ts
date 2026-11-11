@@ -11,15 +11,15 @@ export const EMAIL = 'feriante@example.test';
 export const CHECKOUT_URL = 'https://www.mercadopago.test/checkout?pref=pref-1';
 export const SUBSCRIBE_URL = 'https://www.mercadopago.test/subscriptions?id=sub-1';
 
-const SESSION = {
+export type Role = 'OWNER' | 'ADMIN' | 'OPERATOR' | 'EXHIBITOR';
+
+const sessionFor = (role: Role) => ({
   accessToken: 'access-token',
   tokenType: 'Bearer',
   expiresIn: 900,
   user: { id: 'u1', email: EMAIL },
-  memberships: [
-    { tenantId: 't1', tenantSlug: 'org', tenantName: 'Organización', role: 'EXHIBITOR' },
-  ],
-};
+  memberships: [{ tenantId: 't1', tenantSlug: 'org', tenantName: 'Organización', role }],
+});
 
 const square = (x: number): number[][][] => [
   [
@@ -123,6 +123,8 @@ export interface MockApi {
   /** `GET /public/invitations/:token` answers this; null answers 404. */
   invitation: { organizationName: string; email: string | null; name: string | null } | null;
   signedIn: boolean;
+  /** Role of the signed-in user in the organization; read on each page load (`/auth/refresh`). */
+  role: Role;
   subscription: Subscription;
   /** Problem answered by `POST /reservations` instead of creating the hold. */
   holdProblem: { status: number; code?: string } | null;
@@ -159,6 +161,7 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
     googleClientId: null,
     invitation: null,
     signedIn: true,
+    role: 'EXHIBITOR',
     subscription: { status: 'ACTIVE', currentPeriodEnd: future(60 * 24 * 20) },
     holdProblem: null,
     reservations: [],
@@ -179,7 +182,8 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
     });
 
     if (path === '/health/live') return json(route, { status: 'ok' });
-    if (path === '/auth/refresh') return api.signedIn ? json(route, SESSION) : problem(route, 401);
+    if (path === '/auth/refresh')
+      return api.signedIn ? json(route, sessionFor(api.role)) : problem(route, 401);
     if (path === '/auth/providers')
       return json(route, {
         google: api.googleClientId ? { clientId: api.googleClientId } : null,
@@ -191,7 +195,7 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
       if (credential !== GOOGLE_CREDENTIALS.registered)
         return problem(route, 401, 'GOOGLE_CREDENTIAL_INVALID');
       api.signedIn = true;
-      return json(route, SESSION);
+      return json(route, sessionFor(api.role));
     }
     if (/^\/public\/invitations\/[^/]+$/.test(path))
       return api.invitation ? json(route, api.invitation) : problem(route, 404);

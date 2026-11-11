@@ -15,7 +15,7 @@ async function render() {
     providers: [
       provideHttpClient(),
       provideHttpClientTesting(),
-      signedInAs('feriante@example.test'),
+      signedInAs('EXHIBITOR', 'feriante@example.test'),
       { provide: EXTERNAL_NAVIGATION, useValue: navigate },
       { provide: SUBSCRIPTION_POLL, useValue: { intervalMs: 5, attempts: 4 } },
     ],

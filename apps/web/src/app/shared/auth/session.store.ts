@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { catchError, finalize, map, of, shareReplay, tap, type Observable } from 'rxjs';
 import { API_BASE } from '../api/api-base';
+import { areaFor } from './area';
 
 export type MembershipRole = 'OWNER' | 'ADMIN' | 'OPERATOR' | 'EXHIBITOR';
 
@@ -41,6 +42,11 @@ export class SessionStore {
         ?.tenantId ?? null
     );
   });
+
+  /** Area of the active organization's role (organizer, exhibitor) or visitor: the single source for menus and guards. */
+  readonly area = computed(() =>
+    areaFor(this.user() !== null, this.memberships(), this.tenantId()),
+  );
 
   accessToken(): string | null {
     return this.session()?.accessToken ?? null;

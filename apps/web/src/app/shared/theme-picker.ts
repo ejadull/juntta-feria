@@ -1,68 +1,41 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { THEMES, ThemeStore } from './theme';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { THEMES, ThemeStore, type ThemeId } from './theme';
 
-/** Palette selector: native radios (keyboard and screen readers for free) with a 3-color preview. */
+/** Palette pick list: a native select (keyboard and screen readers for free) with a 3-color preview. */
 @Component({
   selector: 'app-theme-picker',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <fieldset>
-      <legend class="mb-1.5 text-xs font-semibold tracking-wider text-text-muted">
-        Tema de colores
-      </legend>
-      <div class="grid gap-1">
+    <label class="block text-xs font-semibold tracking-wider text-text-muted" for="juntta-theme">
+      Tema de colores
+    </label>
+    <div class="mt-1.5 flex items-center gap-2">
+      <select id="juntta-theme" class="theme-select" (change)="choose($event)">
         @for (t of themes; track t.id) {
-          <label class="option">
-            <input
-              type="radio"
-              name="juntta-theme"
-              [value]="t.id"
-              [checked]="t.id === theme.current()"
-              (change)="theme.set(t.id)"
-            />
-            <span class="swatches" aria-hidden="true">
-              @for (color of t.swatches; track $index) {
-                <span [style.background]="color"></span>
-              }
-            </span>
-            {{ t.label }}
-          </label>
+          <option [value]="t.id" [selected]="t.id === theme.current()">{{ t.label }}</option>
         }
-      </div>
-    </fieldset>
+      </select>
+      <span class="swatches" aria-hidden="true">
+        @for (color of swatches(); track $index) {
+          <span [style.background]="color"></span>
+        }
+      </span>
+    </div>
   `,
   styles: `
-    fieldset {
-      border: 0;
-      margin: 0;
-      padding: 0;
+    .theme-select {
+      flex: 1;
       min-width: 0;
-    }
-    .option {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      border: 1px solid transparent;
-      border-radius: var(--radius-md);
-      padding: 0.375rem 0.5rem;
-      font-size: 0.875rem;
-      cursor: pointer;
-    }
-    .option:hover {
-      background: color-mix(in srgb, var(--color-text) 6%, transparent);
-    }
-    .option:has(input:checked) {
-      border-color: var(--color-border-strong);
+      min-height: 2.25rem;
+      border: 1px solid var(--color-border-strong);
+      border-radius: 0.5rem;
       background: var(--color-surface);
-      font-weight: 600;
+      color: var(--color-text);
+      font-size: 0.875rem;
     }
-    .option:has(input:focus-visible) {
+    .theme-select:focus-visible {
       outline: 2px solid var(--color-selected);
       outline-offset: 2px;
-    }
-    input {
-      accent-color: var(--color-primary);
-      margin: 0;
     }
     .swatches {
       display: inline-flex;
@@ -82,4 +55,11 @@ import { THEMES, ThemeStore } from './theme';
 export class ThemePicker {
   protected readonly theme = inject(ThemeStore);
   protected readonly themes = THEMES;
+  protected readonly swatches = computed(
+    () => THEMES.find((t) => t.id === this.theme.current())?.swatches ?? [],
+  );
+
+  protected choose(event: Event): void {
+    this.theme.set((event.target as HTMLSelectElement).value as ThemeId);
+  }
 }
