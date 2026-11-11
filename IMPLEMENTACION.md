@@ -15,7 +15,6 @@ Receta para publicar Juntta Feria en producción con **Firebase** y los servicio
 | Contadores (límite de intentos y de pedidos) | **Memorystore for Redis** (o Upstash) | La API usa Redis para los límites de pedidos. |
 | Secretos | **Secret Manager** | Tokens de Mercado Pago, claves de sesión y contraseñas de la base. |
 | Banderas de configuración | **Remote Config** (opcional) | Ver §11. |
-| Datos en vivo | **Realtime Database** (opcional, a futuro) | Ver §12. |
 
 ### Por qué Realtime Database y Firestore **no** reemplazan a Postgres
 
@@ -26,7 +25,7 @@ La API no es un CRUD de documentos. Depende de cosas que una base NoSQL no da:
 - **Geometría y reportes:** los planos usan PostGIS. Las métricas, la conciliación de pagos y el CSV usan SQL con joins.
 - **Costo de migrar:** habría que reescribir la API y sus más de 500 tests.
 
-Por eso Postgres se queda, en Cloud SQL. Realtime Database queda como agregado opcional para disponibilidad en vivo (§12).
+Por eso Postgres se queda, en Cloud SQL, como **única base de datos** (decisión del 2026-11-11, ver §12).
 
 ```mermaid
 flowchart LR
@@ -341,15 +340,14 @@ Cómo sumarlo cuando haga falta:
 
 Los parámetros del servidor (`MP_CHECKOUT_API` o el precio de la suscripción) siguen en variables de entorno de Cloud Run.
 
-## 12. Realtime Database (opcional, a futuro)
+## 12. Firestore y Realtime Database: descartados
 
-Encaja en un solo caso: **la disponibilidad de stands en vivo**. La especificación lo deja pendiente como SSE `stand-events`.
-- **Escritura:** la API, con el Admin SDK, publica en `/events/<slug>/stands/<code> = { status }` cada vez que cambia una reserva.
-- **Lectura:** el mapa público se suscribe a esos cambios en lugar de releer cada 15 segundos.
-- **Reglas:** lectura pública sólo de esa rama, escritura cerrada a los clientes. Nunca datos de feriantes ni de pagos.
-- **Fuente de verdad:** Postgres. Realtime Database es una copia para mostrar, y si se desincroniza, la reserva igual la valida la API.
+**Decisión (2026-11-11):** el proyecto usa sólo PostgreSQL. No se usa Cloud Firestore ni Realtime Database, ni como reemplazo ni como copia de lectura.
 
-Firestore no se usa.
+- **Como reemplazo:** se perderían el aislamiento por RLS, los joins de reportes y conciliación, PostGIS y la garantía de la base contra reservas dobles (INV-01). Además habría que reescribir los servicios de la API y sus tests de integración.
+- **Como copia de lectura** (por ejemplo, para la disponibilidad en vivo): no compensa una segunda base que mantener sincronizada. Si hace falta disponibilidad en vivo, va por el SSE `stand-events` que la especificación ya tiene pendiente, sobre la misma API.
+
+Si esta decisión se revisa, Firestore es la candidata frente a Realtime Database: tiene transacciones sobre cualquier documento, consultas compuestas y mayor disponibilidad.
 
 ## 13. Primer superadministrador y prueba de humo
 
