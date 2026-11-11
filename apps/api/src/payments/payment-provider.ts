@@ -102,8 +102,16 @@ export interface PaymentProvider {
    * The Orders adapter cannot read a payment on its own and fails.
    */
   getPayment(tenantId: string, paymentId: string): Promise<ProviderPayment>;
-  /** Every payment made against one checkout (PAY-03, PAY-05, PAY-06), re-read from the provider. */
-  getPayments(tenantId: string, checkoutId: string): Promise<ProviderPayment[]>;
+  /**
+   * Every payment made against one checkout (PAY-03, PAY-05, PAY-06), re-read from the provider.
+   * Preferences finds them by `attemptId` (our `external_reference`) and fails without it; Orders
+   * reads the order and ignores it.
+   */
+  getPayments(
+    tenantId: string,
+    checkoutId: string,
+    attemptId?: string,
+  ): Promise<ProviderPayment[]>;
   refund(
     tenantId: string,
     checkoutId: string,
@@ -115,6 +123,7 @@ export interface PaymentProvider {
   cancel(
     tenantId: string,
     checkoutId: string,
+    attemptId: string,
     idempotencyKey: string,
   ): Promise<{ readonly status: string }>;
   createSubscription(

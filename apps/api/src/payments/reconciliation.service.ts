@@ -207,7 +207,11 @@ export class ReconciliationService
     if (!item.checkoutId) return 'kept';
     let payments: ProviderPayment[];
     try {
-      payments = await this.provider.getPayments(tenantId, item.checkoutId);
+      payments = await this.provider.getPayments(
+        tenantId,
+        item.checkoutId,
+        item.attemptId,
+      );
     } catch {
       return 'unreachable';
     }

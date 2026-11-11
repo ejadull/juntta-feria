@@ -92,25 +92,30 @@ export class MercadoPagoPreferencesProvider extends MercadoPagoBase {
   }
 
   /**
-   * A preference lists no payments: read its `external_reference` (the attempt id) and search
-   * the payments that carry it.
+   * A preference lists no payments: search the ones carrying its `external_reference`, which is
+   * our attempt id. The preference itself is never read (`GET /checkout/preferences/:id` answers
+   * 403 to the platform credentials).
    */
   getPayments(
     tenantId: string,
-    checkoutId: string,
+    _checkoutId: string,
+    attemptId?: string,
   ): Promise<ProviderPayment[]> {
-    return this.call('getPayments', tenantId, async (config) => {
-      const preference = await new Preference(config).get({
-        preferenceId: checkoutId,
-        requestOptions: { maxRetries: RETRIES },
-      });
-      if (!preference.external_reference) return [];
-      const found = await new Payment(config).search({
-        options: { external_reference: preference.external_reference },
-        requestOptions: { maxRetries: RETRIES },
-      });
-      return (found.results ?? []).map(toPayment);
+    if (!attemptId) return Promise.reject(providerFailed());
+    return this.call('getPayments', tenantId, (config) =>
+      this.searchByReference(config, attemptId),
+    );
+  }
+
+  private async searchByReference(
+    config: ConstructorParameters<typeof Payment>[0],
+    attemptId: string,
+  ): Promise<ProviderPayment[]> {
+    const found = await new Payment(config).search({
+      options: { external_reference: attemptId },
+      requestOptions: { maxRetries: RETRIES },
     });
+    return (found.results ?? []).map(toPayment);
   }
 
   getPayment(tenantId: string, paymentId: string): Promise<ProviderPayment> {
@@ -151,20 +156,12 @@ export class MercadoPagoPreferencesProvider extends MercadoPagoBase {
    */
   cancel(
     tenantId: string,
-    checkoutId: string,
+    _checkoutId: string,
+    attemptId: string,
     idempotencyKey: string,
   ): Promise<{ status: string }> {
     return this.call('cancel', tenantId, async (config) => {
-      const preference = await new Preference(config).get({
-        preferenceId: checkoutId,
-        requestOptions: { maxRetries: RETRIES },
-      });
-      if (!preference.external_reference) return { status: 'cancelled' };
-      const found = await new Payment(config).search({
-        options: { external_reference: preference.external_reference },
-        requestOptions: { maxRetries: RETRIES },
-      });
-      for (const payment of (found.results ?? []).map(toPayment)) {
+      for (const payment of await this.searchByReference(config, attemptId)) {
         if (!CANCELLABLE.includes(payment.status)) continue;
         const cancelled = await new Payment(config).cancel({
           id: payment.id,

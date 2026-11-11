@@ -182,6 +182,7 @@ export class MercadoPagoOrdersProvider extends MercadoPagoBase {
   cancel(
     tenantId: string,
     checkoutId: string,
+    _attemptId: string,
     idempotencyKey: string,
   ): Promise<{ status: string }> {
     return this.call('cancel', tenantId, async (config) => {

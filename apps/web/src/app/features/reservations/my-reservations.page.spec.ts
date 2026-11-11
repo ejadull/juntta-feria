@@ -45,6 +45,7 @@ describe('MyReservationsPage (RES-01)', () => {
 
     const rows = [...host.querySelectorAll('[data-testid="reservation"]')];
     expect(rows).toHaveLength(5);
+    // Live reservations first, the lapsed hold (r4) last as history.
     expect(plain(rows[0].textContent)).toContain('Stand S2');
     expect(plain(rows[0].textContent)).toContain('Feria Sandbox');
     expect(plain(rows[0].textContent)).toMatch(/\$\s?17\.400/);
@@ -52,8 +53,9 @@ describe('MyReservationsPage (RES-01)', () => {
     expect(plain(rows[0].textContent)).toContain('Vence a las');
     expect(plain(rows[1].textContent)).toContain('Pago pendiente');
     expect(plain(rows[2].textContent)).toContain('Confirmada');
-    expect(plain(rows[3].textContent)).toContain('Retenida');
-    expect(plain(rows[4].textContent)).toContain('Devolución en curso');
+    expect(plain(rows[3].textContent)).toContain('Devolución en curso');
+    expect(plain(rows[4].textContent)).toContain('Stand S4');
+    expect(plain(rows[4].textContent)).toContain('Vencida');
 
     const pay = rows.map((r) => r.querySelector<HTMLAnchorElement>('a.btn-primary'));
     expect(pay.map((a) => a !== null)).toEqual([true, true, false, false, false]);
@@ -61,6 +63,41 @@ describe('MyReservationsPage (RES-01)', () => {
     expect(rows[0].querySelector('a:not(.btn-primary)')?.getAttribute('href')).toBe(
       '/feriante/reservas/r1/pago/pendiente',
     );
+  });
+
+  it('keeps expired and cancelled reservations as history, after the active ones and without Pagar', async () => {
+    const { host, http, fixture } = await render();
+    http
+      .expectOne('/api/v1/reservations')
+      .flush([
+        reservation('r1', 'EXPIRED', 'S1', null),
+        reservation('r2', 'CANCELLED', 'S2', null),
+        reservation('r3', 'HELD', 'S3', 10),
+      ]);
+    http.expectOne('/api/v1/events').flush([]);
+    await fixture.whenStable();
+
+    const rows = [...host.querySelectorAll('[data-testid="reservation"]')];
+    expect(rows.map((r) => /Stand (S\d)/.exec(plain(r.textContent))?.[1])).toEqual([
+      'S3',
+      'S1',
+      'S2',
+    ]);
+    expect(plain(rows[1].textContent)).toContain('Vencida');
+    expect(plain(rows[2].textContent)).toContain('Cancelada');
+    expect(rows[1].querySelector('a.btn-primary')).toBeNull();
+    expect(rows[2].querySelector('a.btn-primary')).toBeNull();
+  });
+
+  it('does not offer Pagar when the hold lapsed but the payment is still being verified', async () => {
+    const { host, http, fixture } = await render();
+    http.expectOne('/api/v1/reservations').flush([reservation('r1', 'PAYMENT_PENDING', 'S1', -3)]);
+    http.expectOne('/api/v1/events').flush([]);
+    await fixture.whenStable();
+
+    const row = host.querySelector('[data-testid="reservation"]') as HTMLElement;
+    expect(plain(row.textContent)).toContain('Verificando el pago');
+    expect(row.querySelector('a.btn-primary')).toBeNull();
   });
 
   it('shows an empty state that leads to the stands', async () => {

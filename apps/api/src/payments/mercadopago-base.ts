@@ -66,6 +66,7 @@ export abstract class MercadoPagoBase implements PaymentProvider {
   abstract getPayments(
     tenantId: string,
     checkoutId: string,
+    attemptId?: string,
   ): Promise<ProviderPayment[]>;
   abstract getPayment(
     tenantId: string,
@@ -81,6 +82,7 @@ export abstract class MercadoPagoBase implements PaymentProvider {
   abstract cancel(
     tenantId: string,
     checkoutId: string,
+    attemptId: string,
     idempotencyKey: string,
   ): Promise<{ status: string }>;
 

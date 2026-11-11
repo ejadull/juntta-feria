@@ -4,6 +4,8 @@ export interface FriendlyError {
   readonly text: string;
   /** The problem is solved at the platform subscription screen. */
   readonly needsSubscription: boolean;
+  /** The reservation limit was hit: the exhibitor frees a slot from "Mis reservas". */
+  readonly needsReservations?: boolean;
 }
 
 const BY_CODE: Readonly<Record<string, string>> = {
@@ -12,7 +14,8 @@ const BY_CODE: Readonly<Record<string, string>> = {
   PROFILE_INCOMPLETE: 'Completá tu perfil de feriante, incluido el CUIT, antes de reservar.',
   ACCOUNT_NOT_CONFIRMED: 'Confirmá tu cuenta desde el correo que te enviamos antes de reservar.',
   EXHIBITOR_NOT_AUTHORIZED: 'Solo podés reservar con tu propio perfil de feriante.',
-  HOLD_LIMIT: 'Ya tenés el máximo de reservas retenidas. Pagá o cancelá alguna para seguir.',
+  HOLD_LIMIT:
+    'Ya tenés el máximo de reservas retenidas. Pagá o cancelá alguna desde Mis reservas para seguir.',
   RESERVATION_NOT_PAYABLE: 'Esta reserva ya no se puede pagar: venció o se canceló.',
   RESERVATION_NOT_CANCELLABLE: 'Esta reserva ya no se puede cancelar.',
 };
@@ -35,5 +38,5 @@ export function friendly(error: unknown): FriendlyError {
   const { status, code } = problemOf(error);
   if (code === 'SUBSCRIPTION_REQUIRED') return { text: SUBSCRIPTION, needsSubscription: true };
   const text = (code && BY_CODE[code]) || BY_STATUS[status] || FALLBACK;
-  return { text, needsSubscription: false };
+  return { text, needsSubscription: false, needsReservations: code === 'HOLD_LIMIT' };
 }

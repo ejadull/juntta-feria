@@ -6,12 +6,14 @@ import { API_BASE } from '../../shared/api/api-base';
 import { formatArs } from '../../shared/money';
 import type { ReservationDto } from '../checkout-return/data/reservation-payment.repository';
 import { ReservationsApi } from './data/reservations.api';
-import { isPayable, STATUS_LABEL } from './reservation-status';
+import { isHistory, isPayable, statusText } from './reservation-status';
 
 interface Row {
   readonly reservation: ReservationDto;
   readonly event: string;
+  readonly status: string;
   readonly payable: boolean;
+  readonly history: boolean;
   readonly holdUntil: string | null;
 }
 
@@ -57,8 +59,7 @@ const time = (iso: string): string =>
                 <p class="font-medium">{{ price(row.reservation.amount.valueCents) }}</p>
                 <div class="text-sm">
                   <p>
-                    <span class="sr-only">Estado: </span
-                    ><strong>{{ label[row.reservation.status] }}</strong>
+                    <span class="sr-only">Estado: </span><strong>{{ row.status }}</strong>
                   </p>
                   @if (row.holdUntil) {
                     <p class="text-text-muted">Vence a las {{ row.holdUntil }}</p>
@@ -95,7 +96,6 @@ export class MyReservationsPage implements OnInit {
   private readonly api = inject(ReservationsApi);
   private readonly http = inject(HttpClient);
 
-  protected readonly label = STATUS_LABEL;
   protected readonly price = formatArs;
   protected readonly rows = signal<readonly Row[] | null>(null);
   protected readonly error = signal<string | null>(null);
@@ -118,15 +118,20 @@ export class MyReservationsPage implements OnInit {
         const names = new Map(events.map((e) => [e.id, e.name]));
         const now = Date.now();
         this.rows.set(
-          reservations.map((r) => ({
-            reservation: r,
-            event: names.get(r.eventId) ?? 'Feria',
-            payable: isPayable(r, now),
-            holdUntil:
-              r.status === 'HELD' && r.holdExpiresAt && isPayable(r, now)
-                ? time(r.holdExpiresAt)
-                : null,
-          })),
+          reservations
+            .map((r) => ({
+              reservation: r,
+              event: names.get(r.eventId) ?? 'Feria',
+              status: statusText(r, now),
+              payable: isPayable(r, now),
+              history: isHistory(r, now),
+              holdUntil:
+                r.status === 'HELD' && r.holdExpiresAt && isPayable(r, now)
+                  ? time(r.holdExpiresAt)
+                  : null,
+            }))
+            // Active first, history after (Array.sort is stable: each group keeps the API order).
+            .sort((a, b) => Number(a.history) - Number(b.history)),
         );
       },
       error: () => this.error.set(LOAD_FAILED),

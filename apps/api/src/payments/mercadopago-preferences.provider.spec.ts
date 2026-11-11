@@ -238,14 +238,10 @@ describe('MercadoPagoPreferencesProvider (PAY-01)', () => {
     expect(sent[0].body ?? {}).toEqual({});
   });
 
-  const referenced = {
-    id: 'pref-1',
-    external_reference: checkout.externalReference,
-  };
+  const ATTEMPT = checkout.externalReference;
 
-  it('cancels the pending payments of a preference with a key derived from ours (PAY-06)', async () => {
+  it('cancels the pending payments of an attempt with a key derived from ours (PAY-06)', async () => {
     respond(
-      { status: 200, body: referenced },
       {
         status: 200,
         body: {
@@ -258,72 +254,72 @@ describe('MercadoPagoPreferencesProvider (PAY-01)', () => {
       { status: 200, body: { id: 123, status: 'cancelled' } },
     );
 
-    expect(await sandbox().cancel(TENANT, 'pref-1', 'key-cancel-1')).toEqual({
-      status: 'cancelled',
-    });
-    expect(sent).toHaveLength(3);
-    expect(sent[2]).toMatchObject({
+    expect(
+      await sandbox().cancel(TENANT, 'pref-1', ATTEMPT, 'key-cancel-1'),
+    ).toEqual({ status: 'cancelled' });
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toMatchObject({
       url: 'https://api.mercadopago.com/v1/payments/123',
       method: 'PUT',
       body: { status: 'cancelled' },
     });
-    expect(sent[2].headers['X-Idempotency-Key']).toBe('key-cancel-1:123');
+    expect(sent[1].headers['X-Idempotency-Key']).toBe('key-cancel-1:123');
   });
 
-  it('counts a preference with nothing left to cancel as cancelled', async () => {
-    respond(
-      { status: 200, body: referenced },
-      { status: 200, body: { results: [{ id: 124, status: 'rejected' }] } },
-    );
-    expect(await sandbox().cancel(TENANT, 'pref-1', 'key')).toEqual({
+  it('counts an attempt with nothing left to cancel as cancelled', async () => {
+    respond({
+      status: 200,
+      body: { results: [{ id: 124, status: 'rejected' }] },
+    });
+    expect(await sandbox().cancel(TENANT, 'pref-1', ATTEMPT, 'key')).toEqual({
       status: 'cancelled',
     });
-    expect(sent).toHaveLength(2);
+    expect(sent).toHaveLength(1);
   });
 
-  it('reads the payments of a preference through its external_reference (PAY-05)', async () => {
-    respond(
-      { status: 200, body: referenced },
-      {
-        status: 200,
-        body: {
-          results: [
-            {
-              id: 7,
-              status: 'rejected',
-              external_reference: checkout.externalReference,
-              transaction_amount: 45_000.5,
-              currency_id: 'ARS',
-              collector_id: '777',
-            },
-          ],
-        },
+  it('reads the payments of an attempt by external_reference, never reading the preference (PAY-05)', async () => {
+    respond({
+      status: 200,
+      body: {
+        results: [
+          {
+            id: 7,
+            status: 'rejected',
+            external_reference: ATTEMPT,
+            transaction_amount: 45_000.5,
+            currency_id: 'ARS',
+            collector_id: '777',
+          },
+        ],
       },
-    );
+    });
 
-    const found = await sandbox().getPayments(TENANT, 'pref-1');
+    const found = await sandbox().getPayments(TENANT, 'pref-1', ATTEMPT);
 
     expect(found).toEqual([
       {
         id: '7',
         status: 'rejected',
         statusDetail: null,
-        externalReference: checkout.externalReference,
+        externalReference: ATTEMPT,
         amountCents: 4_500_050,
         currency: 'ARS',
         collectorId: '777',
         approvedAt: null,
       },
     ]);
-    expect(sent[0]).toMatchObject({
-      url: 'https://api.mercadopago.com/checkout/preferences/pref-1',
-      method: 'GET',
-    });
-    const url = new URL(sent[1].url);
+    expect(sent).toHaveLength(1);
+    const url = new URL(sent[0].url);
     expect(url.pathname).toBe('/v1/payments/search');
-    expect(url.searchParams.get('external_reference')).toBe(
-      checkout.externalReference,
-    );
+    expect(url.searchParams.get('external_reference')).toBe(ATTEMPT);
+  });
+
+  it('fails when the attempt id is not given', async () => {
+    respond();
+    await expect(
+      sandbox().getPayments(TENANT, 'pref-1'),
+    ).rejects.toBeInstanceOf(BadGatewayException);
+    expect(sent).toHaveLength(0);
   });
 });
 

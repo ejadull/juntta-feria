@@ -169,7 +169,7 @@ export class RefundsService {
     const targets: Target[] = [];
     for (const { id, checkoutId } of attempts)
       for (const payment of checkoutId
-        ? await this.provider.getPayments(tenantId, checkoutId)
+        ? await this.provider.getPayments(tenantId, checkoutId, id)
         : [])
         if (
           payment.status === 'approved' ||
@@ -290,6 +290,7 @@ export class RefundsService {
       const { status } = await this.provider.cancel(
         tenantId,
         checkoutId,
+        row.attemptId,
         row.id,
       );
       if (status !== 'cancelled') throw providerFailed();

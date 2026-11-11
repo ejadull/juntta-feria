@@ -123,6 +123,19 @@ describe('ReservePage (P18, RES-01, PAY-02)', () => {
     expect(alert.querySelector('a')?.getAttribute('href')).toBe('/feriante/suscripcion');
   });
 
+  it('links to Mis reservas when the hold limit is reached', async () => {
+    const stand = await availableStandId();
+    const { host, button, accept, click } = await render(
+      { stand, feria: DEMO_EVENT_SLUG },
+      { hold: () => problem(409, 'HOLD_LIMIT') },
+    );
+    await accept();
+    await click(button('Reservar y pagar'));
+    const alert = host.querySelector('[role="alert"]')!;
+    expect(plain(alert.textContent)).toContain('máximo de reservas retenidas');
+    expect(alert.querySelector('a')?.getAttribute('href')).toBe('/feriante/reservas');
+  });
+
   it.each([
     [403, 'PROFILE_INCOMPLETE', 'perfil de feriante'],
     [409, 'STAND_UNAVAILABLE', 'Alguien se llevó este stand'],

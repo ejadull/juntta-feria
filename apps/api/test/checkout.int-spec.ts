@@ -856,6 +856,7 @@ describe('reconciliation (PAY-05)', () => {
       outcome: 'NO_PAYMENT',
     });
     expect(await statusOf('dani', dani)).toBe('PAYMENT_PENDING');
+    pay('9700', unpaid.attemptId, 'rejected'); // a dead payment does not keep the stand
     await setReservation(dani, minutesAgo(10));
 
     await Promise.all([reconcile(), reconcile()]);

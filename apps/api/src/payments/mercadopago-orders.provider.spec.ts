@@ -355,7 +355,9 @@ describe('MercadoPagoOrdersProvider (PAY-01, ADR 0007)', () => {
   it('cancels an unpaid order with our idempotency key (PAY-06)', async () => {
     respond({ status: 200, body: { id: 'ORD1', status: 'canceled' } });
 
-    expect(await sandbox().cancel(TENANT, 'ORD1', 'key-cancel-1')).toEqual({
+    expect(
+      await sandbox().cancel(TENANT, 'ORD1', 'attempt-1', 'key-cancel-1'),
+    ).toEqual({
       status: 'cancelled',
     });
     expect(sent[0]).toMatchObject({
@@ -370,7 +372,7 @@ describe('MercadoPagoOrdersProvider (PAY-01, ADR 0007)', () => {
       { status: 409, body: { errors: [{ code: 'order_already_canceled' }] } },
       { status: 200, body: { id: 'ORD1', status: 'canceled' } },
     );
-    expect(await sandbox().cancel(TENANT, 'ORD1', 'k')).toEqual({
+    expect(await sandbox().cancel(TENANT, 'ORD1', 'attempt-1', 'k')).toEqual({
       status: 'cancelled',
     });
   });
@@ -380,9 +382,9 @@ describe('MercadoPagoOrdersProvider (PAY-01, ADR 0007)', () => {
       { status: 409, body: { errors: [{ code: 'cannot_cancel_order' }] } },
       { status: 200, body: { id: 'ORD1', status: 'processed' } },
     );
-    await expect(sandbox().cancel(TENANT, 'ORD1', 'k')).rejects.toBeInstanceOf(
-      BadGatewayException,
-    );
+    await expect(
+      sandbox().cancel(TENANT, 'ORD1', 'attempt-1', 'k'),
+    ).rejects.toBeInstanceOf(BadGatewayException);
   });
 });
 

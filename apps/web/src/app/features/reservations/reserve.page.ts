@@ -143,6 +143,11 @@ const NOT_PAYABLE = 'Esta reserva ya no se puede pagar.';
                   Activar mi suscripción
                 </a>
               }
+              @if (e.needsReservations) {
+                <a class="btn btn-primary mt-3" routerLink="/feriante/reservas"
+                  >Ir a Mis reservas</a
+                >
+              }
             </div>
           }
 

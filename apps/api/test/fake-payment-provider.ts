@@ -123,6 +123,7 @@ export class FakePaymentProvider implements PaymentProvider {
   cancel(
     _tenantId: string,
     checkoutId: string,
+    _attemptId: string,
     key: string,
   ): Promise<{ status: string }> {
     if (this.reversalFailed()) return Promise.reject(providerFailed());
