@@ -45,6 +45,43 @@
 5. La API valida la notificación, consulta el pago y adjudica el stand si corresponde.
 6. El visitante explora el mapa de expositores del evento.
 
+## Roles, áreas y acceso
+
+> **Importante:** la web muestra menús y permite rutas **según el rol del usuario en la organización activa**. No hay selector "Ver como": el área sale de la sesión ([`area.ts`](apps/web/src/app/shared/auth/area.ts), `SessionStore.area`).
+
+| Área | Quién entra | Rol en la organización activa | Rutas | Inicio |
+|---|---|---|---|---|
+| **Organizador** (administración) | Dueños y equipo de la organización | `OWNER`, `ADMIN`, `OPERATOR` | `/organizador/**` | `/organizador/panel` |
+| **Feriante** | Expositores invitados | `EXHIBITOR` | `/feriante/**` | `/feriante/explorar` |
+| **Visitante** | Cualquiera, sin sesión | — | `/ferias/**` | `/ferias` |
+
+- **Menú:** cada usuario ve sólo el menú de su área; el bloque *Sesión* muestra "Área: …". Sin sesión se ve el menú de visitante y el botón "Ingresar".
+- **Rutas protegidas** (`areaGuard` en [`auth.guard.ts`](apps/web/src/app/shared/auth/auth.guard.ts)): sin sesión, `/organizador/**` y `/feriante/**` llevan a `/ingresar?volver=<ruta>` y vuelven ahí después de ingresar con Google. Con sesión pero con otro rol, redirigen al inicio del área propia: un feriante que abre `/organizador` vuelve a `/feriante/explorar`, y al revés.
+- **Raíz `/`:** lleva al inicio del área según el rol (sin sesión, a `/ferias`).
+- **Públicas para todos:** `/ferias/**`, `/ingresar` y `/invitacion/:token`.
+- **Varias organizaciones:** quien pertenece a más de una elige la organización activa en el bloque *Sesión*. Si ahí tiene otro rol, cambia el área y la web va a su inicio. Con roles mixtos se arranca en la organización donde es feriante.
+- **Usuario sin organizaciones:** se trata como visitante (con "Salir").
+- **Las pantallas del organizador ya no se ven sin ingresar.** Para probarlas hace falta una cuenta con rol de organizador; con el sandbox es el email que pasaste en `bootstrap-sandbox.mjs --organizer`.
+- **La API es la autoridad:** la web sólo oculta menús y redirige. Cada endpoint vuelve a validar sesión, organización (`X-Tenant-Id`) y rol; el menú no es un control de acceso.
+- **Superadministrador de la plataforma** (`users.is_platform_admin`, ver *Primer superadministrador y primera organización*): todavía no tiene área en la web; opera por API (por ejemplo `POST /api/v1/tenants`).
+- **Pruebas:** en unit tests `signedInAs('OWNER' | 'EXHIBITOR' | memberships)` ([`testing.ts`](apps/web/src/app/shared/auth/testing.ts)); en e2e `mockApi(page, { role: 'OWNER' })`.
+
+## Temas de color
+
+La web trae cinco paletas; se eligen en la lista **Tema de colores** de la barra lateral y se recuerdan por navegador (`localStorage`, clave `juntta.theme`). El tema se aplica antes de que arranque Angular, así que no parpadea.
+
+| Tema | Referencia | Carácter |
+|---|---|---|
+| **Grafito** (por defecto) | [`docs/paleta2.webp`](docs/paleta2.webp) | Oscuro: negro metálico, gris niebla, naranja fundido |
+| Clásico | [Design System v1](docs/design/juntta-design-system-v1.md) | La paleta original |
+| Corporativo | [`docs/paleta1.webp`](docs/paleta1.webp) | Azul corporativo, teal, verde gestión, dorado ocre |
+| Industrial Neon | — | Frost white, gunmetal, laser lime; barra lateral, métricas y contador oscuros |
+| Matcha Organic | — | Matcha latte, ivory cream, cherry pop |
+
+- Los temas sólo cambian **tokens** (`--color-*` en [`styles.css`](apps/web/src/styles.css), bloques `:root[data-theme='…']`). Los componentes no usan colores fijos: usan tokens, y así todos los temas se aplican solos.
+- Tokens de contraste: `--color-on-primary` (texto sobre el color primario) y `--color-primary-strong` (el primario usado como texto). Hacen falta porque algunos acentos (lime, cherry, naranja) no se leen como texto o con texto blanco.
+- **Accesibilidad:** [`themes.e2e.ts`](apps/web/e2e/themes.e2e.ts) pasa axe (contraste incluido) en 10 pantallas por cada tema. Un tema nuevo se agrega a esa lista, a `THEMES` en [`theme.ts`](apps/web/src/app/shared/theme.ts) y al script de `index.html`.
+
 ## Desarrollo local
 
 Requisitos: Node.js ≥ 22.12, npm 11 y Docker (Docker Desktop en Windows/macOS).
