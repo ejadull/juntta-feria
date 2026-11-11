@@ -10,6 +10,7 @@ import { GOOGLE_ID_TOKEN_VERIFIER } from './google-sign-in.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { LoginRateLimiter, type LoginLimits } from './login-rate-limiter.js';
+import { RateLimitModule } from '../http/rate-limit.module.js';
 import { RedisCounterStore } from './redis-counter-store.js';
 
 /** 5 tries per email and 20 per IP every 15 minutes (§8 rate limits). */
@@ -20,11 +21,11 @@ export const LOGIN_LIMITS: LoginLimits = {
 };
 
 @Module({
+  imports: [RateLimitModule],
   controllers: [AuthController],
   providers: [
     AuthService,
     AccessTokenGuard,
-    RedisCounterStore,
     GoogleKeys,
     {
       provide: GOOGLE_ID_TOKEN_VERIFIER,

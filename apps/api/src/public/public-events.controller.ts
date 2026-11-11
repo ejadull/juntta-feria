@@ -4,7 +4,9 @@ import {
   Header,
   NotFoundException,
   Param,
+  UseGuards,
 } from '@nestjs/common';
+import { RateLimit, RateLimitGuard } from '../http/rate-limit.guard.js';
 import {
   PUBLIC_EVENT_NOT_FOUND,
   PublicEventsService,
@@ -32,6 +34,8 @@ const slugOf = (value: string): string => {
  * PublicEventsService for the exact projection.
  */
 @Controller('public/events')
+@UseGuards(RateLimitGuard)
+@RateLimit('public')
 export class PublicEventsController {
   constructor(private readonly service: PublicEventsService) {}
 

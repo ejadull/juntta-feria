@@ -19,6 +19,7 @@ import {
   type TenantRequest,
 } from '../tenancy/tenant-scoped.decorator.js';
 import {
+  cloneTemplateInput,
   cloneVersionInput,
   createTemplateInput,
   saveObjectsInput,
@@ -56,6 +57,28 @@ export class LayoutTemplatesController {
     return this.layouts.createTemplate(
       request.tenant.id,
       request.user.id,
+      input,
+    );
+  }
+
+  /**
+   * "Clonar plano": copies a version (any status) into a NEW template whose first version is a
+   * draft with new object ids. An event keeps its version; to use a changed plan you clone it
+   * (or its next version) and create a new event.
+   */
+  @Post(':id/clone')
+  @TenantScoped(...MANAGERS)
+  cloneTemplate(
+    @Req() request: TenantRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<LayoutVersionDto> {
+    const templateId = layoutId(id);
+    const input = parseBody(cloneTemplateInput, body, 'layout template');
+    return this.layouts.cloneTemplate(
+      request.tenant.id,
+      request.user.id,
+      templateId,
       input,
     );
   }

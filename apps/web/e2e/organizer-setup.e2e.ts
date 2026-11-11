@@ -4,6 +4,7 @@ import {
   mockApi,
   seriousViolations,
   type ApiStand,
+  type ApiTemplate,
   type ApiVenue,
 } from './support/mock-api';
 
@@ -121,6 +122,116 @@ test('staff sets everything up: venue, plan, event, sectors, prices and publish'
   await expect(page.locator('header').getByText('Publicado')).toBeVisible();
   expect(api.events[0].status).toBe('PUBLISHED');
   expect(await seriousViolations(page)).toEqual([]);
+});
+
+const PLAN_NORTE: ApiTemplate = {
+  id: 'tpl1',
+  name: 'Salón norte',
+  venueId: 'v1',
+  versions: [
+    { id: 'lv1', version: 1, status: 'ARCHIVED', publishedAt: '2026-09-01T12:00:00Z' },
+    { id: 'lv2', version: 2, status: 'PUBLISHED', publishedAt: '2026-10-01T12:00:00Z' },
+  ],
+};
+
+test('staff clones a plan version into a new plan and opens its draft; the original stays', async ({
+  page,
+}) => {
+  const api = await mockApi(page, {
+    role: 'OPERATOR',
+    venues: [VENUE, { ...VENUE, id: 'v2', name: 'Predio Sur' }],
+    templates: [structuredClone(PLAN_NORTE)],
+    events: [],
+  });
+  await page.goto('/organizador/plano');
+  await page.getByRole('button', { name: 'Clonar versión 1' }).click();
+  const form = page.getByRole('form', { name: /Clonar Salón norte · versión 1/ });
+  await expect(form.getByLabel('Nombre del plano nuevo')).toHaveValue('Salón norte (copia)');
+  expect(await seriousViolations(page)).toEqual([]);
+
+  await form.getByLabel('Nombre del plano nuevo').fill('Salón sur');
+  await form.getByLabel('Predio').selectOption({ label: 'Predio Sur' });
+  await form.getByRole('button', { name: 'Clonar y abrir el editor' }).click();
+  await expect(page).toHaveURL(/\/organizador\/layouts\/tpl2-v1\/editor$/);
+  await expect(page.getByText('Versión 1 · Borrador')).toBeVisible();
+  expect(
+    api.requests.find((r) => r.method === 'POST' && r.path === '/layout-templates/tpl1/clone')
+      ?.body,
+  ).toEqual({ name: 'Salón sur', sourceVersionId: 'lv1', venueId: 'v2' });
+  expect(api.templates.map((t) => [t.name, t.venueId])).toEqual([
+    ['Salón norte', 'v1'],
+    ['Salón sur', 'v2'],
+  ]);
+  expect(api.templates[0].versions.map((v) => v.status)).toEqual(['ARCHIVED', 'PUBLISHED']);
+});
+
+test('cloning with a taken name keeps the form open with the reason', async ({ page }) => {
+  await mockApi(page, { role: 'OWNER', venues: [VENUE], templates: [structuredClone(PLAN_NORTE)] });
+  await page.goto('/organizador/plano');
+  await page.getByRole('button', { name: 'Clonar versión 1' }).click();
+  await page.getByLabel('Nombre del plano nuevo').fill('salón norte');
+  await page.getByRole('button', { name: 'Clonar y abrir el editor' }).click();
+  await expect(page.getByRole('alert')).toContainText('Ya tenés un plano con ese nombre');
+  await expect(page).toHaveURL(/\/organizador\/plano$/);
+});
+
+test('the event detail names its plan version and says how to use another one', async ({
+  page,
+}) => {
+  await mockApi(page, {
+    role: 'OWNER',
+    venues: [VENUE],
+    templates: [structuredClone(PLAN_NORTE)],
+    events: [
+      {
+        ...EVENT,
+        id: 'e-old',
+        venueId: 'v1',
+        layoutVersionId: 'lv1',
+        status: 'DRAFT',
+        publishedAt: null,
+      },
+    ],
+    eventStands: { 'e-old': [stand(1)] },
+    eventSectors: { 'e-old': [] },
+  });
+  await page.goto('/organizador/eventos/e-old');
+  const plan = page.getByTestId('event-plan');
+  await expect(plan).toContainText('Plano del evento: Salón norte · versión 1 (archivada)');
+  await expect(plan).toContainText('Para usar otro plano, creá un evento nuevo.');
+  expect(await seriousViolations(page)).toEqual([]);
+  await plan.getByRole('link', { name: 'creá un evento nuevo' }).click();
+  await expect(page).toHaveURL(/\/organizador\/eventos\?nuevo=1$/);
+  await expect(page.getByRole('heading', { name: 'Nuevo evento' })).toBeVisible();
+});
+
+test('the new-event form offers the published version of every plan of the venue', async ({
+  page,
+}) => {
+  await mockApi(page, {
+    role: 'OWNER',
+    venues: [VENUE],
+    templates: [
+      structuredClone(PLAN_NORTE),
+      {
+        id: 'tpl2',
+        name: 'Galpón',
+        venueId: 'v1',
+        versions: [
+          { id: 'g1', version: 1, status: 'ARCHIVED', publishedAt: '2026-08-01T12:00:00Z' },
+          { id: 'g3', version: 3, status: 'PUBLISHED', publishedAt: '2026-10-05T12:00:00Z' },
+          { id: 'g4', version: 4, status: 'DRAFT', publishedAt: null },
+        ],
+      },
+    ],
+    events: [],
+  });
+  await page.goto('/organizador/eventos?nuevo=1');
+  await expect(page.getByLabel('Plano publicado').locator('option')).toHaveText([
+    'Elegí un plano',
+    'Salón norte · versión 2',
+    'Galpón · versión 3',
+  ]);
 });
 
 test('an operator cannot publish: the button is disabled and says why', async ({ page }) => {

@@ -3,6 +3,7 @@ import { httpError } from '../../../shared/http-error';
 import type { LayoutVersionDto } from '../domain/layout.types';
 import {
   LayoutTemplatesRepository,
+  type CloneLayoutTemplateInput,
   type CreateLayoutTemplateInput,
   type LayoutTemplateDto,
 } from './layout-templates.repository';
@@ -19,6 +20,15 @@ export class InMemoryLayoutTemplatesRepository extends LayoutTemplatesRepository
 
   list(): Observable<readonly LayoutTemplateDto[]> {
     return defer(() => of([...this.rows]));
+  }
+
+  clone(templateId: string, input: CloneLayoutTemplateInput): Observable<LayoutVersionDto> {
+    return defer(() => {
+      const source = this.rows.find((t) => t.id === templateId);
+      if (!source || !source.versions.some((v) => v.id === input.sourceVersionId))
+        return throwError(() => httpError(404));
+      return this.create({ name: input.name, venueId: input.venueId ?? source.venueId ?? '' });
+    });
   }
 
   create(input: CreateLayoutTemplateInput): Observable<LayoutVersionDto> {

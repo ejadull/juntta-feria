@@ -3,6 +3,7 @@ import {
   configuration,
   type AppConfiguration,
 } from '../config/configuration.js';
+import { RateLimitModule } from '../http/rate-limit.module.js';
 import { MercadoPagoWebhooksController } from './mercadopago-webhooks.controller.js';
 import { MercadoPagoWebhooksService } from './mercadopago-webhooks.service.js';
 import { MercadoPagoOAuth, OAUTH_CLIENT } from './mercadopago-oauth.js';
@@ -21,6 +22,7 @@ import { SellerAccountsService } from './seller-accounts.service.js';
  * to the platform (same provider and webhook pipeline).
  */
 @Module({
+  imports: [RateLimitModule],
   controllers: [
     MercadoPagoWebhooksController,
     PaymentIncidentsController,

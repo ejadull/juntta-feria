@@ -75,5 +75,13 @@ export const createTemplateInput = z
 
 export const cloneVersionInput = z.strictObject({ sourceVersionId: z.uuid() });
 
+/** "Clonar plano": a new template from any version of another; the venue defaults to the source's. */
+export const cloneTemplateInput = z.strictObject({
+  name: z.string().trim().min(1).max(120),
+  sourceVersionId: z.uuid(),
+  venueId: z.uuid().optional(),
+});
+
+export type CloneTemplateInput = z.infer<typeof cloneTemplateInput>;
 export type LayoutObjectInput = z.infer<typeof layoutObject>;
 export type CreateTemplateInput = z.infer<typeof createTemplateInput>;

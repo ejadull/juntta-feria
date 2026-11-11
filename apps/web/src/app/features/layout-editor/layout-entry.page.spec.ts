@@ -157,6 +157,76 @@ describe('LayoutEntryPage (LAY-01, organizador)', () => {
     expect(router.url).toBe('/');
   });
 
+  describe('Clonar plano', () => {
+    const open = async (versionLabel = 'Clonar versión 1') => {
+      const templates = new InMemoryLayoutTemplatesRepository([TEMPLATE]);
+      const clone = vi.spyOn(templates, 'clone');
+      const ui = await render(
+        new InMemoryVenueRepository([VENUE, { ...VENUE, id: 'v2', name: 'Galpón 13' }]),
+        templates,
+      );
+      await ui.click(versionLabel);
+      return { ...ui, clone };
+    };
+
+    it('offers Clonar on every version, archived ones included', async () => {
+      const { host } = await render();
+      const labels = [...host.querySelectorAll('[data-testid="template-row"] button')].map((b) =>
+        plain(b.textContent),
+      );
+      expect(labels).toEqual(['Clonar versión 1', 'Clonar versión 2', 'Clonar versión 3']);
+    });
+
+    it('proposes a name and the same venue, and opens the new draft in the editor', async () => {
+      const { host, click, router, clone } = await open('Clonar versión 1');
+      expect(plain(host.querySelector('form h2')?.textContent)).toBe(
+        'Clonar Salón principal · versión 1',
+      );
+      expect(host.querySelector('input')!.value).toBe('Salón principal (copia)');
+      expect(host.querySelector('select')!.value).toBe('v1');
+      await click('Clonar y abrir el editor');
+      expect(clone).toHaveBeenCalledWith('t1', {
+        name: 'Salón principal (copia)',
+        sourceVersionId: 'lv1',
+        venueId: 'v1',
+      });
+      expect(router.url).toBe('/organizador/layouts/draft-1/editor');
+    });
+
+    it('lets the venue and the name change', async () => {
+      const { click, fill, choose, clone } = await open('Clonar versión 2');
+      await fill('Salón norte');
+      await choose('v2');
+      await click('Clonar y abrir el editor');
+      expect(clone).toHaveBeenCalledWith('t1', {
+        name: 'Salón norte',
+        sourceVersionId: 'lv2',
+        venueId: 'v2',
+      });
+    });
+
+    it('validates the name and reports a taken one without leaving the form', async () => {
+      const { click, fill, host, clone, router } = await open();
+      await fill('  ');
+      await click('Clonar y abrir el editor');
+      expect(clone).not.toHaveBeenCalled();
+      expect(host.textContent).toContain('Ingresá el nombre del plano');
+      await fill('SALÓN PRINCIPAL');
+      await click('Clonar y abrir el editor');
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain('Ya tenés un plano');
+      expect(router.url).toBe('/');
+    });
+
+    it('closes with Cancelar, and opening Nuevo plano replaces it', async () => {
+      const { host, click } = await open();
+      await click('Cancelar');
+      expect(host.querySelector('form')).toBeNull();
+      await click('Clonar versión 1');
+      await click('Nuevo plano');
+      expect(plain(host.querySelector('form h2')?.textContent)).toBe('Nuevo plano');
+    });
+  });
+
   it('opens the form from ?nuevo (the empty states link there)', async () => {
     const { host } = await render(undefined, undefined, '/?nuevo=1');
     expect(host.querySelector('form')).not.toBeNull();

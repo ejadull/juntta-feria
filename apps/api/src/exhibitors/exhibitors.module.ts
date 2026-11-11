@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RateLimitModule } from '../http/rate-limit.module.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { CategoriesController } from './categories.controller.js';
 import { CategoriesService } from './categories.service.js';
@@ -6,6 +7,7 @@ import {
   ExhibitorDocumentsController,
   MyDocumentsController,
 } from './documents.controller.js';
+import { ExhibitorDocumentsSweeper } from './document-sweeper.service.js';
 import { ExhibitorDocumentsService } from './documents.service.js';
 import {
   ExhibitorsController,
@@ -23,7 +25,7 @@ import { InvitationsService } from './invitations.service.js';
  * (§2.1 ExhibitorsModule).
  */
 @Module({
-  imports: [StorageModule],
+  imports: [StorageModule, RateLimitModule],
   controllers: [
     CategoriesController,
     MyDocumentsController,
@@ -38,6 +40,7 @@ import { InvitationsService } from './invitations.service.js';
     InvitationsService,
     CategoriesService,
     ExhibitorDocumentsService,
+    ExhibitorDocumentsSweeper,
   ],
 })
 export class ExhibitorsModule {}

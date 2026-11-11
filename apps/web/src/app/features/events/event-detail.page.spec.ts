@@ -6,6 +6,11 @@ import { signedInAs } from '../../shared/auth/testing';
 import { httpError } from '../../shared/http-error';
 import { InMemoryVenueRepository } from '../venues/data/in-memory-venue.repository';
 import { VenueRepository } from '../venues/data/venue.repository';
+import { InMemoryLayoutTemplatesRepository } from '../layout-editor/data/in-memory-layout-templates.repository';
+import {
+  LayoutTemplatesRepository,
+  type LayoutTemplateDto,
+} from '../layout-editor/data/layout-templates.repository';
 import {
   EventAdminRepository,
   EventPublishRejectedError,
@@ -43,14 +48,27 @@ const VENUES = new InMemoryVenueRepository([
   },
 ]);
 
+const PLAN: LayoutTemplateDto = {
+  id: 't1',
+  name: 'Salón principal',
+  venueId: 'v1',
+  versions: [
+    { id: 'lv1', version: 1, status: 'ARCHIVED', publishedAt: '2026-09-01T12:00:00Z' },
+    { id: 'lv2', version: 2, status: 'ARCHIVED', publishedAt: '2026-10-01T12:00:00Z' },
+    { id: 'lv3', version: 3, status: 'PUBLISHED', publishedAt: '2026-10-20T12:00:00Z' },
+  ],
+};
+
 async function render(
   events: EventAdminRepository = new InMemoryEventAdminRepository([EVENT]),
   role: MembershipRole = 'OWNER',
+  templates: LayoutTemplatesRepository = new InMemoryLayoutTemplatesRepository([PLAN]),
 ) {
   TestBed.configureTestingModule({
     providers: [
       { provide: EventAdminRepository, useValue: events },
       { provide: VenueRepository, useValue: VENUES },
+      { provide: LayoutTemplatesRepository, useValue: templates },
       { provide: EventInventoryRepository, useValue: new InMemoryEventInventoryRepository() },
       signedInAs(role),
       provideRouter([]),
@@ -97,6 +115,26 @@ describe('EventDetailPage (EVT-01, organizador)', () => {
       '2026-10-01T00:00',
       '2026-11-19T00:00',
     ]);
+  });
+
+  it('shows which plan and version the event uses, and how to use another one', async () => {
+    const { host } = await render();
+    const plan = host.querySelector('[data-testid="event-plan"]');
+    expect(plain(plan?.textContent)).toContain('Plano del evento: Salón principal · versión 2');
+    expect(plain(plan?.textContent)).toContain('(archivada)');
+    expect(plain(plan?.textContent)).toContain('Para usar otro plano, creá un evento nuevo.');
+    expect(plan?.querySelector('a[href="/organizador/eventos?nuevo=1"]')).not.toBeNull();
+    expect(plan?.querySelector('a[href="/organizador/layouts/lv2/editor"]')).not.toBeNull();
+  });
+
+  it('still loads when the plans cannot be read, naming no plan', async () => {
+    const templates = new InMemoryLayoutTemplatesRepository([PLAN]);
+    templates.list = () => throwError(() => new Error('offline'));
+    const { host } = await render(undefined, 'OWNER', templates);
+    const plan = host.querySelector('[data-testid="event-plan"]');
+    expect(plain(plan?.textContent)).not.toContain('Salón principal');
+    expect(plain(plan?.textContent)).toContain('Para usar otro plano, creá un evento nuevo.');
+    expect(plain(host.querySelector('h1')?.textContent)).toBe('Feria de Primavera');
   });
 
   it('has three tabs, with the data one selected', async () => {

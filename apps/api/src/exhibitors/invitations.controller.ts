@@ -9,9 +9,11 @@ import {
   Param,
   Post,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import { isUuid } from '../db/database.service.js';
 import { parseBody } from '../http/parse-body.js';
+import { RateLimit, RateLimitGuard } from '../http/rate-limit.guard.js';
 import {
   MANAGERS,
   TenantScoped,
@@ -68,6 +70,8 @@ export class InvitationsController {
  * the credential. A malformed, used, revoked or expired token gets the same 404.
  */
 @Controller('public/invitations')
+@UseGuards(RateLimitGuard)
+@RateLimit('public')
 export class PublicInvitationsController {
   constructor(private readonly invitations: InvitationsService) {}
 

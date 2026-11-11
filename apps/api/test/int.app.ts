@@ -65,6 +65,9 @@ export async function startIntApp(
     AUTH_REFRESH_COOKIE_NAME: COOKIE,
     // Password sign-in is off by default (ADR 0008); the suites log in with passwords as fixtures.
     AUTH_PASSWORD_ENABLED: 'true',
+    // Out of the way of the suites; rate-limit.int-spec.ts lowers them through extraEnv.
+    PUBLIC_RATE_LIMIT: '1000000',
+    WEBHOOK_RATE_LIMIT: '1000000',
     MP_WEBHOOK_SECRET: WEBHOOK_SECRET,
     MP_NOTIFICATION_URL: NOTIFICATION_URL,
     MP_CLIENT_ID: 'int-client-id',

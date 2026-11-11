@@ -923,6 +923,39 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
       api.layouts[layout.id] = published;
       return json(route, published);
     }
+    const cloneTemplate = /^\/layout-templates\/([^/]+)\/clone$/.exec(path);
+    if (cloneTemplate && method === 'POST') {
+      const body = JSON.parse(raw ?? '{}') as {
+        name: string;
+        sourceVersionId: string;
+        venueId?: string;
+      };
+      const template = api.templates.find((t) => t.id === cloneTemplate[1]);
+      const source = api.layouts[body.sourceVersionId];
+      if (!template || !source) return problem(route, 404);
+      if (api.templates.some((t) => t.name.toLowerCase() === body.name.toLowerCase()))
+        return problem(route, 409);
+      const n = api.templates.length + 1;
+      const draft: LayoutVersionDto = {
+        ...source,
+        id: `tpl${n}-v1`,
+        templateId: `tpl${n}`,
+        version: 1,
+        status: 'DRAFT',
+        objects: source.objects.map((o) => ({ ...o, id: `${o.id}-c${n}` })),
+      };
+      api.layouts[draft.id] = draft;
+      api.templates = [
+        ...api.templates,
+        {
+          id: draft.templateId,
+          name: body.name,
+          venueId: body.venueId ?? template.venueId,
+          versions: [{ id: draft.id, version: 1, status: 'DRAFT', publishedAt: null }],
+        },
+      ];
+      return json(route, draft, 201);
+    }
     const cloneOf = /^\/layout-templates\/([^/]+)\/versions$/.exec(path);
     if (cloneOf && method === 'POST') {
       const { sourceVersionId } = JSON.parse(raw ?? '{}') as { sourceVersionId: string };

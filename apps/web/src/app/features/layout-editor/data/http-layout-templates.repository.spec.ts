@@ -46,6 +46,21 @@ describe('HttpLayoutTemplatesRepository', () => {
     http.verify();
   });
 
+  it('clones a version into a new template with POST /:id/clone', async () => {
+    const { repo, http } = setup();
+    const input = { name: 'Salón (copia)', sourceVersionId: 'lv2', venueId: 'v2' };
+    const result = firstValueFrom(repo.clone('t1', input));
+    const request = http.expectOne('/api/v1/layout-templates/t1/clone');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual(input);
+    request.flush(
+      { id: 'lv9', templateId: 't9', status: 'DRAFT', objects: [] },
+      { status: 201, statusText: 'Created' },
+    );
+    expect((await result).templateId).toBe('t9');
+    http.verify();
+  });
+
   it('fails with the HTTP error when the name is taken', async () => {
     const { repo, http } = setup();
     const result = firstValueFrom(repo.create({ name: 'Salón', venueId: 'v1' }));

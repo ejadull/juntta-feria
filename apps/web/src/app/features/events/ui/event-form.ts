@@ -135,7 +135,8 @@ type Errors = Partial<Record<Field, string>>;
             }
           </select>
           <span id="event-plan-hint" class="text-xs text-text-muted">
-            Solo aparecen planos publicados del predio elegido.
+            Solo aparecen planos publicados del predio elegido. El evento conserva esa versión del
+            plano: para usar un plano modificado, creá un evento nuevo.
             @if (venueId() !== '' && plansForVenue().length === 0) {
               No hay ninguno todavía:
               <a class="underline" routerLink="/organizador/plano">publicá un plano</a>.

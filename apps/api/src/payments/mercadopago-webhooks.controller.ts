@@ -5,8 +5,10 @@ import {
   HttpStatus,
   Post,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
+import { RateLimit, RateLimitGuard } from '../http/rate-limit.guard.js';
 import { MercadoPagoWebhooksService } from './mercadopago-webhooks.service.js';
 
 const text = (value: unknown): string | undefined =>
@@ -19,8 +21,15 @@ interface WebhookBody {
 /**
  * Public endpoint for Mercado Pago (PAY-03, §5). Authenticated by `x-signature`, not by a
  * session: 401 without processing when it does not verify. Answers 200 before applying.
+ *
+ * Rate limit: the generous `webhook` bucket (WEBHOOK_RATE_LIMIT per IP), never the public one.
+ * Mercado Pago retries failed notifications and sends bursts from a few addresses, and a dropped
+ * notification delays a payment confirmation, so the cap only stops floods (every request costs
+ * an HMAC check); the reconciliation job is the safety net for anything refused.
  */
 @Controller('webhooks/mercadopago')
+@UseGuards(RateLimitGuard)
+@RateLimit('webhook')
 export class MercadoPagoWebhooksController {
   constructor(private readonly webhooks: MercadoPagoWebhooksService) {}
 

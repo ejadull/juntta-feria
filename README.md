@@ -196,6 +196,22 @@ Si las dependencias del contenedor `api` o `web` quedan desactualizadas después
 docker compose exec -w /workspace api npm ci --workspace api --include-workspace-root=false
 ```
 
+### 4. Operación (variables opcionales)
+
+| Variable | Por defecto | Para qué |
+| --- | --- | --- |
+| `TRUST_PROXY` | `0` | Saltos de proxy de confianza para leer la IP del cliente de `X-Forwarded-For` (0 a 10). |
+| `PUBLIC_RATE_LIMIT` | `120` | Pedidos por IP y por ventana a las rutas públicas (`/public/events*`, `/public/invitations/:token`, `GET /auth/providers`). |
+| `PUBLIC_RATE_LIMIT_WINDOW_SECONDS` | `60` | Ventana del límite anterior. |
+| `WEBHOOK_RATE_LIMIT` | `600` | Pedidos por IP y por minuto al webhook de Mercado Pago (cupo propio, más generoso). |
+| `DOCUMENT_UPLOAD_TTL_MINUTES` | `60` | Minutos tras los que una subida de documento sin confirmar se borra con su objeto (mínimo 10). |
+
+**Límite de tasa de las rutas anónimas (`SEC-01`).** Ventana fija por IP en Redis, compartida entre instancias. Sobre el límite la API responde `429 Too Many Requests` como `application/problem+json` (RFC 9457, `code: RATE_LIMITED`) con `Retry-After` (RFC 9110, en segundos). Toda respuesta de una ruta limitada lleva además `RateLimit-Policy: "public";q=120;w=60` y `RateLimit: "public";r=<restantes>;t=<segundos hasta el reinicio>`, según [`draft-ietf-httpapi-ratelimit-headers-11`](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/) (sigue siendo un Internet-Draft: la sintaxis puede cambiar). El webhook de Mercado Pago tiene su propio cupo (`webhook`) porque Mercado Pago reintenta y manda ráfagas; la conciliación cubre lo que se llegara a rechazar. Si Redis no responde, **estas rutas fallan abiertas** (siguen sirviendo, con un `warn` en el log); el límite de login no cambia y sigue respondiendo 503.
+
+**IP del cliente detrás de Firebase Hosting y Cloud Run (`TRUST_PROXY`).** Con `0` la API ignora `X-Forwarded-For` y usa la IP del socket: correcto en local, pero en Cloud Run sería la de Google y todos los clientes compartirían un cubo. `TRUST_PROXY=n` confía en los `n` saltos más cercanos y toma la IP del cliente contando desde la **derecha** de `X-Forwarded-For` (lo que agregaron los proxies de Google), así que un cliente que manda su propio `X-Forwarded-For` no puede elegir su cubo. Con un número de saltos demasiado alto un cliente podría falsificar su IP; demasiado bajo, agrupa a todos bajo una IP de Google (falla del lado seguro). La cantidad exacta depende de la cadena (Cloud Run directo o Firebase Hosting delante): verificala al desplegar con un pedido de prueba y ajustá hasta que el `RateLimit` de dos clientes distintos se cuente por separado.
+
+**Subidas de documentos sin confirmar (`EXH-03`).** El navegador sube directo al bucket con una URL firmada y después llama a `complete`; si nunca llega, quedaban la fila y el objeto. La API corre cada 10 minutos un barrido (`ExhibitorDocumentsSweeper`, seguro con varias instancias: `FOR UPDATE SKIP LOCKED`) que borra las filas sin confirmar de más de `DOCUMENT_UPLOAD_TTL_MINUTES` y su objeto, y audita cada borrado. **La fuente de verdad es el barrido de la app.** Opcionalmente, como red de seguridad ante filas perdidas, se puede sumar una regla de ciclo de vida del bucket (Cloud Storage: *Lifecycle* → *Delete object* con *Age* de 30 días, o `gcloud storage buckets update gs://BUCKET --lifecycle-file=lifecycle.json`), **pero sólo si los documentos confirmados tienen su propia retención**: una regla por edad no distingue un objeto confirmado de uno sin confirmar (todos viven bajo `tenants/<tenant>/exhibitors/<id>/documents/<uuid>`), así que borraría también los documentos buenos. Por eso no se recomienda sin separar los prefijos (por ejemplo subir a `pending/` y mover al confirmar), cosa que no se hizo.
+
 ## Verificación
 
 | Qué | Comando |
@@ -225,6 +241,19 @@ En Windows con Git Bash, anteponer `MSYS_NO_PATHCONV=1` a los `docker compose ex
 - Rama de integración: `develop`. Commits con [Conventional Commits](https://www.conventionalcommits.org/).
 - Cambios de producto con OpenSpec: proposal, design, specs y tasks en `docs/openspec/changes/`, archivados al cerrar.
 - Las modificaciones de una plantilla de plano no cambian los planos ya publicados.
+- Un evento conserva la versión del plano con la que se creó. Para usar un plano modificado, se lo clona desde `/organizador/plano` ("Clonar versión N", crea un plano nuevo en borrador), se publica y se crea un evento nuevo.
+
+## Despliegue
+
+Receta para producción en Firebase Hosting, Cloud Run, Cloud SQL y Cloud Storage: [IMPLEMENTACION.md](IMPLEMENTACION.md).
+
+## Pendiente
+
+Detalle en [`docs/openspec/specification.md`](docs/openspec/specification.md) (tareas `PENDING`):
+
+- **Antivirus de los documentos subidos** (`EXH-06`): hoy sólo se limita tipo y tamaño.
+- **Retención y eliminación de documentos según la Ley 25.326** (`EXH-07`, Argentina, datos personales): plazos, baja a pedido del titular y registro de la base, a definir con asesoría jurídica.
+- **Logo del expositor** (`EXH-08`): subida por URL firmada y visible en el directorio público sólo con consentimiento.
 
 ## Roadmap
 

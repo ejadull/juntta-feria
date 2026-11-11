@@ -57,6 +57,12 @@ describe('parseEnvironment (FND-02)', () => {
         forcePathStyle: true,
       },
       swaggerEnabled: true,
+      trustProxy: 0,
+      rateLimits: {
+        public: { limit: 120, windowSeconds: 60 },
+        webhook: { limit: 600, windowSeconds: 60 },
+      },
+      documentUploadTtlMinutes: 60,
       auth: {
         accessTokenSecret: ACCESS_SECRET,
         refreshTokenSecret: REFRESH_SECRET,
@@ -81,6 +87,43 @@ describe('parseEnvironment (FND-02)', () => {
       },
       google: { clientId: undefined },
     });
+  });
+
+  it('has sane defaults for proxy trust, rate limits and the upload TTL', () => {
+    const env = parseEnvironment(valid());
+    expect(env.trustProxy).toBe(0);
+    expect(env.rateLimits).toEqual({
+      public: { limit: 120, windowSeconds: 60 },
+      webhook: { limit: 600, windowSeconds: 60 },
+    });
+    expect(env.documentUploadTtlMinutes).toBe(60);
+  });
+
+  it('reads TRUST_PROXY, the rate limits and the upload TTL, naming the variable when invalid', () => {
+    const env = parseEnvironment({
+      ...valid(),
+      TRUST_PROXY: '2',
+      PUBLIC_RATE_LIMIT: '30',
+      PUBLIC_RATE_LIMIT_WINDOW_SECONDS: '10',
+      WEBHOOK_RATE_LIMIT: '900',
+      DOCUMENT_UPLOAD_TTL_MINUTES: '30',
+    });
+    expect(env.trustProxy).toBe(2);
+    expect(env.rateLimits.public).toEqual({ limit: 30, windowSeconds: 10 });
+    expect(env.rateLimits.webhook.limit).toBe(900);
+    expect(env.documentUploadTtlMinutes).toBe(30);
+    for (const name of [
+      'TRUST_PROXY',
+      'PUBLIC_RATE_LIMIT',
+      'PUBLIC_RATE_LIMIT_WINDOW_SECONDS',
+      'WEBHOOK_RATE_LIMIT',
+      'DOCUMENT_UPLOAD_TTL_MINUTES',
+    ])
+      expect(failure({ ...valid(), [name]: '0.5' })).toContain(name);
+    // The upload URL lives 5 minutes: a shorter sweep TTL could delete a document mid-upload.
+    expect(failure({ ...valid(), DOCUMENT_UPLOAD_TTL_MINUTES: '5' })).toContain(
+      'DOCUMENT_UPLOAD_TTL_MINUTES',
+    );
   });
 
   it('reads the optional Google client id (CORE-05)', () => {

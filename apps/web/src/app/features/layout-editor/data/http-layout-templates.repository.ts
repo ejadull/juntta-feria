@@ -5,6 +5,7 @@ import { API_BASE } from '../../../shared/api/api-base';
 import type { LayoutVersionDto } from '../domain/layout.types';
 import {
   LayoutTemplatesRepository,
+  type CloneLayoutTemplateInput,
   type CreateLayoutTemplateInput,
   type LayoutTemplateDto,
 } from './layout-templates.repository';
@@ -21,5 +22,12 @@ export class HttpLayoutTemplatesRepository extends LayoutTemplatesRepository {
 
   create(input: CreateLayoutTemplateInput): Observable<LayoutVersionDto> {
     return this.http.post<LayoutVersionDto>(this.url, input);
+  }
+
+  clone(templateId: string, input: CloneLayoutTemplateInput): Observable<LayoutVersionDto> {
+    return this.http.post<LayoutVersionDto>(
+      `${this.url}/${encodeURIComponent(templateId)}/clone`,
+      input,
+    );
   }
 }

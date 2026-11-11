@@ -404,6 +404,139 @@ describe('layouts (LAY-01)', () => {
     );
   });
 
+  describe('cloning a plan into a new template', () => {
+    const cloneInto = (
+      id: string,
+      payload: object,
+      who: keyof typeof tokens = 'operator',
+      tenant = L_A,
+    ) => call('POST', `/layout-templates/${id}/clone`, who, tenant, payload);
+
+    it('copies an archived version into a new draft with new object ids and the same geometry', async () => {
+      const source = (await call('GET', `/layout-versions/${v1}`)).json();
+      expect(source.status).toBe('ARCHIVED');
+
+      const res = await cloneInto(templateId, {
+        name: 'Plano galpón (copia)',
+        sourceVersionId: v1,
+      });
+      expect(res.statusCode).toBe(201);
+      const copy = res.json();
+      expect(copy).toMatchObject({
+        version: 1,
+        status: 'DRAFT',
+        widthM: 40,
+        heightM: 20,
+        publishedAt: null,
+      });
+      expect(copy.templateId).not.toBe(templateId);
+      expect(copy.objects).toHaveLength(source.objects.length);
+      const shape = (o: {
+        kind: string;
+        code: string | null;
+        geometry: unknown;
+      }) => JSON.stringify([o.kind, o.code, o.geometry]);
+      expect(copy.objects.map(shape).sort()).toEqual(
+        source.objects.map(shape).sort(),
+      );
+      const sourceIds = new Set(
+        source.objects.map((o: { id: string }) => o.id),
+      );
+      expect(
+        copy.objects.some((o: { id: string }) => sourceIds.has(o.id)),
+      ).toBe(false);
+
+      // The source plan is untouched and the new template is listed with its venue.
+      const after = (await call('GET', `/layout-versions/${v1}`)).json();
+      expect(after).toEqual(source);
+      const list = (await call('GET', '/layout-templates')).json() as {
+        id: string;
+        name: string;
+        venueId: string | null;
+        versions: { status: string }[];
+      }[];
+      expect(list.find((t) => t.id === templateId)!.versions).toHaveLength(2);
+      expect(list.find((t) => t.id === copy.templateId)).toMatchObject({
+        name: 'Plano galpón (copia)',
+        venueId: VENUE_A,
+      });
+    });
+
+    it('can start from the published version and gets its own editable draft', async () => {
+      const res = await cloneInto(templateId, {
+        name: 'Otra copia',
+        sourceVersionId: v2,
+        venueId: VENUE_A,
+      });
+      expect(res.statusCode).toBe(201);
+      const draft = res.json();
+      const saved = await call(
+        'PUT',
+        `/layout-versions/${draft.id}/objects`,
+        'operator',
+        L_A,
+        { objects: [] },
+      );
+      expect(saved.statusCode).toBe(200);
+      expect(
+        (await call('GET', `/layout-versions/${v2}`)).json().objects,
+      ).not.toHaveLength(0);
+    });
+
+    it('keeps names unique (409) and validates the body (400)', async () => {
+      expect(
+        (
+          await cloneInto(templateId, {
+            name: 'plano galpón (COPIA)',
+            sourceVersionId: v1,
+          })
+        ).statusCode,
+      ).toBe(409);
+      for (const bad of [
+        { sourceVersionId: v1 },
+        { name: '  ', sourceVersionId: v1 },
+        { name: 'X', sourceVersionId: 'nope' },
+        { name: 'X', sourceVersionId: v1, venueId: 'nope' },
+        { name: 'X', sourceVersionId: v1, extra: true },
+      ])
+        expect((await cloneInto(templateId, bad)).statusCode).toBe(400);
+    });
+
+    it('hides other tenants: foreign template, version and venue are 404', async () => {
+      expect(
+        (
+          await cloneInto(
+            templateId,
+            { name: 'Robado', sourceVersionId: v1 },
+            'owner',
+            L_B,
+          )
+        ).statusCode,
+      ).toBe(404);
+      expect(
+        (
+          await cloneInto(templateId, {
+            name: 'Venue ajeno',
+            sourceVersionId: v1,
+            venueId: VENUE_B,
+          })
+        ).statusCode,
+      ).toBe(404);
+      expect(
+        (
+          await cloneInto(templateId, {
+            name: 'Version ajena',
+            sourceVersionId: randomUUID(),
+          })
+        ).statusCode,
+      ).toBe(404);
+      expect(
+        (await cloneInto('nope', { name: 'Y', sourceVersionId: v1 }))
+          .statusCode,
+      ).toBe(404);
+    });
+  });
+
   it('hides versions and templates of other tenants (404)', async () => {
     expect(
       (await call('GET', `/layout-versions/${v1}`, 'owner', L_B)).statusCode,

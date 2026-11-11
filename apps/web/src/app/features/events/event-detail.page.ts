@@ -14,6 +14,7 @@ import { RouterLink } from '@angular/router';
 import { catchError, forkJoin, of } from 'rxjs';
 import { messageFor, problemOf, type ProblemIssue } from '../../shared/auth/problem';
 import { SessionStore } from '../../shared/auth/session.store';
+import { LayoutTemplatesRepository } from '../layout-editor/data/layout-templates.repository';
 import { VenueRepository } from '../venues/data/venue.repository';
 import {
   EventAdminRepository,
@@ -33,6 +34,12 @@ const TABS: readonly { readonly id: Tab; readonly label: string }[] = [
   { id: 'sectores', label: 'Sectores' },
   { id: 'stands', label: 'Stands y precios' },
 ];
+
+const PLAN_STATUS: Record<'DRAFT' | 'PUBLISHED' | 'ARCHIVED', string> = {
+  DRAFT: 'borrador',
+  PUBLISHED: 'publicada',
+  ARCHIVED: 'archivada',
+};
 
 const NOT_FOUND = 'No encontramos este evento.';
 const LOAD_FAILED = 'No pudimos cargar el evento. Probá de nuevo en unos minutos.';
@@ -233,13 +240,32 @@ export function issueText(issue: ProblemIssue): string {
                     (changed)="save($event)"
                   />
                 </div>
-                <p class="mt-4 text-sm">
-                  <a
-                    class="underline"
-                    [routerLink]="['/organizador/layouts', e.layoutVersionId, 'editor']"
-                    >Ver el plano del evento</a
-                  >
-                </p>
+                <div class="mt-4 text-sm" data-testid="event-plan">
+                  @if (plan(); as p) {
+                    <p>
+                      Plano del evento: <strong>{{ p.name }} · versión {{ p.version }}</strong> ({{
+                        p.statusLabel
+                      }}).
+                    </p>
+                  }
+                  <p class="mt-1 text-text-muted">
+                    El evento conserva la versión del plano con la que se creó. Para usar otro
+                    plano,
+                    <a
+                      class="underline"
+                      routerLink="/organizador/eventos"
+                      [queryParams]="{ nuevo: 1 }"
+                      >creá un evento nuevo</a
+                    >.
+                  </p>
+                  <p class="mt-2">
+                    <a
+                      class="underline"
+                      [routerLink]="['/organizador/layouts', e.layoutVersionId, 'editor']"
+                      >Ver el plano del evento</a
+                    >
+                  </p>
+                </div>
               </section>
             }
             @case ('sectores') {
@@ -283,6 +309,7 @@ export class EventDetailPage implements OnInit {
 
   private readonly repository = inject(EventAdminRepository);
   private readonly venues = inject(VenueRepository);
+  private readonly templates = inject(LayoutTemplatesRepository);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly cancel = viewChild<ElementRef<HTMLButtonElement>>('cancel');
@@ -295,6 +322,12 @@ export class EventDetailPage implements OnInit {
 
   protected readonly event = signal<EventDto | null>(null);
   protected readonly venueName = signal<string | null>(null);
+  /** The plan and version the event was created on (a nicety, like the venue name). */
+  protected readonly plan = signal<{
+    name: string;
+    version: number;
+    statusLabel: string;
+  } | null>(null);
   protected readonly loadError = signal<string | null>(null);
   protected readonly tab = signal<Tab>('datos');
   protected readonly busy = signal(false);
@@ -309,10 +342,20 @@ export class EventDetailPage implements OnInit {
       this.repository.get(this.id()),
       // The venue name is a nicety: the event still loads without it.
       this.venues.list().pipe(catchError(() => of([]))),
+      this.templates.list().pipe(catchError(() => of([]))),
     ]).subscribe({
-      next: ([event, venues]) => {
+      next: ([event, venues, templates]) => {
         this.event.set(event);
         this.venueName.set(venues.find((v) => v.id === event.venueId)?.name ?? null);
+        for (const template of templates) {
+          const version = template.versions.find((v) => v.id === event.layoutVersionId);
+          if (version)
+            this.plan.set({
+              name: template.name,
+              version: version.version,
+              statusLabel: PLAN_STATUS[version.status],
+            });
+        }
       },
       error: (error: unknown) =>
         this.loadError.set(problemOf(error).status === 404 ? NOT_FOUND : LOAD_FAILED),

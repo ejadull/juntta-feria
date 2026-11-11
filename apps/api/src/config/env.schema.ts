@@ -18,6 +18,11 @@ const NODE_ENVS = ['development', 'test', 'production'] as const;
 const MP_ENVIRONMENTS = ['sandbox', 'production'] as const;
 const MP_CHECKOUT_APIS = ['preferences', 'orders'] as const;
 
+export type RateLimitSetting = Readonly<{
+  limit: number;
+  windowSeconds: number;
+}>;
+
 export type AppEnvironment = Readonly<{
   nodeEnv: (typeof NODE_ENVS)[number];
   apiHost: string;
@@ -40,6 +45,15 @@ export type AppEnvironment = Readonly<{
     forcePathStyle: boolean;
   }>;
   swaggerEnabled: boolean;
+  /** Reverse-proxy hops Fastify trusts to read the client IP from X-Forwarded-For (0 = none). */
+  trustProxy: number;
+  /** Fixed-window limits per client IP of the anonymous routes (see http/rate-limit.guard.ts). */
+  rateLimits: Readonly<{
+    public: RateLimitSetting;
+    webhook: RateLimitSetting;
+  }>;
+  /** Uploads never confirmed with `complete` are swept after this many minutes. */
+  documentUploadTtlMinutes: number;
   /** CORE-02 (ADR 0004): short JWT access token + opaque rotating refresh token cookie. */
   auth: Readonly<{
     accessTokenSecret: string;
@@ -103,6 +117,20 @@ const optionalInt = (min: number, max: number, fallback: number) =>
       .max(max, { error: `must be <= ${max}` })
       .default(fallback),
   );
+
+const trustProxySchema = z.preprocess(
+  (v) => (blankAsUndefined(v) === undefined ? undefined : Number(v)),
+  z
+    .number({ error: 'must be a number' })
+    .int({ error: 'must be an integer' })
+    .min(0, { error: 'must be >= 0' })
+    .max(10, { error: 'must be <= 10' })
+    .default(0),
+);
+
+/** Same rule as the TRUST_PROXY variable; Fastify needs it before the app (and its config) exists. */
+export const parseTrustProxy = (value: string | undefined): number =>
+  trustProxySchema.parse(value);
 
 const optionalBool = (fallback: boolean) =>
   z.preprocess(
@@ -211,6 +239,13 @@ const schema = z
     S3_SECRET_KEY: required,
     S3_FORCE_PATH_STYLE: optionalBool(false),
     SWAGGER_ENABLED: optionalBool(false),
+    TRUST_PROXY: trustProxySchema,
+    PUBLIC_RATE_LIMIT: optionalInt(1, 1_000_000, 120),
+    PUBLIC_RATE_LIMIT_WINDOW_SECONDS: optionalInt(1, 86_400, 60),
+    // Mercado Pago retries failed notifications: its own, much more generous, bucket.
+    WEBHOOK_RATE_LIMIT: optionalInt(1, 1_000_000, 600),
+    // Above the 5-minute presigned PUT, so a sweep never deletes an upload still in flight.
+    DOCUMENT_UPLOAD_TTL_MINUTES: optionalInt(10, 10_080, 60),
     AUTH_ACCESS_TOKEN_SECRET: secret,
     AUTH_REFRESH_TOKEN_SECRET: secret,
     AUTH_ACCESS_TOKEN_TTL_SECONDS: optionalInt(60, 3600, 900),
@@ -372,6 +407,15 @@ export function parseEnvironment(input: NodeJS.ProcessEnv): AppEnvironment {
       forcePathStyle: e.S3_FORCE_PATH_STYLE,
     },
     swaggerEnabled: e.SWAGGER_ENABLED,
+    trustProxy: e.TRUST_PROXY,
+    rateLimits: {
+      public: {
+        limit: e.PUBLIC_RATE_LIMIT,
+        windowSeconds: e.PUBLIC_RATE_LIMIT_WINDOW_SECONDS,
+      },
+      webhook: { limit: e.WEBHOOK_RATE_LIMIT, windowSeconds: 60 },
+    },
+    documentUploadTtlMinutes: e.DOCUMENT_UPLOAD_TTL_MINUTES,
     auth: {
       accessTokenSecret: e.AUTH_ACCESS_TOKEN_SECRET,
       refreshTokenSecret: e.AUTH_REFRESH_TOKEN_SECRET,

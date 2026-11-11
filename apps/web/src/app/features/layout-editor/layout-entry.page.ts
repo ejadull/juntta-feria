@@ -28,12 +28,22 @@ const LOAD_FAILED = 'No pudimos cargar tus planos. Probá de nuevo en unos minut
 const CREATE_FAILED = 'No pudimos crear el plano. Probá de nuevo en unos minutos.';
 const DUPLICATE = 'Ya tenés un plano con ese nombre.';
 const VENUE_GONE = 'El predio elegido ya no existe. Elegí otro.';
+const CLONE_FAILED = 'No pudimos clonar el plano. Probá de nuevo en unos minutos.';
+const CLONE_GONE = 'El plano o el predio ya no existe. Recargá la página.';
 
 type Field = 'name' | 'venue';
 
+/** The version being cloned from the list. */
+interface CloneSource {
+  readonly template: LayoutTemplateDto;
+  readonly version: LayoutTemplateDto['versions'][number];
+}
+
 /**
  * Entry of "Editor de plano" (LAY-01): the organization's plans with the status of each version,
- * and "Nuevo plano" (choose a venue, create the template, open its first draft in the editor).
+ * "Nuevo plano" (choose a venue, create the template, open its first draft in the editor) and
+ * "Clonar" (copy any version into a new plan, to use a changed plan in a new event: an event keeps
+ * the version it was created on).
  */
 @Component({
   selector: 'app-layout-entry-page',
@@ -131,6 +141,67 @@ type Field = 'name' | 'venue';
           </form>
         }
 
+        @if (cloning(); as source) {
+          <form
+            #cloneForm
+            class="card mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2"
+            novalidate
+            aria-labelledby="clone-form-title"
+            (submit)="clone($event)"
+          >
+            <h2 id="clone-form-title" class="text-lg font-semibold sm:col-span-2">
+              Clonar {{ source.template.name }} · versión {{ source.version.version }}
+            </h2>
+            <p class="text-sm text-text-muted sm:col-span-2">
+              Se crea un plano nuevo con una copia de esta versión, en borrador. El plano original y
+              los eventos que lo usan no cambian.
+            </p>
+            <label class="grid gap-1 text-sm">
+              <span>Nombre del plano nuevo</span>
+              <input
+                class="field"
+                type="text"
+                autocomplete="off"
+                [attr.aria-invalid]="errors().name ? 'true' : null"
+                [attr.aria-describedby]="errors().name ? 'clone-name-error' : null"
+                [value]="name()"
+                (input)="name.set(valueOf($event))"
+              />
+              @if (errors().name; as message) {
+                <span id="clone-name-error" class="text-danger">{{ message }}</span>
+              }
+            </label>
+            <label class="grid gap-1 text-sm">
+              <span>Predio</span>
+              <select
+                class="field"
+                [attr.aria-invalid]="errors().venue ? 'true' : null"
+                [attr.aria-describedby]="errors().venue ? 'clone-venue-error' : null"
+                (change)="venueId.set(valueOf($event))"
+              >
+                <option value="" [selected]="venueId() === ''">Elegí un predio</option>
+                @for (v of venues(); track v.id) {
+                  <option [value]="v.id" [selected]="v.id === venueId()">{{ v.name }}</option>
+                }
+              </select>
+              @if (errors().venue; as message) {
+                <span id="clone-venue-error" class="text-danger">{{ message }}</span>
+              }
+            </label>
+            @if (formError(); as message) {
+              <p role="alert" class="rounded-lg bg-danger/10 p-3 text-sm text-text sm:col-span-2">
+                {{ message }}
+              </p>
+            }
+            <div class="flex flex-wrap gap-2 sm:col-span-2">
+              <button type="submit" class="btn btn-primary" [disabled]="busy()">
+                Clonar y abrir el editor
+              </button>
+              <button type="button" class="btn" (click)="cloning.set(null)">Cancelar</button>
+            </div>
+          </form>
+        }
+
         @if (venues().length > 0 && templates().length === 0) {
           <div class="card mt-6" data-testid="no-layout">
             <p class="font-semibold">Todavía no hay planos</p>
@@ -147,7 +218,7 @@ type Field = 'name' | 'venue';
               <p class="text-sm text-text-muted">Predio: {{ venueName(t) }}</p>
               <ul class="mt-3 flex flex-wrap gap-2">
                 @for (v of t.versions; track v.id) {
-                  <li>
+                  <li class="flex flex-wrap gap-1">
                     <a
                       class="btn"
                       [routerLink]="['/organizador/layouts', v.id, 'editor']"
@@ -155,6 +226,9 @@ type Field = 'name' | 'venue';
                     >
                       Abrir versión {{ v.version }} · {{ statusLabel[v.status] }}
                     </a>
+                    <button type="button" class="btn" (click)="openClone(t, v)">
+                      Clonar versión {{ v.version }}
+                    </button>
                   </li>
                 }
               </ul>
@@ -171,6 +245,7 @@ export class LayoutEntryPage {
   private readonly router = inject(Router);
   private readonly injector = inject(Injector);
   private readonly form = viewChild<ElementRef<HTMLFormElement>>('form');
+  private readonly cloneForm = viewChild<ElementRef<HTMLFormElement>>('cloneForm');
 
   protected readonly statusLabel = STATUS_LABEL;
   protected readonly valueOf = valueOf;
@@ -181,6 +256,7 @@ export class LayoutEntryPage {
   protected readonly templates = signal<readonly LayoutTemplateDto[]>([]);
 
   protected readonly formOpen = signal(false);
+  protected readonly cloning = signal<CloneSource | null>(null);
   protected readonly name = signal('');
   protected readonly venueId = signal('');
   protected readonly errors = signal<Partial<Record<Field, string>>>({});
@@ -204,7 +280,18 @@ export class LayoutEntryPage {
     return this.venues().find((v) => v.id === template.venueId)?.name ?? 'Sin predio';
   }
 
+  protected openClone(template: LayoutTemplateDto, version: CloneSource['version']): void {
+    this.formOpen.set(false);
+    this.name.set(`${template.name} (copia)`);
+    this.venueId.set(template.venueId ?? (this.venues().length === 1 ? this.venues()[0].id : ''));
+    this.errors.set({});
+    this.formError.set(null);
+    this.busy.set(false);
+    this.cloning.set({ template, version });
+  }
+
   protected openForm(): void {
+    this.cloning.set(null);
     this.name.set('');
     this.venueId.set(this.venues().length === 1 ? this.venues()[0].id : '');
     this.errors.set({});
@@ -212,19 +299,47 @@ export class LayoutEntryPage {
     this.formOpen.set(true);
   }
 
-  protected create(event: Event): void {
-    event.preventDefault();
+  /** Validates the shared name/venue fields; focuses the first invalid one and returns null. */
+  private validated(form: ElementRef<HTMLFormElement> | undefined): string | null {
     const name = this.name().trim();
     const errors: Partial<Record<Field, string>> = {};
     if (!name) errors.name = 'Ingresá el nombre del plano.';
     else if (name.length > 120) errors.name = 'Usá como máximo 120 caracteres.';
     if (!this.venueId()) errors.venue = 'Elegí el predio del plano.';
     this.errors.set(errors);
-    if (Object.keys(errors).length > 0) {
-      const host = this.form()?.nativeElement;
-      if (host) focusFirstInvalid(this.injector, host);
-      return;
-    }
+    if (Object.keys(errors).length === 0) return name;
+    if (form) focusFirstInvalid(this.injector, form.nativeElement);
+    return null;
+  }
+
+  protected clone(event: Event): void {
+    event.preventDefault();
+    const source = this.cloning();
+    const name = this.validated(this.cloneForm());
+    if (!source || name === null) return;
+    this.busy.set(true);
+    this.formError.set(null);
+    this.templateRepository
+      .clone(source.template.id, {
+        name,
+        sourceVersionId: source.version.id,
+        venueId: this.venueId(),
+      })
+      .subscribe({
+        next: (draft) => void this.router.navigate(['/organizador/layouts', draft.id, 'editor']),
+        error: (error: unknown) => {
+          this.busy.set(false);
+          this.formError.set(
+            messageFor(error, {}, { 409: DUPLICATE, 404: CLONE_GONE }, CLONE_FAILED),
+          );
+        },
+      });
+  }
+
+  protected create(event: Event): void {
+    event.preventDefault();
+    const name = this.validated(this.form());
+    if (name === null) return;
     this.busy.set(true);
     this.formError.set(null);
     this.templateRepository.create({ name, venueId: this.venueId() }).subscribe({

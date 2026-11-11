@@ -169,6 +169,43 @@ describe('EventsPage (EVT-01, organizador)', () => {
     expect(host.querySelector('form')).not.toBeNull();
   });
 
+  it('offers the published version of every plan of the venue, not only the newest plan', async () => {
+    const north: LayoutTemplateDto = {
+      id: 't3',
+      name: 'Salón norte',
+      venueId: 'v1',
+      versions: [
+        { id: 'n1', version: 1, status: 'ARCHIVED', publishedAt: '2026-08-01T12:00:00Z' },
+        { id: 'n2', version: 2, status: 'ARCHIVED', publishedAt: '2026-09-01T12:00:00Z' },
+        { id: 'n3', version: 3, status: 'PUBLISHED', publishedAt: '2026-10-05T12:00:00Z' },
+        { id: 'n4', version: 4, status: 'DRAFT', publishedAt: null },
+      ],
+    };
+    const anyVenue: LayoutTemplateDto = { ...PLAN, id: 't4', name: 'Genérico', venueId: null };
+    const { click, type, field } = await render({
+      templates: new InMemoryLayoutTemplatesRepository([PLAN, north, anyVenue]),
+    });
+    await click('Nuevo evento');
+    await type('Predio', 'v1');
+    const options = [...(field('Plano publicado') as HTMLSelectElement).options].map((o) =>
+      plain(o.textContent),
+    );
+    expect(options).toEqual([
+      'Elegí un plano',
+      'Salón principal · versión 2',
+      'Salón norte · versión 3',
+      'Genérico · versión 2',
+    ]);
+  });
+
+  it('says that the event keeps the chosen version of the plan', async () => {
+    const { host, click } = await render();
+    await click('Nuevo evento');
+    expect(plain(host.querySelector('#event-plan-hint')?.textContent)).toContain(
+      'El evento conserva esa versión del plano',
+    );
+  });
+
   it('creates the event with ISO dates in Argentina time and opens its detail', async () => {
     const events = new InMemoryEventAdminRepository();
     const create = vi.spyOn(events, 'create');

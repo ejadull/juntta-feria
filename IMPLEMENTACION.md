@@ -277,7 +277,9 @@ Por qué cada opción que no es obvia:
 | `AUTH_COOKIE_SAME_SITE=lax` | La web y la API comparten dominio a través de Hosting, así que la cookie no necesita ser `none`. |
 | `--vpc-egress=private-ranges-only` | Llega a Memorystore por la VPC sin desviar el resto del tráfico; Mercado Pago y Google siguen saliendo por internet. Si usás Upstash, sacá las tres opciones de red. |
 | `DB_POOL_MAX=5` | Cloud SQL limita las conexiones por instancia; multiplicalo por la cantidad máxima de instancias de Cloud Run. |
-| Proxy de confianza | Detrás de Hosting, la IP real del cliente llega en `X-Forwarded-For`. Configurá la variable de proxy de confianza que documenta el README (límite de pedidos por IP) con la cantidad de saltos de Google; si no, todos los visitantes comparten un mismo contador. |
+| `TRUST_PROXY` | Detrás de Hosting, la IP real del cliente llega en `X-Forwarded-For`. `TRUST_PROXY` es la cantidad de saltos de proxy de confianza (por defecto `0`). **Verificar** el valor correcto para Hosting → Cloud Run: con `0` todos los visitantes comparten un contador; con un número de más, un cliente podría falsificar su IP. Medilo mirando `X-Forwarded-For` en un pedido de prueba. |
+| `PUBLIC_RATE_LIMIT`, `PUBLIC_RATE_LIMIT_WINDOW_SECONDS`, `WEBHOOK_RATE_LIMIT` | Cupos por IP: rutas públicas `120` cada `60` s; webhook de Mercado Pago `600` por minuto. Ajustalos con el tráfico real. |
+| `DOCUMENT_UPLOAD_TTL_MINUTES` | Minutos antes de borrar una subida nunca confirmada (por defecto `60`). |
 
 Si la API recibe tráfico directo (no sólo a través de Hosting), dejala sin acceso público (`--no-allow-unauthenticated`) y dale a Hosting el permiso para invocarla. **Verificar:** que el rewrite de Hosting llega igual con esa configuración. Si no llega, la API queda pública y se protege con sus propias reglas, que es como funciona hoy.
 

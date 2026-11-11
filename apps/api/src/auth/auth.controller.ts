@@ -22,6 +22,7 @@ import {
   configuration,
   type AppConfiguration,
 } from '../config/configuration.js';
+import { RateLimit, RateLimitGuard } from '../http/rate-limit.guard.js';
 import {
   AccessTokenGuard,
   type AuthenticatedRequest,
@@ -100,6 +101,8 @@ export class AuthController {
 
   /** Public: what the web may offer on the sign-in page, so it needs no build-time configuration. */
   @Get('providers')
+  @UseGuards(RateLimitGuard)
+  @RateLimit('public')
   providers(): { google: { clientId: string } | null; password: boolean } {
     const clientId = this.env.google.clientId;
     return {

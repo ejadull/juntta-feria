@@ -19,7 +19,11 @@ import {
   type LayoutVersionStatus,
 } from '../db/schema.js';
 import { AuditService } from '../tenancy/audit.service.js';
-import type { CreateTemplateInput, LayoutObjectInput } from './layout.input.js';
+import type {
+  CloneTemplateInput,
+  CreateTemplateInput,
+  LayoutObjectInput,
+} from './layout.input.js';
 import { validateLayoutVersion } from './layout-validation.js';
 
 /** Persisted contract shared with the editor (LUI-05 D2). */
@@ -286,6 +290,71 @@ export class LayoutsService {
         return this.withObjects(tx, draft);
       }),
     );
+  }
+
+  /**
+   * A new template from a version (any status) of `templateId`: same size and geometry, new
+   * object ids (they are not shared with the source), first version a DRAFT. The source is only read.
+   */
+  cloneTemplate(
+    tenantId: string,
+    actorId: string,
+    templateId: string,
+    input: CloneTemplateInput,
+  ): Promise<LayoutVersionDto> {
+    return this.unique('A layout template with that name already exists.', () =>
+      this.database.withTenant(tenantId, async (tx) => {
+        const [source] = await tx
+          .select({ venueId: layoutTemplates.venueId })
+          .from(layoutTemplates)
+          .where(eq(layoutTemplates.id, templateId));
+        const version =
+          source && (await this.findVersion(tx, input.sourceVersionId));
+        if (!version || version.templateId !== templateId)
+          throw new NotFoundException(NOT_FOUND);
+        const venueId = input.venueId ?? source.venueId;
+        if (input.venueId) await this.requireVenue(tx, input.venueId);
+
+        const [template] = await tx
+          .insert(layoutTemplates)
+          .values({ name: input.name, venueId })
+          .returning({ id: layoutTemplates.id });
+        const [draft] = await tx
+          .insert(layoutVersions)
+          .values({
+            templateId: template.id,
+            version: 1,
+            widthM: version.widthM,
+            heightM: version.heightM,
+          })
+          .returning(versionView);
+        await tx.execute(sql`
+          INSERT INTO layout_objects (id, layout_version_id, kind, code, geometry, metadata)
+          SELECT gen_random_uuid(), ${draft.id}, kind, code, geometry, metadata
+          FROM layout_objects WHERE layout_version_id = ${input.sourceVersionId}`);
+        await this.audit.record(tx, {
+          actorId,
+          action: 'layout_template.cloned',
+          entityType: 'layout_template',
+          entityId: template.id,
+          after: {
+            name: input.name,
+            venueId,
+            sourceTemplateId: templateId,
+            sourceVersionId: input.sourceVersionId,
+          },
+        });
+        return this.withObjects(tx, draft);
+      }),
+    );
+  }
+
+  private async requireVenue(tx: Transaction, venueId: string): Promise<void> {
+    const [venue] = await tx
+      .select({ id: venues.id })
+      .from(venues)
+      .where(eq(venues.id, venueId));
+    if (!venue) throw new NotFoundException('Venue not found.');
   }
 
   private async sizeFor(

@@ -30,6 +30,29 @@ for (const theme of ['clasico', 'corporativo', 'grafito', 'industrial', 'matcha'
     await page.addInitScript((value) => localStorage.setItem('juntta.theme', value), theme);
     const api = await mockApi(page, {
       reservations: [reservation({ id: 'r1' }), reservation({ id: 'r2', status: 'CONFIRMED' })],
+      // So the plan list shows its "Clonar" buttons and the event detail names its plan version.
+      venues: [
+        {
+          id: 'v1',
+          type: 'FIXED',
+          name: 'Predio Norte',
+          address: null,
+          timezone: 'America/Argentina/Buenos_Aires',
+          widthM: 20,
+          heightM: 8,
+        },
+      ],
+      templates: [
+        {
+          id: 'tpl1',
+          name: 'Salón norte',
+          venueId: 'v1',
+          versions: [
+            { id: 'lv1', version: 1, status: 'ARCHIVED', publishedAt: '2026-09-01T12:00:00Z' },
+            { id: 'lv2', version: 2, status: 'DRAFT', publishedAt: null },
+          ],
+        },
+      ],
     });
     for (const [path, role] of PAGES) {
       api.role = role; // the session is read on each page load
