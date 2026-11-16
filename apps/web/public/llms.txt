@@ -1,0 +1,14 @@
+# Juntta Feria
+
+> Plataforma para organizar ferias y encuentros. Los organizadores publican predios, planos y eventos; los feriantes reservan y pagan stands; los visitantes recorren el mapa y conocen a los expositores.
+
+## Páginas públicas
+
+- [Ferias y encuentros en venta](https://juntta.com.ar/ferias): listado de eventos, con fechas, lugar y stands disponibles.
+- [Política de Privacidad](https://juntta.com.ar/privacidad): cómo se tratan los datos personales (Ley 25.326).
+- [Términos y Condiciones](https://juntta.com.ar/terminos): condiciones de uso para organizadores, feriantes y visitantes.
+
+## Notas
+
+- El ingreso de organizadores y feriantes es con Google, por invitación.
+- Los pagos de stands se hacen con Mercado Pago; la plataforma no guarda datos de tarjetas.

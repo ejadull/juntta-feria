@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /ferias
+Allow: /privacidad
+Allow: /terminos
+Disallow: /organizador/
+Disallow: /feriante/
+Disallow: /invitacion/
+Disallow: /ingresar
+
+# Sitemap: https://juntta.com.ar/sitemap.xml

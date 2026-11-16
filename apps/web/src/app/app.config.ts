@@ -15,6 +15,7 @@ import { routes } from './app.routes';
 import { authInterceptor } from './shared/auth/auth.interceptor';
 import { SessionStore } from './shared/auth/session.store';
 import { HoverPreloading } from './shared/hover-preloading';
+import { SeoService } from './shared/seo/seo';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -30,5 +31,7 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
     // Picks up a previous session (HttpOnly refresh cookie) before the first navigation.
     provideAppInitializer(() => inject(SessionStore).restore()),
+    // Page description, robots and structured data follow each route (shared/seo/seo.ts).
+    provideAppInitializer(() => inject(SeoService).start()),
   ],
 };

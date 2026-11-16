@@ -1,7 +1,16 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { forkJoin, map, startWith, switchMap } from 'rxjs';
+import { SeoService, fairSeo } from '../../shared/seo/seo';
 import { PublicCatalogRepository, STATUS_LABEL } from './data/public-catalog.repository';
 import { standsOf } from './domain/stand-filters';
 import { dataOf, errorOf, toLoaded } from './ui/loaded';
@@ -125,6 +134,16 @@ export class FairMapPage {
   );
   protected readonly data = computed(() => dataOf(this.state()));
   protected readonly error = computed(() => errorOf(this.state()));
+
+  private readonly seo = inject(SeoService);
+
+  constructor() {
+    // Once the fair loads, its name, dates and venue become the page's search and AI description.
+    effect(() => {
+      const d = this.data();
+      if (d) this.seo.set(fairSeo(d.event, `${location.origin}/ferias/${d.event.slug}`));
+    });
+  }
 
   private readonly stands = computed(() => {
     const d = this.data();

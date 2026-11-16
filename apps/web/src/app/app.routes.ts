@@ -92,11 +92,20 @@ export const routes: Routes = [
   {
     path: 'privacidad',
     title: title('Política de Privacidad'),
+    data: {
+      seo: { description: 'Cómo Juntta Feria trata tus datos personales, según la Ley 25.326.' },
+    },
     loadComponent: () => import('./features/legal/privacy.page').then((m) => m.PrivacyPage),
   },
   {
     path: 'terminos',
     title: title('Términos y Condiciones'),
+    data: {
+      seo: {
+        description:
+          'Condiciones de uso de Juntta Feria para organizadores, feriantes y visitantes.',
+      },
+    },
     loadComponent: () => import('./features/legal/terms.page').then((m) => m.TermsPage),
   },
   {
@@ -288,12 +297,25 @@ export const routes: Routes = [
             path: '',
             pathMatch: 'full',
             title: title('Ferias'),
+            data: {
+              seo: {
+                title: `Ferias y encuentros · ${APP_NAME}`,
+                description:
+                  'Ferias y encuentros en venta: elegí tu stand, recorré el mapa y conocé a los expositores.',
+              },
+            },
             loadComponent: () =>
               import('./features/public-catalog/fairs.page').then((m) => m.FairsPage),
           },
           {
             path: ':slug',
             title: title('Mapa y expositores'),
+            // The fair's own name, dates and venue are set by the page once its data loads.
+            data: {
+              seo: {
+                description: 'Mapa de stands y expositores de la feria.',
+              },
+            },
             loadComponent: () =>
               import('./features/public-catalog/fair-map.page').then((m) => m.FairMapPage),
           },
