@@ -1,0 +1,47 @@
+/*
+ * Data table that turns each row into a labeled card when its container is narrow.
+ * Markup: wrap the <table class="stack-table"> in <div class="table-wrapper" role="region"
+ * tabindex="0" aria-label="..."> and give every data <td> a data-label with its column name.
+ * The wrapper keeps overflow-x as the fallback where container queries are missing.
+ */
+.table-wrapper {
+  container-type: inline-size;
+}
+
+@container (width < 40rem) {
+  .stack-table {
+    min-width: 0;
+  }
+
+  .stack-table,
+  .stack-table tbody,
+  .stack-table tr,
+  .stack-table th,
+  .stack-table td {
+    display: block;
+  }
+
+  /* The column headers are replaced by the labels injected into each cell. */
+  .stack-table thead {
+    display: none;
+  }
+
+  .stack-table tr {
+    padding: 0.75rem 1rem;
+  }
+
+  .stack-table th[scope='row'] {
+    padding: 0 0 0.25rem;
+    font-size: 1rem;
+  }
+
+  .stack-table td {
+    padding: 0.25rem 0;
+  }
+
+  .stack-table td[data-label]::before {
+    content: attr(data-label) ': ';
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+  }
+}

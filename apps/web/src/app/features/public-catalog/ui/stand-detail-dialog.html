@@ -1,0 +1,129 @@
+<dialog
+  #dialog
+  class="dialog"
+  closedby="any"
+  aria-labelledby="stand-dialog-title"
+  (close)="onClosed()"
+  (click)="onDialogClick($event)"
+>
+  <div class="panel">
+    <header class="head">
+      <div class="head-text">
+        <p class="eyebrow">{{ stand().sector ?? 'Sin sector' }}</p>
+        <h2 id="stand-dialog-title" class="title">Stand {{ stand().code }}</h2>
+        <p class="pill" [attr.data-status]="stand().status">
+          <span aria-hidden="true">{{ statusIcon[stand().status] }}</span>
+          {{ statusLabel[stand().status] }}
+        </p>
+      </div>
+      <button type="button" class="icon-close" aria-label="Cerrar" (click)="close()">
+        <span aria-hidden="true">✕</span>
+      </button>
+    </header>
+
+    <div class="visual">
+      @if (photos().length > 0) {
+        <ul class="gallery" aria-label="Fotos del stand" tabindex="0">
+          @for (p of photos(); track p.url; let i = $index) {
+            <li>
+              <img
+                [src]="p.url"
+                [alt]="p.alt || 'Foto de ' + (stand().exhibitor?.name ?? 'el stand')"
+                loading="lazy"
+                decoding="async"
+              />
+            </li>
+          }
+        </ul>
+      } @else {
+        <figure class="mini">
+          <svg
+            class="mini-svg"
+            [attr.viewBox]="miniature().viewBox"
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            [attr.aria-label]="
+              'Ubicación del stand ' + stand().code + ' en el plano, de ' + width() + ' por ' + depth() + ' metros'
+            "
+          >
+            @for (n of miniature().neighbors; track n.id) {
+              <rect class="neighbor" [attr.x]="n.x" [attr.y]="n.y" [attr.width]="n.w" [attr.height]="n.h" rx="0.2" />
+            }
+            <rect
+              class="me"
+              [attr.x]="stand().x"
+              [attr.y]="stand().y"
+              [attr.width]="stand().w"
+              [attr.height]="stand().h"
+              rx="0.25"
+            />
+            <text
+              class="dim"
+              [attr.x]="stand().x + stand().w / 2"
+              [attr.y]="stand().y - miniature().fontSize * 0.5"
+              [attr.font-size]="miniature().fontSize"
+              text-anchor="middle"
+            >
+              {{ width() }} m
+            </text>
+            <text
+              class="dim"
+              [attr.x]="stand().x + stand().w + miniature().fontSize * 0.5"
+              [attr.y]="stand().y + stand().h / 2 + miniature().fontSize / 3"
+              [attr.font-size]="miniature().fontSize"
+            >
+              {{ depth() }} m
+            </text>
+          </svg>
+        </figure>
+      }
+    </div>
+
+    <dl class="facts">
+      <div>
+        <dt>Medidas</dt>
+        <dd>{{ width() }} × {{ depth() }} m · {{ area() }} m²</dd>
+      </div>
+      <div>
+        <dt>Sector</dt>
+        <dd>{{ stand().sector ?? 'Sin sector' }}</dd>
+      </div>
+      @if (hasPrice()) {
+        <div>
+          <dt>Precio</dt>
+          <dd>{{ formatArs(stand().priceCents) }}</dd>
+        </div>
+      }
+      <div>
+        <dt>Estado</dt>
+        <dd>{{ statusLabel[stand().status] }}</dd>
+      </div>
+    </dl>
+
+    @if (stand().exhibitor; as ex) {
+      <section class="exhibitor" aria-labelledby="stand-dialog-exhibitor">
+        <p class="eyebrow">Expone acá</p>
+        <h3 id="stand-dialog-exhibitor" class="exhibitor-name">{{ ex.name }}</h3>
+        <p class="chip">{{ ex.category }}</p>
+        @if (description(); as text) {
+          <p class="about" [class.clamped]="!expanded()" id="stand-dialog-about">{{ text }}</p>
+          @if (isLongDescription()) {
+            <button
+              type="button"
+              class="more"
+              aria-controls="stand-dialog-about"
+              [attr.aria-expanded]="expanded()"
+              (click)="expanded.set(!expanded())"
+            >
+              {{ expanded() ? 'Ver menos' : 'Ver más' }}
+            </button>
+          }
+        }
+      </section>
+    }
+
+    <footer class="actions">
+      <button type="button" class="btn btn-primary" autofocus (click)="close()">Cerrar</button>
+    </footer>
+  </div>
+</dialog>
