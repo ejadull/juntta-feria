@@ -63,77 +63,89 @@ type Errors = Partial<Record<Field, string>>;
       [attr.aria-label]="mode() === 'create' ? 'Nuevo evento' : 'Datos del evento'"
       (submit)="submit($event)"
     >
-      <label class="grid gap-1 text-sm">
-        <span>Nombre</span>
-        <input
-          class="field"
-          type="text"
-          autocomplete="off"
-          [disabled]="disabled()"
-          [attr.aria-invalid]="errors().name ? 'true' : null"
-          [attr.aria-describedby]="errors().name ? 'event-name-error' : null"
-          [value]="name()"
-          (input)="name.set(valueOf($event))"
-        />
+      <div class="grid gap-1 text-sm">
+        <label class="grid gap-1">
+          <span>Nombre</span>
+          <input
+            class="field"
+            type="text"
+            autocomplete="off"
+            [disabled]="disabled()"
+            [attr.aria-invalid]="errors().name ? 'true' : null"
+            [attr.aria-describedby]="errors().name ? 'event-name-error' : null"
+            [value]="name()"
+            (input)="name.set(valueOf($event))"
+          />
+        </label>
         @if (errors().name; as message) {
           <span id="event-name-error" class="text-danger">{{ message }}</span>
         }
-      </label>
+      </div>
 
-      <label class="grid gap-1 text-sm">
-        <span>Dirección web (opcional)</span>
-        <input
-          class="field"
-          type="text"
-          autocomplete="off"
-          aria-describedby="event-slug-hint"
-          [disabled]="disabled()"
-          [attr.aria-invalid]="errors().slug ? 'true' : null"
-          [value]="slug()"
-          (input)="slug.set(valueOf($event))"
-        />
+      <div class="grid gap-1 text-sm">
+        <label class="grid gap-1">
+          <span>Dirección web (opcional)</span>
+          <input
+            class="field"
+            type="text"
+            autocomplete="off"
+            [attr.aria-describedby]="
+              errors().slug ? 'event-slug-error event-slug-hint' : 'event-slug-hint'
+            "
+            [disabled]="disabled()"
+            [attr.aria-invalid]="errors().slug ? 'true' : null"
+            [value]="slug()"
+            (input)="slug.set(valueOf($event))"
+          />
+        </label>
         <span id="event-slug-hint" class="text-xs text-text-muted">
           Se arma con el nombre si lo dejás vacío. Solo minúsculas, números y guiones.
         </span>
         @if (errors().slug; as message) {
-          <span class="text-danger">{{ message }}</span>
+          <span id="event-slug-error" class="text-danger">{{ message }}</span>
         }
-      </label>
+      </div>
 
       @if (mode() === 'create') {
-        <label class="grid gap-1 text-sm">
-          <span>Predio</span>
-          <select
-            class="field"
-            [attr.aria-invalid]="errors().venue ? 'true' : null"
-            [attr.aria-describedby]="errors().venue ? 'event-venue-error' : null"
-            (change)="chooseVenue(valueOf($event))"
-          >
-            <option value="" [selected]="venueId() === ''">Elegí un predio</option>
-            @for (v of venues(); track v.id) {
-              <option [value]="v.id" [selected]="v.id === venueId()">{{ v.name }}</option>
-            }
-          </select>
+        <div class="grid gap-1 text-sm">
+          <label class="grid gap-1">
+            <span>Predio</span>
+            <select
+              class="field"
+              [attr.aria-invalid]="errors().venue ? 'true' : null"
+              [attr.aria-describedby]="errors().venue ? 'event-venue-error' : null"
+              (change)="chooseVenue(valueOf($event))"
+            >
+              <option value="" [selected]="venueId() === ''">Elegí un predio</option>
+              @for (v of venues(); track v.id) {
+                <option [value]="v.id" [selected]="v.id === venueId()">{{ v.name }}</option>
+              }
+            </select>
+          </label>
           @if (errors().venue; as message) {
             <span id="event-venue-error" class="text-danger">{{ message }}</span>
           }
-        </label>
+        </div>
 
-        <label class="grid gap-1 text-sm">
-          <span>Plano publicado</span>
-          <select
-            class="field"
-            aria-describedby="event-plan-hint"
-            [attr.aria-invalid]="errors().plan ? 'true' : null"
-            (change)="versionId.set(valueOf($event))"
-          >
-            <option value="" [selected]="versionId() === ''">Elegí un plano</option>
-            @for (p of plansForVenue(); track p.versionId) {
-              <option [value]="p.versionId" [selected]="p.versionId === versionId()">
-                {{ p.label }}
-              </option>
-            }
-          </select>
+        <div class="grid gap-1 text-sm">
+          <label class="grid gap-1">
+            <span>Plano publicado</span>
+            <select
+              class="field"
+              [attr.aria-describedby]="
+                errors().plan ? 'event-plan-error event-plan-hint' : 'event-plan-hint'
+              "
+              [attr.aria-invalid]="errors().plan ? 'true' : null"
+              (change)="versionId.set(valueOf($event))"
+            >
+              <option value="" [selected]="versionId() === ''">Elegí un plano</option>
+              @for (p of plansForVenue(); track p.versionId) {
+                <option [value]="p.versionId" [selected]="p.versionId === versionId()">
+                  {{ p.label }}
+                </option>
+              }
+            </select>
+          </label>
           <span id="event-plan-hint" class="text-xs text-text-muted">
             Solo aparecen planos publicados del predio elegido. El evento conserva esa versión del
             plano: para usar un plano modificado, creá un evento nuevo.
@@ -143,27 +155,29 @@ type Errors = Partial<Record<Field, string>>;
             }
           </span>
           @if (errors().plan; as message) {
-            <span class="text-danger">{{ message }}</span>
+            <span id="event-plan-error" class="text-danger">{{ message }}</span>
           }
-        </label>
+        </div>
       }
 
       @for (f of dateFields; track f.key) {
-        <label class="grid gap-1 text-sm">
-          <span>{{ f.label }}</span>
-          <input
-            class="field"
-            type="datetime-local"
-            [disabled]="disabled()"
-            [attr.aria-invalid]="errors()[f.key] ? 'true' : null"
-            [attr.aria-describedby]="errors()[f.key] ? 'event-' + f.key + '-error' : null"
-            [value]="dates()[f.key]"
-            (input)="setDate(f.key, valueOf($event))"
-          />
+        <div class="grid gap-1 text-sm">
+          <label class="grid gap-1">
+            <span>{{ f.label }}</span>
+            <input
+              class="field"
+              type="datetime-local"
+              [disabled]="disabled()"
+              [attr.aria-invalid]="errors()[f.key] ? 'true' : null"
+              [attr.aria-describedby]="errors()[f.key] ? 'event-' + f.key + '-error' : null"
+              [value]="dates()[f.key]"
+              (input)="setDate(f.key, valueOf($event))"
+            />
+          </label>
           @if (errors()[f.key]; as message) {
             <span [id]="'event-' + f.key + '-error'" class="text-danger">{{ message }}</span>
           }
-        </label>
+        </div>
       }
       <p class="text-xs text-text-muted sm:col-span-2">
         Horario de Argentina (UTC-3). Las ventas tienen que cerrar antes de que termine el evento.

@@ -101,9 +101,8 @@ describe('ReservePage (P18, RES-01, PAY-02)', () => {
     expect(checkout).toHaveBeenCalledWith('r1');
     expect(host.querySelector('[data-testid="hold-clock"]')?.textContent).toMatch(/^1[45]:\d\d$/);
     expect(host.querySelector('[role="timer"]')).not.toBeNull();
-    expect(plain(host.querySelector('[aria-live="polite"]')?.textContent)).toContain(
-      'Te quedan 15 minutos',
-    );
+    // Nothing is announced until the last two minutes.
+    expect(plain(host.querySelector('[aria-live="polite"]')?.textContent)).toBe('');
     // No public key in the test API: the Wallet Brick falls back to the init_point link.
     expect(host.querySelector<HTMLAnchorElement>('a.btn-primary')?.href).toBe(
       'https://mp.test/init',
@@ -170,6 +169,62 @@ describe('ReservePage (P18, RES-01, PAY-02)', () => {
     const expired = reservation({ holdExpiresAt: new Date(Date.now() - 1000).toISOString() });
     const { host } = await render({ reserva: 'r1' }, {}, { reservation: () => of(expired) });
     expect(plain(host.querySelector('[role="alert"]')?.textContent)).toContain('venció');
+  });
+
+  describe('hold countdown', () => {
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] }));
+    afterEach(() => vi.useRealTimers());
+
+    const resumeWith = (msLeft: number) =>
+      render(
+        { reserva: 'r1' },
+        {},
+        {
+          reservation: () =>
+            of(reservation({ holdExpiresAt: new Date(Date.now() + msLeft).toISOString() })),
+        },
+      );
+    const tick = async (fixture: { detectChanges(): void }, ms: number) => {
+      await vi.advanceTimersByTimeAsync(ms);
+      fixture.detectChanges();
+    };
+
+    it('stays quiet while there is plenty of time', async () => {
+      const { host } = await resumeWith(10 * 60_000);
+      expect(host.querySelector('[data-testid="hold-warning"]')).toBeNull();
+      expect(plain(host.querySelector('[data-testid="hold-announcement"]')?.textContent)).toBe('');
+      expect(plain(host.querySelector('[data-testid="hold-clock"]')?.textContent)).toBe('10:00');
+    });
+
+    it('warns with a banner and one polite announcement in the last two minutes', async () => {
+      const { host, fixture } = await resumeWith(125_000);
+      expect(host.querySelector('[data-testid="hold-warning"]')).toBeNull();
+
+      await tick(fixture, 6_000);
+      const warning = plain(host.querySelector('[data-testid="hold-warning"]')?.textContent);
+      expect(warning).toContain('Quedan 1 minuto y 59 segundos para pagar');
+      const live = host.querySelector('[data-testid="hold-announcement"]')!;
+      expect(live.getAttribute('aria-live')).toBe('polite');
+      const spoken = plain(live.textContent);
+      expect(spoken).toBe('Quedan menos de 2 minutos para pagar tu stand.');
+
+      await tick(fixture, 30_000);
+      expect(plain(host.querySelector('[data-testid="hold-announcement"]')?.textContent)).toBe(
+        spoken,
+      );
+      expect(plain(host.querySelector('[data-testid="hold-clock"]')?.textContent)).toBe('01:29');
+    });
+
+    it('turns into the expired message, announced as an alert, when the time runs out', async () => {
+      const { host, fixture } = await resumeWith(3_000);
+      expect(host.querySelector('[data-testid="hold-warning"]')).not.toBeNull();
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+
+      await tick(fixture, 4_000);
+      expect(plain(host.querySelector('[role="alert"]')?.textContent)).toContain('venció');
+      expect(host.querySelector('[data-testid="hold-warning"]')).toBeNull();
+      expect(host.querySelector('[data-testid="hold-clock"]')).toBeNull();
+    });
   });
 
   it('resumes the payment of an existing reservation', async () => {

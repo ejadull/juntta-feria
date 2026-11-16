@@ -126,8 +126,10 @@ describe('SubscriptionPage (EXH-05)', () => {
     const { fixture, http, host, answer, button, click } = await render();
     await answer({ status: 'ACTIVE', currentPeriodEnd: FUTURE });
     await click(button('Cancelar suscripción'));
-    const dialog = host.querySelector('[role="alertdialog"]')!;
-    expect(dialog.getAttribute('aria-labelledby')).toBe('cancel-title');
+    const dialog = host.querySelector('dialog[open]')!;
+    expect(host.querySelector(`#${dialog.getAttribute('aria-labelledby')}`)?.textContent).toContain(
+      '¿Cancelar la suscripción?',
+    );
     await vi.waitFor(() => expect(document.activeElement?.textContent?.trim()).toBe('Cancelar'));
 
     await click(button('Sí, cancelar'));
@@ -138,7 +140,7 @@ describe('SubscriptionPage (EXH-05)', () => {
     expect(plain(host.querySelector('[data-testid="subscription-status"]')?.textContent)).toContain(
       'Cancelada: sigue activa hasta el',
     );
-    expect(host.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(host.querySelector('dialog[open]')).toBeNull();
   });
 
   it('shows an error and retries when the status cannot be read', async () => {

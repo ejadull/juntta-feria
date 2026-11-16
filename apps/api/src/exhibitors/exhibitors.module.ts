@@ -13,6 +13,9 @@ import {
   ExhibitorsController,
   MyExhibitorProfileController,
 } from './exhibitors.controller.js';
+import { ExhibitorPhotosSweeper } from './photo-sweeper.service.js';
+import { MyPhotosController } from './photos.controller.js';
+import { ExhibitorPhotosService } from './photos.service.js';
 import { ExhibitorsService } from './exhibitors.service.js';
 import {
   InvitationsController,
@@ -29,6 +32,7 @@ import { InvitationsService } from './invitations.service.js';
   controllers: [
     CategoriesController,
     MyDocumentsController,
+    MyPhotosController,
     ExhibitorDocumentsController,
     MyExhibitorProfileController,
     ExhibitorsController,
@@ -40,7 +44,9 @@ import { InvitationsService } from './invitations.service.js';
     InvitationsService,
     CategoriesService,
     ExhibitorDocumentsService,
+    ExhibitorPhotosService,
     ExhibitorDocumentsSweeper,
+    ExhibitorPhotosSweeper,
   ],
 })
 export class ExhibitorsModule {}

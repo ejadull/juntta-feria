@@ -44,8 +44,8 @@ describe('LoginPage (P01, CORE-05)', () => {
     const { host } = await render({ google: { clientId: 'cid.test' } });
     expect(host.querySelector('form')).toBeNull();
     expect(host.querySelector('input')).toBeNull();
-    expect(host.textContent).toContain('Entrá con tu cuenta de Google');
-    expect(host.textContent).toContain('pedile la invitación al organizador');
+    expect(host.textContent).toContain('Ingresá con tu cuenta de Google');
+    expect(host.textContent).toContain('Pedile una invitación a tu organizador');
   });
 
   it('shows a labelled Google button', async () => {

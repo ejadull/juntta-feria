@@ -1,15 +1,12 @@
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import {
-  afterNextRender,
   ChangeDetectionStrategy,
   Component,
   computed,
   DestroyRef,
-  ElementRef,
   inject,
-  Injector,
   InjectionToken,
   signal,
-  viewChild,
   type OnInit,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -46,6 +43,7 @@ const valueOf = (event: Event): string => (event.target as HTMLInputElement).val
  */
 @Component({
   selector: 'app-subscription-page',
+  imports: [ConfirmDialog],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="mx-auto max-w-3xl px-4 py-6 sm:px-8 sm:py-8">
@@ -121,37 +119,21 @@ const valueOf = (event: Event): string => (event.target as HTMLInputElement).val
 
         @if (s.status === 'ACTIVE' || s.status === 'PAST_DUE') {
           <div class="mt-5">
-            <button
-              type="button"
-              class="btn btn-danger"
-              [disabled]="busy() || confirming()"
-              (click)="askCancel()"
-            >
+            <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="askCancel()">
               Cancelar suscripción
             </button>
           </div>
         }
 
         @if (confirming()) {
-          <div
-            role="alertdialog"
-            aria-labelledby="cancel-title"
-            aria-describedby="cancel-text"
-            class="mt-4 rounded-lg border border-border-strong p-4"
-          >
-            <p id="cancel-title" class="font-semibold">¿Cancelar la suscripción?</p>
-            <p id="cancel-text" class="mt-1 text-sm text-text-muted">
-              Vas a poder reservar hasta el fin del período ya pagado. Después, no.
-            </p>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="cancel()">
-                Sí, cancelar
-              </button>
-              <button #keep type="button" class="btn" (click)="confirming.set(false)">
-                Cancelar
-              </button>
-            </div>
-          </div>
+          <app-confirm-dialog
+            heading="¿Cancelar la suscripción?"
+            message="Vas a poder reservar hasta el fin del período ya pagado. Después, no."
+            confirmLabel="Sí, cancelar"
+            [busy]="busy()"
+            (confirmed)="cancel()"
+            (cancelled)="confirming.set(false)"
+          />
         }
       } @else {
         <p role="status" class="mt-6 text-text-muted">Consultando tu suscripción…</p>
@@ -179,8 +161,6 @@ export class SubscriptionPage implements OnInit {
   private readonly poll = inject(SUBSCRIPTION_POLL);
   protected readonly navigate = inject(EXTERNAL_NAVIGATION);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly injector = inject(Injector);
-  private readonly keep = viewChild<ElementRef<HTMLButtonElement>>('keep');
   private read?: Subscription;
   private startKey = crypto.randomUUID();
 
@@ -275,8 +255,6 @@ export class SubscriptionPage implements OnInit {
 
   protected askCancel(): void {
     this.confirming.set(true);
-    // The safe choice gets the focus, as in a native confirm.
-    afterNextRender(() => this.keep()?.nativeElement.focus(), { injector: this.injector });
   }
 
   protected cancel(): void {

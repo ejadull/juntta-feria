@@ -25,7 +25,7 @@ interface Step {
   imports: [RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <section class="card mt-6" aria-labelledby="setup-title" data-testid="setup-checklist">
+    <section class="card shrink-0" aria-labelledby="setup-title" data-testid="setup-checklist">
       <h2 id="setup-title" class="text-lg font-semibold">Primeros pasos</h2>
       <p class="mt-1 text-sm text-text-muted">
         Lo que falta para empezar a vender stands. Sigue este orden.

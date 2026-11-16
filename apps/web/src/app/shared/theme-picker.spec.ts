@@ -33,8 +33,9 @@ describe('ThemePicker', () => {
       'Grafito',
       'Industrial Neon',
       'Matcha Organic',
+      'Cereza',
     ]);
-    expect(select.value).toBe('grafito');
+    expect(select.value).toBe('industrial');
   });
 
   it('applies and remembers the chosen palette', () => {
@@ -48,7 +49,7 @@ describe('ThemePicker', () => {
     const { host, choose } = render();
     const swatches = () => host.querySelectorAll('[aria-hidden="true"] span');
     expect(swatches().length).toBe(3);
-    expect((swatches()[1] as HTMLElement).style.background).toContain('255, 90, 0'); // Grafito accent
+    expect((swatches()[1] as HTMLElement).style.background).toContain('198, 255, 61'); // Industrial Neon accent
     choose('matcha');
     expect((swatches()[1] as HTMLElement).style.background).toContain('255, 51, 85');
   });

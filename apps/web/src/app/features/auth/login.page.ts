@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthProviders } from '../../shared/auth/auth-providers';
 import { AREA_HOME } from '../../shared/auth/area';
 import { safeReturnUrl } from '../../shared/auth/auth.guard';
@@ -28,36 +28,82 @@ const OFFLINE = 'No pudimos conectar con el servidor. Revisá tu conexión y pro
 @Component({
   selector: 'app-login-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [GoogleSignInButton],
+  imports: [GoogleSignInButton, RouterLink],
   template: `
-    <section class="mx-auto max-w-md px-4 py-10 sm:px-6">
-      <p class="text-sm font-semibold tracking-wider text-primary-strong">INGRESAR</p>
-      <h1 class="mt-1 text-3xl font-semibold">Entrá a tu cuenta</h1>
-      <p class="mt-2 text-text-muted">
-        Entrá con tu cuenta de Google. Si todavía no tenés cuenta, pedile la invitación al
-        organizador.
-      </p>
+    <main class="relative isolate flex min-h-screen flex-col bg-background text-text">
+      <div class="absolute inset-x-0 top-0 -z-10 h-[60%] overflow-hidden bg-primary" aria-hidden="true">
+        <div
+          class="absolute top-1/4 -left-40 size-[28rem] rounded-[7rem] border-[3rem] border-on-primary/15"
+        ></div>
+      </div>
 
-      @if (googleClientId(); as clientId) {
-        <div class="mt-6">
-          <app-google-sign-in-button
-            [clientId]="clientId"
-            label="Ingresar con Google"
-            (credential)="signInWithGoogle($event)"
-          />
-        </div>
-      } @else if (googleClientId() === null) {
-        <p role="alert" class="mt-6 rounded-lg bg-danger/10 p-3 text-sm text-text">
-          {{ unavailable }}
-        </p>
-      }
+      <div class="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-10 sm:px-6">
+        <section class="w-full max-w-md rounded-2xl bg-surface p-8 shadow-2xl sm:p-10">
+          <div class="flex items-center gap-2 font-bold tracking-wide">
+            <span
+              class="grid size-9 place-items-center rounded-md bg-primary text-lg font-bold text-on-primary"
+              aria-hidden="true"
+              >j</span
+            >
+            <span class="leading-tight">
+              <span class="block text-xl font-bold tracking-tight text-primary-strong"
+                >juntta<span class="text-secondary" aria-hidden="true">.</span></span
+              >
+              <span class="block text-[0.6875rem] font-semibold tracking-[0.14em] text-text-muted"
+                >FERIAS Y ENCUENTROS</span
+              >
+            </span>
+          </div>
 
-      @if (error(); as message) {
-        <p role="alert" class="mt-4 rounded-lg bg-danger/10 p-3 text-sm text-text">
-          {{ message }}
+          <hr class="my-6 border-border" />
+
+          <h1 class="text-2xl font-semibold">Te damos la bienvenida</h1>
+          <p class="mt-2 text-text-muted">
+            Ingresá con tu cuenta de Google para acceder a tu organización o a tus reservas.
+          </p>
+
+          @if (googleClientId(); as clientId) {
+            <div class="mt-6 flex justify-center">
+              <app-google-sign-in-button
+                [clientId]="clientId"
+                label="Ingresar con Google"
+                (credential)="signInWithGoogle($event)"
+              />
+            </div>
+          } @else if (googleClientId() === null) {
+            <p role="alert" class="mt-6 rounded-lg bg-danger/10 p-3 text-sm text-text">
+              {{ unavailable }}
+            </p>
+          }
+
+          @if (error(); as message) {
+            <p role="alert" class="mt-4 rounded-lg bg-danger/10 p-3 text-sm text-text">
+              {{ message }}
+            </p>
+          }
+
+          <p class="mt-6 text-sm text-text-muted">
+            ¿No tenés cuenta? Pedile una invitación a tu organizador.
+          </p>
+          <p class="mt-3 text-xs text-text-muted">
+            Al ingresar aceptás los
+            <a routerLink="/terminos" class="text-primary-strong underline">Términos y Condiciones</a>
+            y la
+            <a routerLink="/privacidad" class="text-primary-strong underline"
+              >Política de Privacidad</a
+            >.
+          </p>
+        </section>
+
+        <p class="text-center text-sm text-text-muted">
+          La plataforma para organizar ferias y encuentros
         </p>
-      }
-    </section>
+      </div>
+
+      <footer class="pb-6 text-center text-xs text-text-muted">
+        &copy; juntta. Ferias y encuentros
+      </footer>
+    </main>
   `,
 })
 export class LoginPage {

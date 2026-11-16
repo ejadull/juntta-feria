@@ -45,7 +45,7 @@ test('cancelling asks first and keeps access until the end of the period', async
   });
   await page.goto('/feriante/suscripcion');
   await page.getByRole('button', { name: 'Cancelar suscripción' }).click();
-  const dialog = page.getByRole('alertdialog');
+  const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Cancelar', exact: true })).toBeFocused();
   expect(await seriousViolations(page)).toEqual([]);

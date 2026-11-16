@@ -30,6 +30,8 @@ export interface ObjectStorage {
     fileName: string;
     contentType: string;
     expiresInSeconds: number;
+    /** Shown in the page (public photos) instead of forcing a download. */
+    inline?: boolean;
   }): Promise<string>;
   remove(key: string): Promise<void>;
 }

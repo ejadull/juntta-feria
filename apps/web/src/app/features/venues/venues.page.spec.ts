@@ -158,9 +158,9 @@ describe('VenuesPage (VEN-01, organizador)', () => {
   it('deletes after an in-page confirmation (owner)', async () => {
     const { click, host, rows } = await render(new InMemoryVenueRepository([venue()]));
     await click('Eliminar Espacio Duam');
-    expect(host.querySelector('[role="alertdialog"]')).not.toBeNull();
+    expect(host.querySelector('dialog[open]')).not.toBeNull();
     await click('Sí, eliminar');
-    expect(host.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(host.querySelector('dialog[open]')).toBeNull();
     expect(rows()).toHaveLength(0);
   });
 
@@ -168,7 +168,7 @@ describe('VenuesPage (VEN-01, organizador)', () => {
     const { click, host, rows } = await render(new InMemoryVenueRepository([venue()]));
     await click('Eliminar Espacio Duam');
     await click('Cancelar');
-    expect(host.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(host.querySelector('dialog[open]')).toBeNull();
     expect(rows()).toHaveLength(1);
   });
 

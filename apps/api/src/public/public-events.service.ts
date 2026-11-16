@@ -1,16 +1,28 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { DatabaseService } from '../db/database.service.js';
+import { DatabaseService, type Transaction } from '../db/database.service.js';
 import {
   eventSectors,
   events,
   eventStands,
   exhibitorCategories,
+  exhibitorPhotos,
   exhibitors,
   layoutObjects,
   layoutVersions,
   reservations,
 } from '../db/schema.js';
+import { PHOTO_URL_TTL_SECONDS } from '../exhibitors/photo-policy.js';
+import {
+  OBJECT_STORAGE,
+  type ObjectStorage,
+} from '../storage/object-storage.js';
+import {
+  photoFallbackAlt,
+  publicExhibitorOf,
+  type PublicPhoto,
+  type PublicStandExhibitor,
+} from './public-exhibitor.js';
 
 /** Shown when an exhibitor has no rubro yet (EXH-02 keeps `category_id` nullable). */
 const NO_CATEGORY = 'Sin rubro';
@@ -45,10 +57,7 @@ export interface PublicStandProperties {
   readonly sector: string | null;
   readonly price: { readonly currency: 'ARS'; readonly valueCents: number };
   /** Only exhibitors that consented to a public profile (AC-11, INV-08). */
-  readonly exhibitor: {
-    readonly name: string;
-    readonly category: string;
-  } | null;
+  readonly exhibitor: PublicStandExhibitor | null;
 }
 
 export interface PublicAreaProperties {
@@ -137,7 +146,10 @@ function visitorStatus(stand: {
  */
 @Injectable()
 export class PublicEventsService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
+  ) {}
 
   async list(now = new Date()): Promise<PublicEventSummary[]> {
     const { rows } = await this.database.db.execute<ListRow>(
@@ -217,8 +229,10 @@ export class PublicEventsService {
           priceCents: eventStands.priceCents,
           sector: eventSectors.name,
           reservation: reservations.status,
+          exhibitorId: exhibitors.id,
           exhibitorName: exhibitors.tradeName,
           exhibitorCategory: sql<string>`coalesce(${exhibitorCategories.name}, ${NO_CATEGORY})`,
+          exhibitorDescription: exhibitors.description,
           exhibitorPublic: exhibitors.publicContactOptIn,
         })
         .from(eventStands)
@@ -252,6 +266,17 @@ export class PublicEventsService {
         )
         .where(eq(eventStands.eventId, target.id));
       const byObject = new Map(stands.map((s) => [s.layoutObjectId, s]));
+      // Only exhibitors that own a stand AND consented: photos are never looked up otherwise.
+      const consentedIds = [
+        ...new Set(
+          stands.flatMap((s) =>
+            s.exhibitorId && s.exhibitorPublic && isOwning(s.reservation)
+              ? [s.exhibitorId]
+              : [],
+          ),
+        ),
+      ];
+      const photosByExhibitor = await this.photosOf(tx, consentedIds);
 
       const features = objects.flatMap((object): PublicMapFeature[] => {
         if (object.kind !== 'STAND')
@@ -282,13 +307,17 @@ export class PublicEventsService {
                 currency: 'ARS' as const,
                 valueCents: stand.priceCents ?? 0,
               },
-              exhibitor:
-                isOwning(stand.reservation) && stand.exhibitorPublic
-                  ? {
-                      name: stand.exhibitorName!,
-                      category: stand.exhibitorCategory!,
-                    }
-                  : null,
+              exhibitor: publicExhibitorOf(
+                {
+                  reservationOwns: isOwning(stand.reservation),
+                  consented: stand.exhibitorPublic,
+                  exhibitorId: stand.exhibitorId,
+                  name: stand.exhibitorName,
+                  category: stand.exhibitorCategory,
+                  description: stand.exhibitorDescription,
+                },
+                photosByExhibitor,
+              ),
             },
           },
         ];
@@ -301,6 +330,60 @@ export class PublicEventsService {
         features,
       };
     });
+  }
+
+  /** READY photos of the given (already consented) exhibitors, presigned for an hour. */
+  private async photosOf(
+    tx: Transaction,
+    exhibitorIds: readonly string[],
+  ): Promise<ReadonlyMap<string, readonly PublicPhoto[]>> {
+    if (exhibitorIds.length === 0) return new Map();
+    const rows = await tx
+      .select({
+        exhibitorId: exhibitorPhotos.exhibitorId,
+        storageKey: exhibitorPhotos.storageKey,
+        contentType: exhibitorPhotos.contentType,
+        alt: exhibitorPhotos.alt,
+        exhibitorName: exhibitors.tradeName,
+      })
+      .from(exhibitorPhotos)
+      .innerJoin(
+        exhibitors,
+        and(
+          eq(exhibitors.tenantId, exhibitorPhotos.tenantId),
+          eq(exhibitors.id, exhibitorPhotos.exhibitorId),
+        ),
+      )
+      .where(
+        and(
+          inArray(exhibitorPhotos.exhibitorId, [...exhibitorIds]),
+          eq(exhibitorPhotos.status, 'READY'),
+          eq(exhibitors.publicContactOptIn, true),
+        ),
+      )
+      .orderBy(asc(exhibitorPhotos.position), asc(exhibitorPhotos.createdAt));
+    const signed = await Promise.all(
+      rows.map(async (row) => ({
+        exhibitorId: row.exhibitorId,
+        photo: {
+          url: await this.storage.presignDownload({
+            key: row.storageKey,
+            fileName: 'foto',
+            contentType: row.contentType,
+            expiresInSeconds: PHOTO_URL_TTL_SECONDS,
+            inline: true,
+          }),
+          alt: row.alt?.trim() || photoFallbackAlt(row.exhibitorName),
+        },
+      })),
+    );
+    const byExhibitor = new Map<string, PublicPhoto[]>();
+    for (const { exhibitorId, photo } of signed)
+      byExhibitor.set(exhibitorId, [
+        ...(byExhibitor.get(exhibitorId) ?? []),
+        photo,
+      ]);
+    return byExhibitor;
   }
 
   async exhibitors(slug: string): Promise<PublicExhibitor[]> {

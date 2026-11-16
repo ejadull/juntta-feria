@@ -5,19 +5,31 @@
     <title>Juntta Feria</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#1a1a1d" />
-    <!-- Applies the saved palette before Angular boots (shared/theme.ts, same key). -->
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#eef0f2" />
+    <!-- Applies the saved palette before Angular boots (shared/theme.ts, same key and chrome table). -->
     <script>
-      try {
-        const theme = localStorage.getItem('juntta.theme');
-        if (theme === 'clasico') {
-          // classic palette: no data-theme
-        } else if (theme === 'corporativo' || theme === 'industrial' || theme === 'matcha')
-          document.documentElement.dataset.theme = theme;
-        else document.documentElement.dataset.theme = 'grafito'; // default (paleta 2)
-      } catch {
-        document.documentElement.dataset.theme = 'grafito';
-      }
+      (function () {
+        var chrome = {
+          clasico: ['light', '#faf9f7'],
+          corporativo: ['light', '#f8fafc'],
+          grafito: ['dark', '#1a1a1d'],
+          industrial: ['light', '#eef0f2'],
+          matcha: ['light', '#b9c9a0'],
+          cereza: ['light', '#fbeceb'],
+        };
+        var theme = 'industrial'; // default (Industrial Neon)
+        try {
+          var saved = localStorage.getItem('juntta.theme');
+          if (saved && Object.prototype.hasOwnProperty.call(chrome, saved)) theme = saved;
+        } catch (e) {
+          // storage blocked: the default palette applies
+        }
+        // classic palette: no data-theme
+        if (theme !== 'clasico') document.documentElement.dataset.theme = theme;
+        document.querySelector('meta[name="color-scheme"]').content = chrome[theme][0];
+        document.querySelector('meta[name="theme-color"]').content = chrome[theme][1];
+      })();
     </script>
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
     <!-- Inter from Google Fonts (UX-01 decision); system font is the fallback while it loads. -->

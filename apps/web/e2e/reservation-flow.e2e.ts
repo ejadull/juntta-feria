@@ -27,7 +27,7 @@ test('signs in, picks a stand, holds it and reaches the Mercado Pago payment', a
   const api = await signedOutApi(page);
   await page.goto('/feriante/explorar');
   await expect(page).toHaveURL(/\/ingresar\?volver=%2Fferiante%2Fexplorar$/);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Entrá a tu cuenta');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Te damos la bienvenida');
   expect(await seriousViolations(page)).toEqual([]);
 
   await signIn(page);
@@ -126,6 +126,7 @@ test('shows an empty state without reservations', async ({ page }) => {
 test('signing out sends the user to sign in', async ({ page }) => {
   await mockApi(page);
   await page.goto('/feriante/reservas');
+  await page.getByRole('button', { name: 'Abrir menú de cuenta' }).click();
   await page.getByRole('button', { name: 'Salir' }).click();
   await expect(page).toHaveURL(/\/ingresar$/);
   await page.goto('/feriante/reservas');

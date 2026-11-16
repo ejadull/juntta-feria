@@ -68,15 +68,16 @@
 
 ## Temas de color
 
-La web trae cinco paletas; se eligen en la lista **Tema de colores** de la barra lateral y se recuerdan por navegador (`localStorage`, clave `juntta.theme`). El tema se aplica antes de que arranque Angular, así que no parpadea.
+La web trae seis paletas; se eligen en la lista **Tema de colores** de la barra lateral y se recuerdan por navegador (`localStorage`, clave `juntta.theme`). El tema se aplica antes de que arranque Angular, así que no parpadea.
 
 | Tema | Referencia | Carácter |
 |---|---|---|
-| **Grafito** (por defecto) | [`docs/paleta2.webp`](docs/paleta2.webp) | Oscuro: negro metálico, gris niebla, naranja fundido |
+| Grafito | [`docs/paleta2.webp`](docs/paleta2.webp) | Oscuro: negro metálico, gris niebla, naranja fundido |
 | Clásico | [Design System v1](docs/design/juntta-design-system-v1.md) | La paleta original |
 | Corporativo | [`docs/paleta1.webp`](docs/paleta1.webp) | Azul corporativo, teal, verde gestión, dorado ocre |
-| Industrial Neon | — | Frost white, gunmetal, laser lime; barra lateral, métricas y contador oscuros |
+| **Industrial Neon** (por defecto) | — | Frost white, gunmetal, laser lime; barra lateral, métricas y contador oscuros |
 | Matcha Organic | — | Matcha latte, ivory cream, cherry pop |
+| Cereza | — | Fondo rosado, tarjetas blancas, rojo cereza; barra lateral bordó con acento naranja |
 
 - Los temas sólo cambian **tokens** (`--color-*` en [`styles.css`](apps/web/src/styles.css), bloques `:root[data-theme='…']`). Los componentes no usan colores fijos: usan tokens, y así todos los temas se aplican solos.
 - Tokens de contraste: `--color-on-primary` (texto sobre el color primario) y `--color-primary-strong` (el primario usado como texto). Hacen falta porque algunos acentos (lime, cherry, naranja) no se leen como texto o con texto blanco.

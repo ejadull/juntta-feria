@@ -31,9 +31,15 @@ test('organizer links and unlinks the Mercado Pago account', async ({ page }) =>
   expect(await seriousViolations(page)).toEqual([]);
 
   await page.getByRole('button', { name: 'Desvincular' }).click();
-  const dialog = page.getByRole('alertdialog', { name: '¿Desvincular la cuenta?' });
+  const dialog = page.getByRole('dialog', { name: '¿Desvincular la cuenta?' });
   await expect(dialog.getByRole('button', { name: 'Cancelar' })).toBeFocused();
   expect(await seriousViolations(page)).toEqual([]);
+  // Esc cancels and the browser hands the focus back to the button that opened the dialog.
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Desvincular' })).toBeFocused();
+
+  await page.getByRole('button', { name: 'Desvincular' }).click();
   await dialog.getByRole('button', { name: 'Sí, desvincular' }).click();
   await expect(page.locator('.status')).toContainText('Sin vincular');
 });

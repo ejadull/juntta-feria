@@ -222,11 +222,11 @@ describe('EventDetailPage (EVT-01, organizador)', () => {
     const publish = vi.spyOn(events, 'publish');
     const { host, click } = await render(events);
     await click('Publicar evento');
-    expect(host.querySelector('[role="alertdialog"]')).not.toBeNull();
+    expect(host.querySelector('dialog[open]')).not.toBeNull();
     expect(publish).not.toHaveBeenCalled();
     await click('Sí, publicar');
     expect(publish).toHaveBeenCalledWith('e1');
-    expect(host.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(host.querySelector('dialog[open]')).toBeNull();
     expect(plain(host.querySelector('header')?.textContent)).toContain('Publicado');
     expect(host.querySelector('[role="status"]')?.textContent).toContain('Publicamos el evento');
   });
@@ -237,7 +237,7 @@ describe('EventDetailPage (EVT-01, organizador)', () => {
     const { host, click } = await render(events);
     await click('Publicar evento');
     await click('Cancelar');
-    expect(host.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(host.querySelector('dialog[open]')).toBeNull();
     expect(publish).not.toHaveBeenCalled();
   });
 

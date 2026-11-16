@@ -135,9 +135,9 @@ describe('SectorsPanel (EVT-01, ADR 0002)', () => {
     const repo = new InMemoryEventInventoryRepository([STAND], SECTORS);
     const { click, host, rows } = await render(repo);
     await click('Eliminar sector Gastronomía');
-    expect(host.querySelector('[role="alertdialog"]')?.textContent).toContain('quedan sin sector');
+    expect(host.querySelector('dialog[open]')?.textContent).toContain('quedan sin sector');
     await click('Sí, eliminar');
-    expect(host.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(host.querySelector('dialog[open]')).toBeNull();
     expect(rows()).toHaveLength(1);
   });
 
@@ -145,7 +145,7 @@ describe('SectorsPanel (EVT-01, ADR 0002)', () => {
     const { click, host, rows } = await render(new InMemoryEventInventoryRepository([], SECTORS));
     await click('Eliminar sector Gastronomía');
     await click('Cancelar');
-    expect(host.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(host.querySelector('dialog[open]')).toBeNull();
     expect(rows()).toHaveLength(2);
   });
 

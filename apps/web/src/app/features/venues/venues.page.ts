@@ -11,6 +11,7 @@ import {
 import { ActivatedRoute } from '@angular/router';
 import { messageFor } from '../../shared/auth/problem';
 import { SessionStore } from '../../shared/auth/session.store';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { centsToInput, parseDecimal } from '../../shared/decimal';
 import { focusFirstInvalid, valueOf } from '../../shared/forms';
 import {
@@ -50,7 +51,9 @@ const meters = (text: string): number | null => {
 /** VEN-01 (organizer): venues of the organization. Delete is OWNER/ADMIN only, like the API. */
 @Component({
   selector: 'app-venues-page',
+  imports: [ConfirmDialog],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styleUrl: '../../shared/responsive-table.css',
   template: `
     <div class="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-8">
       <header class="flex flex-wrap items-end justify-between gap-4">
@@ -78,21 +81,23 @@ const meters = (text: string): number | null => {
             {{ editingId() ? 'Editar predio' : 'Nuevo predio' }}
           </h2>
 
-          <label class="grid gap-1 text-sm">
-            <span>Nombre</span>
-            <input
-              class="field"
-              type="text"
-              autocomplete="off"
-              [attr.aria-invalid]="errors().name ? 'true' : null"
-              [attr.aria-describedby]="errors().name ? 'venue-name-error' : null"
-              [value]="name()"
-              (input)="name.set(valueOf($event))"
-            />
+          <div class="grid gap-1 text-sm">
+            <label class="grid gap-1">
+              <span>Nombre</span>
+              <input
+                class="field"
+                type="text"
+                autocomplete="off"
+                [attr.aria-invalid]="errors().name ? 'true' : null"
+                [attr.aria-describedby]="errors().name ? 'venue-name-error' : null"
+                [value]="name()"
+                (input)="name.set(valueOf($event))"
+              />
+            </label>
             @if (errors().name; as message) {
               <span id="venue-name-error" class="text-danger">{{ message }}</span>
             }
-          </label>
+          </div>
 
           <label class="grid gap-1 text-sm">
             <span>Tipo</span>
@@ -103,74 +108,82 @@ const meters = (text: string): number | null => {
             </select>
           </label>
 
-          <label class="grid gap-1 text-sm sm:col-span-2">
-            <span>Dirección (opcional)</span>
-            <input
-              class="field"
-              type="text"
-              autocomplete="off"
-              [attr.aria-invalid]="errors().address ? 'true' : null"
-              [attr.aria-describedby]="errors().address ? 'venue-address-error' : null"
-              [value]="address()"
-              (input)="address.set(valueOf($event))"
-            />
+          <div class="grid gap-1 text-sm sm:col-span-2">
+            <label class="grid gap-1">
+              <span>Dirección (opcional)</span>
+              <input
+                class="field"
+                type="text"
+                autocomplete="off"
+                [attr.aria-invalid]="errors().address ? 'true' : null"
+                [attr.aria-describedby]="errors().address ? 'venue-address-error' : null"
+                [value]="address()"
+                (input)="address.set(valueOf($event))"
+              />
+            </label>
             @if (errors().address; as message) {
               <span id="venue-address-error" class="text-danger">{{ message }}</span>
             }
-          </label>
+          </div>
 
-          <label class="grid gap-1 text-sm">
-            <span>Ancho (m)</span>
-            <input
-              class="field"
-              type="text"
-              inputmode="decimal"
-              autocomplete="off"
-              [attr.aria-invalid]="errors().widthM ? 'true' : null"
-              [attr.aria-describedby]="errors().widthM ? 'venue-width-error' : null"
-              [value]="widthM()"
-              (input)="widthM.set(valueOf($event))"
-            />
+          <div class="grid gap-1 text-sm">
+            <label class="grid gap-1">
+              <span>Ancho (m)</span>
+              <input
+                class="field"
+                type="text"
+                inputmode="decimal"
+                autocomplete="off"
+                [attr.aria-invalid]="errors().widthM ? 'true' : null"
+                [attr.aria-describedby]="errors().widthM ? 'venue-width-error' : null"
+                [value]="widthM()"
+                (input)="widthM.set(valueOf($event))"
+              />
+            </label>
             @if (errors().widthM; as message) {
               <span id="venue-width-error" class="text-danger">{{ message }}</span>
             }
-          </label>
+          </div>
 
-          <label class="grid gap-1 text-sm">
-            <span>Largo (m)</span>
-            <input
-              class="field"
-              type="text"
-              inputmode="decimal"
-              autocomplete="off"
-              [attr.aria-invalid]="errors().heightM ? 'true' : null"
-              [attr.aria-describedby]="errors().heightM ? 'venue-height-error' : null"
-              [value]="heightM()"
-              (input)="heightM.set(valueOf($event))"
-            />
+          <div class="grid gap-1 text-sm">
+            <label class="grid gap-1">
+              <span>Largo (m)</span>
+              <input
+                class="field"
+                type="text"
+                inputmode="decimal"
+                autocomplete="off"
+                [attr.aria-invalid]="errors().heightM ? 'true' : null"
+                [attr.aria-describedby]="errors().heightM ? 'venue-height-error' : null"
+                [value]="heightM()"
+                (input)="heightM.set(valueOf($event))"
+              />
+            </label>
             @if (errors().heightM; as message) {
               <span id="venue-height-error" class="text-danger">{{ message }}</span>
             }
-          </label>
+          </div>
 
-          <label class="grid gap-1 text-sm sm:col-span-2">
-            <span>Zona horaria</span>
-            <input
-              class="field"
-              type="text"
-              autocomplete="off"
-              aria-describedby="venue-timezone-hint"
-              [attr.aria-invalid]="errors().timezone ? 'true' : null"
-              [value]="timezone()"
-              (input)="timezone.set(valueOf($event))"
-            />
-            <span id="venue-timezone-hint" class="text-xs text-text-muted">
-              Nombre IANA, por ejemplo America/Argentina/Buenos_Aires.
-            </span>
+          <div class="grid gap-1 text-sm sm:col-span-2">
+            <label class="grid gap-1">
+              <span>Zona horaria</span>
+              <input
+                class="field"
+                type="text"
+                autocomplete="off"
+                aria-describedby="venue-timezone-hint"
+                [attr.aria-invalid]="errors().timezone ? 'true' : null"
+                [value]="timezone()"
+                (input)="timezone.set(valueOf($event))"
+              />
+              <span id="venue-timezone-hint" class="text-xs text-text-muted">
+                Nombre IANA, por ejemplo America/Argentina/Buenos_Aires.
+              </span>
+            </label>
             @if (errors().timezone; as message) {
               <span class="text-danger">{{ message }}</span>
             }
-          </label>
+          </div>
 
           @if (formError(); as message) {
             <p role="alert" class="rounded-lg bg-danger/10 p-3 text-sm text-text sm:col-span-2">
@@ -204,10 +217,20 @@ const meters = (text: string): number | null => {
             <p class="mt-1 text-sm text-text-muted">
               Creá el primero para poder dibujar su plano y armar un evento.
             </p>
+            @if (!formOpen()) {
+              <button type="button" class="btn btn-primary mt-3" (click)="openCreate()">
+                Crear el primer predio
+              </button>
+            }
           </div>
         } @else {
-          <div class="card mt-6 overflow-x-auto p-0">
-            <table class="w-full text-left text-sm">
+          <div
+            role="region"
+            tabindex="0"
+            aria-label="Predios de la organización"
+            class="table-wrapper card mt-6 overflow-x-auto p-0"
+          >
+            <table class="stack-table w-full text-left text-sm">
               <caption class="sr-only">
                 Predios de la organización
               </caption>
@@ -224,9 +247,9 @@ const meters = (text: string): number | null => {
                 @for (v of rows; track v.id) {
                   <tr data-testid="venue-row">
                     <th scope="row" class="px-4 py-3 font-medium">{{ v.name }}</th>
-                    <td class="px-4 py-3">{{ typeLabel[v.type] }}</td>
-                    <td class="px-4 py-3">{{ v.address ?? '—' }}</td>
-                    <td class="px-4 py-3">{{ size(v) }}</td>
+                    <td data-label="Tipo" class="px-4 py-3">{{ typeLabel[v.type] }}</td>
+                    <td data-label="Dirección" class="px-4 py-3">{{ v.address ?? '—' }}</td>
+                    <td data-label="Medidas" class="px-4 py-3">{{ size(v) }}</td>
                     <td class="px-4 py-3">
                       <div class="flex flex-wrap justify-end gap-2">
                         <button
@@ -265,28 +288,14 @@ const meters = (text: string): number | null => {
       }
 
       @if (removing(); as target) {
-        <div
-          role="alertdialog"
-          aria-labelledby="remove-title"
-          aria-describedby="remove-text"
-          class="card mt-4 border-border-strong"
-        >
-          <p id="remove-title" class="font-semibold">¿Eliminar {{ target.name }}?</p>
-          <p id="remove-text" class="mt-1 text-sm text-text-muted">
-            No se puede deshacer. Si hay planos o eventos que usan este predio, no se elimina.
-          </p>
-          <div class="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              class="btn btn-danger"
-              [disabled]="busy()"
-              (click)="remove(target)"
-            >
-              Sí, eliminar
-            </button>
-            <button #cancel type="button" class="btn" (click)="removing.set(null)">Cancelar</button>
-          </div>
-        </div>
+        <app-confirm-dialog
+          [heading]="'¿Eliminar ' + target.name + '?'"
+          message="No se puede deshacer. Si hay planos o eventos que usan este predio, no se elimina."
+          confirmLabel="Sí, eliminar"
+          [busy]="busy()"
+          (confirmed)="remove(target)"
+          (cancelled)="removing.set(null)"
+        />
       }
     </div>
   `,
@@ -295,7 +304,6 @@ export class VenuesPage {
   private readonly repository = inject(VenueRepository);
   private readonly injector = inject(Injector);
   private readonly form = viewChild<ElementRef<HTMLFormElement>>('form');
-  private readonly cancel = viewChild<ElementRef<HTMLButtonElement>>('cancel');
   protected readonly session = inject(SessionStore);
 
   protected readonly types: readonly VenueType[] = ['FIXED', 'TEMPORARY'];
@@ -379,7 +387,6 @@ export class VenuesPage {
 
   protected askRemove(venue: VenueDto): void {
     this.removing.set(venue);
-    afterNextRender(() => this.cancel()?.nativeElement.focus(), { injector: this.injector });
   }
 
   protected remove(venue: VenueDto): void {

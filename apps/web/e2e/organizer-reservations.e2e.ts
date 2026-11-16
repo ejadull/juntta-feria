@@ -86,7 +86,7 @@ test('cancelling a hold asks for confirmation first', async ({ page }) => {
   const api = await seed(page);
   await page.goto('/organizador/reservas');
   await page.getByRole('button', { name: 'Cancelar del stand S1' }).click();
-  const dialog = page.getByRole('alertdialog', { name: '¿Cancelar la reserva?' });
+  const dialog = page.getByRole('dialog', { name: '¿Cancelar la reserva?' });
   await expect(dialog.getByRole('button', { name: 'No, volver' })).toBeFocused();
   expect(await seriousViolations(page)).toEqual([]);
   expect(last(api, '/cancel')).toBeUndefined();
@@ -118,7 +118,7 @@ test('a full refund frees the stand; a refused one explains why', async ({ page 
   await page.goto('/organizador/reservas');
   await page.getByRole('button', { name: 'Devolver pago del stand S3' }).click();
   await page.getByRole('button', { name: 'Sí, devolver' }).click();
-  await expect(page.getByRole('alertdialog').getByRole('alert')).toContainText('180 días');
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('180 días');
 
   api.refundProblem = null;
   await page.getByRole('button', { name: 'Sí, devolver' }).click();

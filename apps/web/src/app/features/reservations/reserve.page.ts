@@ -22,11 +22,13 @@ import { PublicCatalogRepository } from '../public-catalog/data/public-catalog.r
 import { standsOf, type StandView } from '../public-catalog/domain/stand-filters';
 import { ReservationsApi } from './data/reservations.api';
 import { friendly, type FriendlyError } from './reservation-errors';
-import { clock, TERMS_VERSION } from './reservation-status';
+import { clock, remainingInWords, TERMS_VERSION } from './reservation-status';
 
 const STAND_GONE = 'No encontramos ese stand en la feria. Volvé a explorar los stands.';
 const NOT_AVAILABLE = 'Este stand ya no está disponible para reservar.';
 const LOAD_FAILED = 'No pudimos cargar el stand. Probá de nuevo en unos minutos.';
+/** From here the hold gets a visible warning and one polite announcement. */
+const WARNING_MS = 2 * 60_000;
 const NOT_PAYABLE = 'Esta reserva ya no se puede pagar.';
 
 /**
@@ -78,7 +80,17 @@ const NOT_PAYABLE = 'Esta reserva ya no se puede pagar.';
                 <strong role="timer" data-testid="hold-clock">{{ clockText() }}</strong
                 >. Si no pagás a tiempo, se libera.
               </p>
-              <p class="sr-only" aria-live="polite">{{ announcement() }}</p>
+              @if (warning()) {
+                <p
+                  class="mt-3 rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm font-medium"
+                  data-testid="hold-warning"
+                >
+                  Quedan {{ remainingWords() }} para pagar. Después el stand se libera.
+                </p>
+              }
+              <p class="sr-only" aria-live="polite" data-testid="hold-announcement">
+                {{ announcement() }}
+              </p>
             }
             @if (checkout(); as c) {
               <div class="mt-4"><app-mercado-pago-wallet [checkout]="c" /></div>
@@ -206,12 +218,16 @@ export class ReservePage implements OnInit {
     return left !== null && left <= 0;
   });
   protected readonly clockText = computed(() => clock(this.remainingMs() ?? 0));
-  /** Announced politely once per minute, not every second. */
-  protected readonly announcement = computed(() => {
-    const minutes = Math.ceil((this.remainingMs() ?? 0) / 60_000);
-    if (minutes <= 0) return '';
-    return `Te quedan ${minutes} ${minutes === 1 ? 'minuto' : 'minutos'} para pagar.`;
+  /** Last two minutes: the banner shows and the live region speaks, once. */
+  protected readonly warning = computed(() => {
+    const left = this.remainingMs();
+    return left !== null && left > 0 && left <= WARNING_MS;
   });
+  protected readonly remainingWords = computed(() => remainingInWords(this.remainingMs() ?? 0));
+  /** Constant text while the warning lasts, so the polite region reads it once, not every second. */
+  protected readonly announcement = computed(() =>
+    this.warning() ? 'Quedan menos de 2 minutos para pagar tu stand.' : '',
+  );
   protected readonly price = formatArs;
 
   constructor() {

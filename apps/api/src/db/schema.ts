@@ -660,6 +660,49 @@ export const exhibitorDocuments = pgTable(
 );
 
 /**
+ * Photos of an exhibitor's stand, shown in the public stand dialog only when the exhibitor
+ * consented to a public profile. Same upload flow as documents: the row is PENDING until `complete`
+ * confirms the object by HEAD; `storage_key` never leaves the server.
+ */
+export const exhibitorPhotos = pgTable(
+  'exhibitor_photos',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    exhibitorId: uuid('exhibitor_id').notNull(),
+    status: text('status').notNull().default('PENDING'),
+    storageKey: text('storage_key').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    alt: text('alt'),
+    position: integer('position').notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique('exhibitor_photos_storage_key_unique').on(t.storageKey),
+    index('exhibitor_photos_exhibitor_idx').on(t.tenantId, t.exhibitorId),
+    foreignKey({
+      name: 'exhibitor_photos_exhibitor_fk',
+      columns: [t.tenantId, t.exhibitorId],
+      foreignColumns: [exhibitors.tenantId, exhibitors.id],
+    }).onDelete('restrict'),
+    check(
+      'exhibitor_photos_status_check',
+      sql`${t.status} IN ('PENDING', 'READY')`,
+    ),
+    check(
+      'exhibitor_photos_content_type_check',
+      sql`${t.contentType} IN ('image/jpeg', 'image/png', 'image/webp')`,
+    ),
+    check('exhibitor_photos_size_check', sql`${t.sizeBytes} > 0`),
+    check(
+      'exhibitor_photos_alt_check',
+      sql`${t.alt} IS NULL OR char_length(${t.alt}) BETWEEN 1 AND 120`,
+    ),
+  ],
+);
+
+/**
  * One-time invitation of an organization to a future exhibitor (EXH-04). Only a SHA-256 of the
  * token is stored; the link is shown once, when created. Public lookup goes through the
  * `exhibitor_invitation_lookup` SECURITY DEFINER function (the link carries no tenant).

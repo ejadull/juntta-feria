@@ -17,4 +17,21 @@ describe('App', () => {
     expect(host.querySelector('router-outlet')).not.toBeNull();
     expect(host.querySelector('h1')).toBeNull();
   });
+
+  it('starts with a skip link that moves focus to <main>', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const host = fixture.nativeElement as HTMLElement;
+    document.body.appendChild(host);
+    const main = document.createElement('main');
+    main.id = 'main';
+    document.body.appendChild(main);
+    const link = host.firstElementChild as HTMLAnchorElement;
+    expect(link.tagName).toBe('A');
+    expect(link.textContent?.trim()).toBe('Saltar al contenido');
+    link.click();
+    expect(document.activeElement).toBe(main);
+    host.remove();
+    main.remove();
+  });
 });

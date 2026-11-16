@@ -16,7 +16,12 @@ export interface MembershipDto {
 /** `POST /auth/google` and `POST /auth/refresh` (CORE-02, CORE-05): the refresh token only travels in a cookie. */
 export interface SessionDto {
   readonly accessToken: string;
-  readonly user: { readonly id: string; readonly email: string };
+  readonly user: {
+    readonly id: string;
+    readonly email: string;
+    /** Null until the account has a name (invitation, tenant creation or Google profile). */
+    readonly fullName?: string | null;
+  };
   readonly memberships: readonly MembershipDto[];
 }
 

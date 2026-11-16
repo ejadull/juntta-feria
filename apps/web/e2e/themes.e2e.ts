@@ -18,13 +18,22 @@ const PAGES: readonly (readonly [path: string, role: Role])[] = [
   ['/feriante/perfil', 'EXHIBITOR'],
   ['/feriante/documentos', 'EXHIBITOR'],
   ['/ingresar', 'EXHIBITOR'],
+  ['/privacidad', 'EXHIBITOR'],
+  ['/terminos', 'EXHIBITOR'],
   ['/organizador/layouts/demo-v1/editor', 'OWNER'],
   ['/ferias/feria-demo', 'EXHIBITOR'],
   ['/feriante/reservas/nueva?reserva=r1', 'EXHIBITOR'],
   ['/feriante/reservas/r2/pago/aprobado', 'EXHIBITOR'],
 ];
 
-for (const theme of ['clasico', 'corporativo', 'grafito', 'industrial', 'matcha'] as const) {
+for (const theme of [
+  'clasico',
+  'corporativo',
+  'grafito',
+  'industrial',
+  'matcha',
+  'cereza',
+] as const) {
   test(`the "${theme}" palette keeps every main page accessible`, async ({ page }) => {
     test.setTimeout(60_000); // one axe pass per page, in five palettes
     await page.addInitScript((value) => localStorage.setItem('juntta.theme', value), theme);
@@ -74,18 +83,21 @@ test('the theme pick list applies and remembers the chosen palette', async ({ pa
   await mockApi(page);
   await page.goto('/ferias');
   const themes = page.getByLabel('Tema de colores');
-  // Grafito (paleta 2) is the default.
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'grafito');
-  await expect(themes).toHaveValue('grafito');
+  await page.getByRole('button', { name: 'Abrir menú de cuenta' }).click();
+  // Industrial Neon is the default.
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'industrial');
+  await expect(themes).toHaveValue('industrial');
 
   await themes.selectOption({ label: 'Clásico' });
   await expect(page.locator('html')).not.toHaveAttribute('data-theme');
   await page.reload();
+  await page.getByRole('button', { name: 'Abrir menú de cuenta' }).click();
   await expect(themes).toHaveValue('clasico');
 
-  await themes.selectOption('industrial');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'industrial');
+  await themes.selectOption('grafito');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'grafito');
   await page.reload();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'industrial');
-  await expect(themes).toHaveValue('industrial');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'grafito');
+  await page.getByRole('button', { name: 'Abrir menú de cuenta' }).click();
+  await expect(themes).toHaveValue('grafito');
 });

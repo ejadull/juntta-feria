@@ -33,7 +33,15 @@ export class HttpPublicCatalogRepository extends PublicCatalogRepository {
         // Areas come without a label: name them by kind, as the editor does.
         features: dto.features.map((f) =>
           f.properties.kind === 'STAND'
-            ? f
+            ? {
+                ...f,
+                properties: {
+                  ...f.properties,
+                  exhibitor: f.properties.exhibitor
+                    ? { ...f.properties.exhibitor, photos: f.properties.exhibitor.photos ?? [] }
+                    : null,
+                },
+              }
             : {
                 ...f,
                 properties: {

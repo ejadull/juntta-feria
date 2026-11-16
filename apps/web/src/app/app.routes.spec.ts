@@ -37,6 +37,19 @@ async function open(
   return { harness, host, current, router: TestBed.inject(Router) };
 }
 
+describe('legal routes', () => {
+  it.each([
+    ['/privacidad', 'Política de Privacidad'],
+    ['/terminos', 'Términos y Condiciones'],
+  ])('%s is public, outside the shell, and titled', async (url, heading) => {
+    const { host, router } = await open(url);
+    expect(router.url).toBe(url);
+    expect(host.querySelector('h1')?.textContent).toContain(heading);
+    expect(host.querySelector('app-shell')).toBeNull();
+    expect(TestBed.inject(Title).getTitle()).toBe(`${heading} · Juntta Feria`);
+  });
+});
+
 describe('organizer routes (ORG-01)', () => {
   it('redirects the root to the Panel for staff (spec: "Raíz")', async () => {
     const { router, current } = await open('/', { as: 'ADMIN' });
@@ -205,8 +218,9 @@ describe('areas by role (PUB-UI-01)', () => {
   it('sends anonymous visitors to sign in and remembers where they were going (P01)', async () => {
     const { router, host } = await open('/feriante/reservas');
     expect(router.url).toBe('/ingresar?volver=%2Fferiante%2Freservas');
-    expect(host.querySelector('main h1')?.textContent).toContain('Entrá a tu cuenta');
-    expect(navItems(host)).toEqual(['Ferias']);
+    expect(host.querySelector('main h1')?.textContent).toContain('Te damos la bienvenida');
+    // Full-screen sign-in: outside the shell, so no sidebar.
+    expect(host.querySelector('aside')).toBeNull();
   });
 
   it('switches to the alternative "Corporativo" palette from the shell', async () => {
@@ -216,7 +230,7 @@ describe('areas by role (PUB-UI-01)', () => {
       select.value = value;
       select.dispatchEvent(new Event('change'));
     };
-    expect(select.value).toBe('grafito'); // default (paleta 2)
+    expect(select.value).toBe('industrial'); // default (Industrial Neon)
 
     choose('corporativo');
     await harness.fixture.whenStable();
@@ -247,10 +261,10 @@ describe('areas by role (PUB-UI-01)', () => {
     expect(navItems(host)).toEqual([
       'Panel',
       'Eventos',
-      'Predios',
-      'Editor de plano',
       'Reservas y cobros',
       'Expositores',
+      'Predios',
+      'Editor de plano',
       'Mercado Pago',
     ]);
     expect(host.textContent).not.toContain('Ver como');
@@ -262,7 +276,7 @@ describe('areas by role (PUB-UI-01)', () => {
   it('shows only the visitor navigation, and "Ingresar", to anonymous users', async () => {
     const { host } = await open('/ferias');
     expect(navItems(host)).toEqual(['Ferias']);
-    expect(host.querySelector('aside a[href="/ingresar"]')?.textContent).toContain('Ingresar');
+    expect(host.querySelector('header a[href="/ingresar"]')?.textContent).toContain('Ingresar');
   });
 
   it('sends an exhibitor away from the organizer area to the exhibitor home', async () => {

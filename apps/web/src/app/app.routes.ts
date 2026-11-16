@@ -14,6 +14,8 @@ import {
   HttpFileUploader,
   HttpOwnDocumentsRepository,
 } from './features/documents/data/http-documents.repository';
+import { ExhibitorPhotosRepository } from './features/exhibitor-profile/data/exhibitor-photos.repository';
+import { HttpExhibitorPhotosRepository } from './features/exhibitor-profile/data/http-exhibitor-photos.repository';
 import { ExhibitorProfileRepository } from './features/exhibitor-profile/data/exhibitor-profile.repository';
 import { HttpExhibitorProfileRepository } from './features/exhibitor-profile/data/http-exhibitor-profile.repository';
 import { CategoryRepository } from './features/exhibitors/data/category.repository';
@@ -64,6 +66,7 @@ const feriante = [
   { provide: CategoryRepository, useClass: HttpCategoryRepository },
   { provide: OwnDocumentsRepository, useClass: HttpOwnDocumentsRepository },
   { provide: FileUploader, useClass: HttpFileUploader },
+  { provide: ExhibitorPhotosRepository, useClass: HttpExhibitorPhotosRepository },
 ];
 /** P19 (PAY-04): one route per Mercado Pago `back_urls` entry (checkout.service.ts). */
 const checkoutReturns = (
@@ -83,6 +86,19 @@ const checkoutReturns = (
 export const routes: Routes = [
   // Each role lands on its own home; anonymous users on the public fairs.
   { path: '', pathMatch: 'full', redirectTo: () => AREA_HOME[inject(SessionStore).area()] },
+  // Full-screen sign-in, outside the app shell (no sidebar).
+  { path: 'ingresar', title: title('Ingresar'), loadComponent: login },
+  // Public legal pages, also outside the shell.
+  {
+    path: 'privacidad',
+    title: title('Política de Privacidad'),
+    loadComponent: () => import('./features/legal/privacy.page').then((m) => m.PrivacyPage),
+  },
+  {
+    path: 'terminos',
+    title: title('Términos y Condiciones'),
+    loadComponent: () => import('./features/legal/terms.page').then((m) => m.TermsPage),
+  },
   {
     path: '',
     loadComponent: () => import('./features/shell/app-shell').then((m) => m.AppShell),
@@ -210,7 +226,6 @@ export const routes: Routes = [
           { path: '**', title: title('Página no encontrada'), loadComponent: notFound },
         ],
       },
-      { path: 'ingresar', title: title('Ingresar'), loadComponent: login },
       {
         // The link EXH-04 invitations carry: `<web>/invitacion/<token>`.
         path: 'invitacion/:token',

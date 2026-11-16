@@ -1,5 +1,9 @@
 import { TestBed } from '@angular/core/testing';
+import { FileUploader } from '../documents/data/document.repository';
+import { InMemoryFileUploader } from '../documents/data/in-memory-documents.repository';
 import { CategoryRepository } from '../exhibitors/data/category.repository';
+import { ExhibitorPhotosRepository } from './data/exhibitor-photos.repository';
+import { InMemoryExhibitorPhotosRepository } from './data/in-memory-exhibitor-photos.repository';
 import { InMemoryCategoryRepository } from '../exhibitors/data/in-memory-category.repository';
 import { InMemoryExhibitorProfileRepository } from './data/in-memory-exhibitor-profile.repository';
 import {
@@ -34,6 +38,8 @@ async function render(
     providers: [
       { provide: ExhibitorProfileRepository, useValue: repo },
       { provide: CategoryRepository, useValue: categories },
+      { provide: ExhibitorPhotosRepository, useValue: new InMemoryExhibitorPhotosRepository() },
+      { provide: FileUploader, useValue: new InMemoryFileUploader() },
     ],
   });
   const fixture = TestBed.createComponent(ExhibitorProfilePage);

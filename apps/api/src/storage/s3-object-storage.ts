@@ -119,6 +119,7 @@ export class S3ObjectStorage implements ObjectStorage {
     fileName: string;
     contentType: string;
     expiresInSeconds: number;
+    inline?: boolean;
   }): Promise<string> {
     return getSignedUrl(
       this.signer,
@@ -126,7 +127,9 @@ export class S3ObjectStorage implements ObjectStorage {
         Bucket: this.bucket,
         Key: input.key,
         ResponseContentType: input.contentType,
-        ResponseContentDisposition: contentDisposition(input.fileName),
+        ResponseContentDisposition: input.inline
+          ? 'inline'
+          : contentDisposition(input.fileName),
       }),
       { expiresIn: input.expiresInSeconds },
     );

@@ -141,10 +141,16 @@ describe('public portal (PUB-01)', () => {
       areaM2: 9,
       standId: sale.stands.A1,
       price: { currency: 'ARS', valueCents: 1_000_000 },
-      exhibitor: { name: 'Telares Sur', category: 'Textiles' },
+      exhibitor: {
+        name: 'Telares Sur',
+        category: 'Textiles',
+        description: 'Tejidos artesanales',
+      },
     });
     // Taken by someone who did not consent: the stand is occupied, the name is not published.
     expect(stands.A2).toMatchObject({ status: 'OCCUPIED', exhibitor: null });
+    // The description travels under the same consent as the name: never for A2.
+    expect(JSON.stringify(stands.A2)).not.toContain('Tejidos');
     expect(stands.A3).toMatchObject({ status: 'AVAILABLE', exhibitor: null });
     // A hold shows as reserved and never names the holder, consent or not.
     expect(stands.A4).toMatchObject({

@@ -81,10 +81,10 @@ describe('PaymentAccountPage (P12, PAY-07)', () => {
     const { host, click, button, fixture } = await render(repo);
 
     await click('Desvincular');
-    expect(host.querySelector('[role="alertdialog"]')?.textContent).toContain('¿Desvincular');
+    expect(host.querySelector('dialog[open]')?.textContent).toContain('¿Desvincular');
     await click('Cancelar');
     expect(unlink).not.toHaveBeenCalled();
-    expect(host.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(host.querySelector('dialog[open]')).toBeNull();
 
     await click('Desvincular');
     repo.status = () =>

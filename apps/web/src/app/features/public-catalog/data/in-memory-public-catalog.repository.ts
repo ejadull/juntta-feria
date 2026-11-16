@@ -154,7 +154,14 @@ function demoMap(): PublicMapDto {
         status,
         sector: sector?.name ?? null,
         price: { currency: 'ARS', valueCents: sector?.priceCents ?? 0 },
-        exhibitor: exhibitor ? { name: exhibitor.name, category: exhibitor.category } : null,
+        exhibitor: exhibitor
+          ? {
+              name: exhibitor.name,
+              category: exhibitor.category,
+              description: exhibitor.description,
+              photos: [],
+            }
+          : null,
       },
     };
   });

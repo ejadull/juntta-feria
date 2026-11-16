@@ -24,6 +24,7 @@ const INVALID = 'Revisá las fechas y que el plano sea del predio elegido.';
   selector: 'app-events-page',
   imports: [RouterLink, EventForm],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styleUrl: '../../shared/responsive-table.css',
   template: `
     <div class="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-8">
       <header class="flex flex-wrap items-end justify-between gap-4">
@@ -90,10 +91,20 @@ const INVALID = 'Revisá las fechas y que el plano sea del predio elegido.';
             <p class="mt-1 text-sm text-text-muted">
               Creá el primero para cargar sectores y precios y publicarlo a los feriantes.
             </p>
+            @if (!formOpen()) {
+              <button type="button" class="btn btn-primary mt-3" (click)="formOpen.set(true)">
+                Crear el primer evento
+              </button>
+            }
           </div>
         } @else {
-          <div class="card mt-6 overflow-x-auto p-0">
-            <table class="w-full text-left text-sm">
+          <div
+            role="region"
+            tabindex="0"
+            aria-label="Eventos de la organización"
+            class="table-wrapper card mt-6 overflow-x-auto p-0"
+          >
+            <table class="stack-table w-full text-left text-sm">
               <caption class="sr-only">
                 Eventos de la organización
               </caption>
@@ -113,9 +124,11 @@ const INVALID = 'Revisá las fechas y que el plano sea del predio elegido.';
                         e.name
                       }}</a>
                     </th>
-                    <td class="px-4 py-3">{{ date(e.startsAt) }} – {{ date(e.endsAt) }}</td>
-                    <td class="px-4 py-3">{{ venueName(e) }}</td>
-                    <td class="px-4 py-3">
+                    <td data-label="Fechas" class="px-4 py-3">
+                      {{ date(e.startsAt) }} – {{ date(e.endsAt) }}
+                    </td>
+                    <td data-label="Predio" class="px-4 py-3">{{ venueName(e) }}</td>
+                    <td data-label="Estado" class="px-4 py-3">
                       <span
                         class="rounded-full px-2 py-0.5 text-xs"
                         [class]="status[e.status].tone"

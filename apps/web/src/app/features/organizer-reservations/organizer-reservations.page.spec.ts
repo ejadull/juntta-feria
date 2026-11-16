@@ -82,7 +82,7 @@ describe('OrganizerReservationsPage (P09, RES-01, PAY-06)', () => {
     const { host, click, rows, repo } = await render();
     const cancel = vi.spyOn(repo, 'cancel');
     await click('Cancelar');
-    const dialog = host.querySelector('[role="alertdialog"]')!;
+    const dialog = host.querySelector('dialog[open]')!;
     expect(plain(dialog.textContent)).toContain('¿Cancelar la reserva?');
     expect(plain(dialog.textContent)).toContain('Stand S1');
     expect(document.activeElement?.textContent?.trim()).toBe('No, volver');
@@ -90,7 +90,7 @@ describe('OrganizerReservationsPage (P09, RES-01, PAY-06)', () => {
 
     await click('Sí, cancelar reserva');
     expect(cancel).toHaveBeenCalledWith('r1');
-    expect(host.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(host.querySelector('dialog[open]')).toBeNull();
     expect(plain(host.querySelector('[role="status"]')?.textContent)).toContain(
       'Reserva cancelada',
     );
@@ -106,7 +106,7 @@ describe('OrganizerReservationsPage (P09, RES-01, PAY-06)', () => {
     input.dispatchEvent(new Event('input'));
     await click('Sí, devolver');
     expect(refund).not.toHaveBeenCalled();
-    expect(host.querySelector('[role="alertdialog"] [role="alert"]')?.textContent).toContain(
+    expect(host.querySelector('dialog[open] [role="alert"]')?.textContent).toContain(
       'no puede superar',
     );
 
@@ -144,7 +144,7 @@ describe('OrganizerReservationsPage (P09, RES-01, PAY-06)', () => {
     await click('Devolver pago');
     await click('Sí, devolver');
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('180 días');
-    expect(host.querySelector('[role="alertdialog"]')).not.toBeNull();
+    expect(host.querySelector('dialog[open]')).not.toBeNull();
   });
 
   it('lets an operator release holds but not touch money or see incidents', async () => {

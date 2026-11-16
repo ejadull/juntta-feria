@@ -1,17 +1,8 @@
-import {
-  afterNextRender,
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  ElementRef,
-  inject,
-  Injector,
-  signal,
-  viewChild,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { catchError, forkJoin, of } from 'rxjs';
 import { problemOf } from '../../shared/auth/problem';
 import { SessionStore } from '../../shared/auth/session.store';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import { formatArs } from '../../shared/money';
 import type { ReservationStatus } from '../checkout-return/data/reservation-payment.repository';
 import { ExportCsvButton } from '../reports/ui/export-csv-button';
@@ -87,8 +78,9 @@ function parsePesos(text: string): number | null {
  */
 @Component({
   selector: 'app-organizer-reservations-page',
-  imports: [ExportCsvButton],
+  imports: [ConfirmDialog, ExportCsvButton],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styleUrl: '../../shared/responsive-table.css',
   template: `
     <div class="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
       <header class="flex flex-wrap items-end justify-between gap-4">
@@ -178,10 +170,27 @@ function parsePesos(text: string): number | null {
                       : 'Ninguna reserva con este estado'
                   }}
                 </p>
+                <p class="mt-1 text-sm text-text-muted">
+                  {{
+                    all.length === 0
+                      ? 'Cuando un feriante reserve un stand, aparece acá con su vencimiento y su pago.'
+                      : 'Probá con otro estado para ver el resto de las reservas.'
+                  }}
+                </p>
+                @if (all.length > 0) {
+                  <button type="button" class="btn mt-3" (click)="filter.set(null)">
+                    Ver todas
+                  </button>
+                }
               </div>
             } @else {
-              <div class="card mt-4 overflow-x-auto p-0">
-                <table class="w-full min-w-[44rem] text-left text-sm">
+              <div
+                role="region"
+                tabindex="0"
+                aria-label="Reservas del evento"
+                class="table-wrapper card mt-4 overflow-x-auto p-0"
+              >
+                <table class="stack-table w-full min-w-[44rem] text-left text-sm">
                   <caption class="sr-only">
                     Reservas del evento
                     {{
@@ -205,25 +214,27 @@ function parsePesos(text: string): number | null {
                         <th scope="row" class="px-4 py-3 font-semibold">
                           {{ row.reservation.stand.code }}
                         </th>
-                        <td class="px-4 py-3">
+                        <td data-label="Feriante" class="px-4 py-3">
                           <p class="font-medium">{{ row.reservation.exhibitor.tradeName }}</p>
                           <p class="break-all text-text-muted">
                             {{ row.reservation.exhibitor.email }}
                           </p>
                         </td>
-                        <td class="px-4 py-3">{{ price(row.reservation.amount.valueCents) }}</td>
-                        <td class="px-4 py-3">
+                        <td data-label="Monto" class="px-4 py-3">
+                          {{ price(row.reservation.amount.valueCents) }}
+                        </td>
+                        <td data-label="Estado" class="px-4 py-3">
                           <span aria-hidden="true">{{ icon[row.reservation.status] }}</span>
                           {{ row.status }}
                         </td>
-                        <td class="px-4 py-3">{{ row.when }}</td>
-                        <td class="px-4 py-3">{{ row.payment }}</td>
+                        <td data-label="Vencimiento o fecha" class="px-4 py-3">{{ row.when }}</td>
+                        <td data-label="Pago" class="px-4 py-3">{{ row.payment }}</td>
                         <td class="px-4 py-3">
                           @if (row.action; as kind) {
                             <button
                               type="button"
                               class="btn btn-danger"
-                              [disabled]="busy() || pending() !== null"
+                              [disabled]="busy()"
                               [attr.aria-label]="
                                 kindLabel[kind] + ' del stand ' + row.reservation.stand.code
                               "
@@ -250,15 +261,16 @@ function parsePesos(text: string): number | null {
       }
 
       @if (pending(); as p) {
-        <section
-          role="alertdialog"
-          aria-labelledby="confirm-title"
-          aria-describedby="confirm-text"
-          class="card mt-6 border-border-strong"
+        <app-confirm-dialog
+          [heading]="titles[p.kind]"
+          [message]="explanations[p.kind]"
+          [confirmLabel]="confirms[p.kind]"
+          cancelLabel="No, volver"
+          [busy]="busy()"
+          (confirmed)="confirm()"
+          (cancelled)="close()"
         >
-          <h2 id="confirm-title" class="font-semibold">{{ titles[p.kind] }}</h2>
-          <p class="mt-1 text-sm">{{ p.label }}</p>
-          <p id="confirm-text" class="mt-1 text-sm text-text-muted">{{ explanations[p.kind] }}</p>
+          <p class="mt-2 text-sm font-medium">{{ p.label }}</p>
           @if (p.partialAllowed) {
             <div class="mt-3 flex flex-col gap-1">
               <label for="amount" class="text-sm font-medium">
@@ -278,15 +290,7 @@ function parsePesos(text: string): number | null {
           @if (actionFailure(); as message) {
             <p role="alert" class="mt-3 text-sm text-danger">{{ message }}</p>
           }
-          <div class="mt-3 flex flex-wrap gap-2">
-            <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="confirm()">
-              {{ confirms[p.kind] }}
-            </button>
-            <button #dismiss type="button" class="btn" [disabled]="busy()" (click)="close()">
-              No, volver
-            </button>
-          </div>
-        </section>
+        </app-confirm-dialog>
       }
 
       <section class="mt-10" aria-labelledby="incidents-heading">
@@ -301,7 +305,10 @@ function parsePesos(text: string): number | null {
               No pudimos cargar las incidencias. Probá con Actualizar.
             </p>
           } @else if (found.length === 0) {
-            <p class="mt-2 text-sm text-text-muted">No hay incidencias de pago. Todo conciliado.</p>
+            <p class="mt-2 text-sm text-text-muted">
+              No hay incidencias de pago. Todo conciliado. Si Mercado Pago avisa de un cobro que no
+              podemos asociar a una reserva, lo vas a ver acá.
+            </p>
           } @else {
             <ul class="mt-3 flex flex-col gap-3">
               @for (item of found; track item.id) {
@@ -321,7 +328,7 @@ function parsePesos(text: string): number | null {
                     <button
                       type="button"
                       class="btn btn-danger"
-                      [disabled]="busy() || pending() !== null"
+                      [disabled]="busy()"
                       [attr.aria-label]="incidentAction(item)"
                       (click)="askIncident(item)"
                     >
@@ -340,8 +347,6 @@ function parsePesos(text: string): number | null {
 export class OrganizerReservationsPage {
   private readonly repository = inject(OrganizerReservationsRepository);
   private readonly session = inject(SessionStore);
-  private readonly injector = inject(Injector);
-  private readonly dismiss = viewChild<ElementRef<HTMLButtonElement>>('dismiss');
 
   protected readonly price = formatArs;
   protected readonly icon = STATUS_ICON;
@@ -513,8 +518,6 @@ export class OrganizerReservationsPage {
     this.amount.set('');
     this.actionFailure.set(null);
     this.pending.set(pending);
-    // The safe choice gets the focus, as in a native confirm.
-    afterNextRender(() => this.dismiss()?.nativeElement.focus(), { injector: this.injector });
   }
 
   private amountCents(pending: Pending): number | null | 'invalid' | 'too-high' {

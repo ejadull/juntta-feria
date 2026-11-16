@@ -237,6 +237,21 @@ describe('POST /auth/google (CORE-05)', () => {
     expect(await subOf('pendiente@google.test')).toBe('sub-pendiente');
   });
 
+  it('fills a missing full name once from Google and returns it in the session', async () => {
+    const first = await googleLogin({
+      sub: 'sub-pendiente',
+      email: 'pendiente@google.test',
+      name: '  Paula Pendiente ',
+    });
+    expect(first.json().user.fullName).toBe('Paula Pendiente');
+    const again = await googleLogin({
+      sub: 'sub-pendiente',
+      email: 'pendiente@google.test',
+      name: 'Otro Nombre',
+    });
+    expect(again.json().user.fullName).toBe('Paula Pendiente'); // never overwritten
+  });
+
   it('never matches a pending account by an unverified email', async () => {
     const res = await googleLogin({
       sub: 'sub-unverified',

@@ -34,7 +34,20 @@ export interface StandProperties {
   readonly sector: string | null;
   readonly price: { readonly currency: 'ARS'; readonly valueCents: number };
   /** Only exhibitors who consented to a public profile (AC-11). */
-  readonly exhibitor: { readonly name: string; readonly category: string } | null;
+  readonly exhibitor: {
+    readonly name: string;
+    readonly category: string;
+    /** Same consent as the name; null when the exhibitor wrote none. */
+    readonly description: string | null;
+    /** Stand photos in display order; only present under the same consent. Empty when none. */
+    readonly photos: readonly StandPhoto[];
+  } | null;
+}
+
+/** `url` is a short-lived signed link: never cache it beyond the page. */
+export interface StandPhoto {
+  readonly url: string;
+  readonly alt: string;
 }
 
 export interface AreaProperties {

@@ -298,11 +298,26 @@ Si la API recibe tráfico directo (no sólo a través de Hosting), dejala sin ac
     ],
     "headers": [
       { "source": "**/*.@(js|css|woff2|png|svg)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
-      { "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+      { "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+      {
+        "source": "**",
+        "headers": [
+          { "key": "Content-Security-Policy", "value": "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'" },
+          { "key": "X-Frame-Options", "value": "DENY" },
+          { "key": "X-Content-Type-Options", "value": "nosniff" },
+          { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+          { "key": "Cross-Origin-Opener-Policy", "value": "same-origin-allow-popups" },
+          { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), focus-without-user-activation=()" }
+        ]
+      }
     ]
   }
 }
 ```
+
+**Seguridad (CSP):** el build de producción genera la parte de scripts de la CSP (`security.autoCsp` en [`angular.json`](apps/web/angular.json)): un `<meta http-equiv="Content-Security-Policy">` con `script-src 'strict-dynamic'` y el hash de cada script inline de `index.html`. Por eso, si cambiás ese script del tema, el hash se recalcula solo en el próximo build. Los scripts que la app carga después (Google Identity Services, SDK de Mercado Pago) quedan permitidos por `'strict-dynamic'`. Lo que un `<meta>` no puede expresar va en los encabezados de arriba: `frame-ancestors` (nadie puede embeber la app), `form-action`, `nosniff`, `Referrer-Policy` y `Permissions-Policy`. `Cross-Origin-Opener-Policy` va en `same-origin-allow-popups` porque el ingreso con Google usa un popup. Cuando el navegador aplica dos CSP (meta y encabezado), aplica ambas: una no afloja a la otra.
+- **Verificar después del primer deploy:** abrí la consola del navegador en `/ingresar`, ingresá con Google y hacé un pago de prueba; no tiene que aparecer ningún error "Refused to …".
+- **Por hacer:** Trusted Types (`require-trusted-types-for 'script'`) y un endpoint de reportes (`report-to`). Antes de aplicar Trusted Types, hay que probarlo en modo report-only con Google y Mercado Pago.
 
 - La web llama a `/api/v1/...` con rutas relativas, y en producción el rewrite las manda a Cloud Run, así que no hace falta configurar nada en el build.
 - Las respuestas públicas de la API (`Cache-Control: public, max-age=60`, el mapa 15 s) quedan además en el CDN de Hosting, lo que baja la carga sobre el límite por IP.

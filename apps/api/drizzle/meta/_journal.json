@@ -148,6 +148,13 @@
       "when": 1794544800000,
       "tag": "0020_exhibitor_categories_documents",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794793444191,
+      "tag": "0021_exhibitor_photos",
+      "breakpoints": true
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { ConfirmDialog } from '../../../shared/confirm-dialog';
 import {
   afterNextRender,
   ChangeDetectionStrategy,
@@ -31,6 +32,7 @@ interface Parsed {
 /** "Sectores" tab (ADR 0002): sectors belong to the event; its stands point at them. */
 @Component({
   selector: 'app-sectors-panel',
+  imports: [ConfirmDialog],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section aria-labelledby="sectors-title">
@@ -45,37 +47,41 @@ interface Parsed {
         novalidate
         (submit)="create($event)"
       >
-        <label class="grid gap-1 text-sm">
-          <span>Nombre del sector</span>
-          <input
-            class="field"
-            type="text"
-            autocomplete="off"
-            [attr.aria-invalid]="errors().name ? 'true' : null"
-            [attr.aria-describedby]="errors().name ? 'sector-name-error' : null"
-            [value]="name()"
-            (input)="name.set(valueOf($event))"
-          />
+        <div class="grid gap-1 text-sm">
+          <label class="grid gap-1">
+            <span>Nombre del sector</span>
+            <input
+              class="field"
+              type="text"
+              autocomplete="off"
+              [attr.aria-invalid]="errors().name ? 'true' : null"
+              [attr.aria-describedby]="errors().name ? 'sector-name-error' : null"
+              [value]="name()"
+              (input)="name.set(valueOf($event))"
+            />
+          </label>
           @if (errors().name; as message) {
             <span id="sector-name-error" class="text-danger">{{ message }}</span>
           }
-        </label>
-        <label class="grid gap-1 text-sm">
-          <span>Orden</span>
-          <input
-            class="field"
-            type="text"
-            inputmode="numeric"
-            autocomplete="off"
-            [attr.aria-invalid]="errors().order ? 'true' : null"
-            [attr.aria-describedby]="errors().order ? 'sector-order-error' : null"
-            [value]="order()"
-            (input)="order.set(valueOf($event))"
-          />
+        </div>
+        <div class="grid gap-1 text-sm">
+          <label class="grid gap-1">
+            <span>Orden</span>
+            <input
+              class="field"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              [attr.aria-invalid]="errors().order ? 'true' : null"
+              [attr.aria-describedby]="errors().order ? 'sector-order-error' : null"
+              [value]="order()"
+              (input)="order.set(valueOf($event))"
+            />
+          </label>
           @if (errors().order; as message) {
             <span id="sector-order-error" class="text-danger">{{ message }}</span>
           }
-        </label>
+        </div>
         <button type="submit" class="btn btn-primary sm:mt-6" [disabled]="busy()">
           Agregar sector
         </button>
@@ -90,7 +96,8 @@ interface Parsed {
       } @else if (list(); as rows) {
         @if (rows.length === 0) {
           <p class="mt-4 text-sm text-text-muted" data-testid="no-sectors">
-            Todavía no hay sectores. Los stands pueden quedar sin sector.
+            Todavía no hay sectores. Los stands pueden quedar sin sector; agregá uno arriba para
+            agruparlos (por ejemplo, Comida o Ropa).
           </p>
         } @else {
           <ul class="mt-4 divide-y divide-border" aria-label="Sectores del evento">
@@ -160,30 +167,14 @@ interface Parsed {
       }
 
       @if (removing(); as target) {
-        <div
-          role="alertdialog"
-          aria-labelledby="sector-remove-title"
-          aria-describedby="sector-remove-text"
-          class="mt-4 rounded-lg border border-border-strong p-4"
-        >
-          <p id="sector-remove-title" class="font-semibold">
-            ¿Eliminar el sector {{ target.name }}?
-          </p>
-          <p id="sector-remove-text" class="mt-1 text-sm text-text-muted">
-            Sus stands no se borran: quedan sin sector.
-          </p>
-          <div class="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              class="btn btn-danger"
-              [disabled]="busy()"
-              (click)="remove(target)"
-            >
-              Sí, eliminar
-            </button>
-            <button #cancel type="button" class="btn" (click)="removing.set(null)">Cancelar</button>
-          </div>
-        </div>
+        <app-confirm-dialog
+          [heading]="'¿Eliminar el sector ' + target.name + '?'"
+          message="Sus stands no se borran: quedan sin sector."
+          confirmLabel="Sí, eliminar"
+          [busy]="busy()"
+          (confirmed)="remove(target)"
+          (cancelled)="removing.set(null)"
+        />
       }
     </section>
   `,
@@ -194,7 +185,6 @@ export class SectorsPanel {
   private readonly repository = inject(EventInventoryRepository);
   private readonly injector = inject(Injector);
   private readonly form = viewChild<ElementRef<HTMLFormElement>>('form');
-  private readonly cancel = viewChild<ElementRef<HTMLButtonElement>>('cancel');
   private readonly editField = viewChild<ElementRef<HTMLInputElement>>('editField');
   protected readonly valueOf = valueOf;
 
@@ -247,7 +237,6 @@ export class SectorsPanel {
 
   protected askRemove(sector: SectorDto): void {
     this.removing.set(sector);
-    afterNextRender(() => this.cancel()?.nativeElement.focus(), { injector: this.injector });
   }
 
   protected remove(sector: SectorDto): void {

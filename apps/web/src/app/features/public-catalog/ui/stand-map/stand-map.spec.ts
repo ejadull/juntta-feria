@@ -19,7 +19,10 @@ const stand = (code: string, x: number, sector: string, status: PublicStandStatu
     status,
     sector,
     price: { currency: 'ARS', valueCents: 10_000_000 },
-    exhibitor: status === 'OCCUPIED' ? { name: 'Lanas del Limay', category: 'Textil' } : null,
+    exhibitor:
+      status === 'OCCUPIED'
+        ? { name: 'Lanas del Limay', category: 'Textil', description: null, photos: [] }
+        : null,
   },
 });
 

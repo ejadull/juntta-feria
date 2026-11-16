@@ -1,13 +1,5 @@
-import {
-  afterNextRender,
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  inject,
-  Injector,
-  signal,
-  viewChild,
-} from '@angular/core';
+import { ConfirmDialog } from '../../shared/confirm-dialog';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { EXTERNAL_NAVIGATION } from '../../shared/external-navigation';
 import {
   PaymentAccountRepository,
@@ -33,6 +25,7 @@ const UNLINK_FAILED = 'No pudimos desvincular la cuenta. Probá de nuevo.';
  */
 @Component({
   selector: 'app-payment-account-page',
+  imports: [ConfirmDialog],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-3xl px-4 py-6 sm:px-8 sm:py-8">
@@ -106,7 +99,7 @@ const UNLINK_FAILED = 'No pudimos desvincular la cuenta. Probá de nuevo.';
               <button
                 type="button"
                 class="btn btn-danger"
-                [disabled]="busy() || confirming()"
+                [disabled]="busy()"
                 (click)="askUnlink()"
               >
                 Desvincular
@@ -115,25 +108,14 @@ const UNLINK_FAILED = 'No pudimos desvincular la cuenta. Probá de nuevo.';
           </div>
 
           @if (confirming()) {
-            <div
-              role="alertdialog"
-              aria-labelledby="unlink-title"
-              aria-describedby="unlink-text"
-              class="mt-4 rounded-lg border border-border-strong p-4"
-            >
-              <p id="unlink-title" class="font-semibold">¿Desvincular la cuenta?</p>
-              <p id="unlink-text" class="mt-1 text-sm text-text-muted">
-                Las reservas nuevas no se van a poder pagar hasta que vincules una cuenta otra vez.
-              </p>
-              <div class="mt-3 flex flex-wrap gap-2">
-                <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="unlink()">
-                  Sí, desvincular
-                </button>
-                <button #cancel type="button" class="btn" (click)="confirming.set(false)">
-                  Cancelar
-                </button>
-              </div>
-            </div>
+            <app-confirm-dialog
+              heading="¿Desvincular la cuenta?"
+              message="Las reservas nuevas no se van a poder pagar hasta que vincules una cuenta otra vez."
+              confirmLabel="Sí, desvincular"
+              [busy]="busy()"
+              (confirmed)="unlink()"
+              (cancelled)="confirming.set(false)"
+            />
           }
         </section>
       }
@@ -143,8 +125,6 @@ const UNLINK_FAILED = 'No pudimos desvincular la cuenta. Probá de nuevo.';
 export class PaymentAccountPage {
   private readonly repository = inject(PaymentAccountRepository);
   private readonly navigate = inject(EXTERNAL_NAVIGATION);
-  private readonly injector = inject(Injector);
-  private readonly cancel = viewChild<ElementRef<HTMLButtonElement>>('cancel');
 
   protected readonly status = STATUS;
   protected readonly environment = ENVIRONMENT;
@@ -171,8 +151,6 @@ export class PaymentAccountPage {
 
   protected askUnlink(): void {
     this.confirming.set(true);
-    // The safe choice gets the focus, as in a native confirm.
-    afterNextRender(() => this.cancel()?.nativeElement.focus(), { injector: this.injector });
   }
 
   protected unlink(): void {

@@ -1,3 +1,4 @@
+import { ConfirmDialog } from '../../shared/confirm-dialog';
 import {
   afterNextRender,
   ChangeDetectionStrategy,
@@ -8,7 +9,6 @@ import {
   input,
   OnInit,
   signal,
-  viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { catchError, forkJoin, of } from 'rxjs';
@@ -66,7 +66,7 @@ export function issueText(issue: ProblemIssue): string {
 /** EVT-01 (organizer): one event with its data, sectors and priced stands, and "Publicar". */
 @Component({
   selector: 'app-event-detail-page',
-  imports: [RouterLink, EventForm, SectorsPanel, StandsPanel],
+  imports: [ConfirmDialog, RouterLink, EventForm, SectorsPanel, StandsPanel],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-8">
@@ -132,31 +132,15 @@ export function issueText(issue: ProblemIssue): string {
             }
 
             @if (confirming()) {
-              <div
-                role="alertdialog"
-                aria-labelledby="publish-confirm-title"
-                aria-describedby="publish-confirm-text"
-                class="mt-4 rounded-lg border border-border-strong p-4"
-              >
-                <p id="publish-confirm-title" class="font-semibold">¿Publicar el evento?</p>
-                <p id="publish-confirm-text" class="mt-1 text-sm text-text-muted">
-                  Los feriantes van a poder verlo y reservar stands. Después ya no se editan sus
-                  datos; los precios sí.
-                </p>
-                <div class="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    class="btn btn-primary"
-                    [disabled]="busy()"
-                    (click)="publish()"
-                  >
-                    Sí, publicar
-                  </button>
-                  <button #cancel type="button" class="btn" (click)="confirming.set(false)">
-                    Cancelar
-                  </button>
-                </div>
-              </div>
+              <app-confirm-dialog
+                heading="¿Publicar el evento?"
+                message="Los feriantes van a poder verlo y reservar stands. Después ya no se editan sus datos; los precios sí."
+                confirmLabel="Sí, publicar"
+                tone="primary"
+                [busy]="busy()"
+                (confirmed)="publish()"
+                (cancelled)="confirming.set(false)"
+              />
             }
 
             @if (publishIssues().length > 0) {
@@ -312,7 +296,6 @@ export class EventDetailPage implements OnInit {
   private readonly templates = inject(LayoutTemplatesRepository);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
-  private readonly cancel = viewChild<ElementRef<HTMLButtonElement>>('cancel');
   protected readonly session = inject(SessionStore);
 
   protected readonly status = EVENT_STATUS;
@@ -407,7 +390,6 @@ export class EventDetailPage implements OnInit {
     this.publishError.set(null);
     this.notice.set('');
     this.confirming.set(true);
-    afterNextRender(() => this.cancel()?.nativeElement.focus(), { injector: this.injector });
   }
 
   protected publish(): void {

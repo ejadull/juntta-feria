@@ -5,12 +5,13 @@ import { forkJoin, map, startWith, switchMap } from 'rxjs';
 import { PublicCatalogRepository, STATUS_LABEL } from './data/public-catalog.repository';
 import { standsOf } from './domain/stand-filters';
 import { dataOf, errorOf, toLoaded } from './ui/loaded';
+import { StandDetailDialog } from './ui/stand-detail-dialog';
 import { StandMap } from './ui/stand-map/stand-map';
 
 /** P14 visitante: public map + directory (INV-08/AC-11: only consented public profiles). */
 @Component({
   selector: 'app-fair-map-page',
-  imports: [RouterLink, StandMap],
+  imports: [RouterLink, StandMap, StandDetailDialog],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 lg:px-8">
@@ -35,7 +36,7 @@ import { StandMap } from './ui/stand-map/stand-map';
             class="h-[26rem] rounded-xl border border-border lg:h-[34rem]"
             [map]="d.map"
             [selectedId]="selectedId()"
-            (select)="selectedId.set($event)"
+            (select)="onSelect($event)"
           />
           <section class="stand-card card self-start" aria-live="polite">
             @if (selected(); as s) {
@@ -85,6 +86,9 @@ import { StandMap } from './ui/stand-map/stand-map';
             }
           </ul>
         </section>
+        @if (dialogStand(); as open) {
+          <app-stand-detail-dialog [stand]="open" [plan]="stands()" (closed)="dialogId.set(null)" />
+        }
       } @else {
         <p class="text-text-muted" aria-live="polite">Cargando mapa…</p>
       }
@@ -129,6 +133,17 @@ export class FairMapPage {
   protected readonly selected = computed(
     () => this.stands().find((s) => s.id === this.selectedId()) ?? null,
   );
+
+  /** Stand whose modal is open; only stands with a public exhibitor profile open one. */
+  protected readonly dialogId = signal<string | null>(null);
+  protected readonly dialogStand = computed(
+    () => this.stands().find((s) => s.id === this.dialogId()) ?? null,
+  );
+
+  protected onSelect(id: string): void {
+    this.selectedId.set(id);
+    if (this.stands().find((s) => s.id === id)?.exhibitor) this.dialogId.set(id);
+  }
 
   protected locate(code: string): void {
     this.selectedId.set(this.stands().find((s) => s.code === code)?.id ?? null);

@@ -30,7 +30,12 @@ export interface MembershipView {
 }
 
 export interface Profile {
-  readonly user: { readonly id: string; readonly email: string };
+  readonly user: {
+    readonly id: string;
+    readonly email: string;
+    /** Shown in the web greeting; null until set (invitation, tenant creation or Google). */
+    readonly fullName: string | null;
+  };
   readonly memberships: readonly MembershipView[];
 }
 
@@ -123,6 +128,15 @@ export class AuthService {
       user = byEmail;
     }
     if (user.status !== 'ACTIVE') return { status: 'inactive' };
+    const googleName = identity.name?.trim().slice(0, 120);
+    if (!user.fullName && googleName) {
+      // Fills the name once from the Google profile; never overwrites one the account already has.
+      await db
+        .update(users)
+        .set({ fullName: googleName })
+        .where(and(eq(users.id, user.id), isNull(users.fullName)));
+      user = { ...user, fullName: googleName };
+    }
     if (!user.googleSub) {
       try {
         await db
@@ -200,7 +214,7 @@ export class AuthService {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (!user || user.status !== 'ACTIVE') return null;
     return {
-      user: { id: user.id, email: user.email },
+      user: { id: user.id, email: user.email, fullName: user.fullName },
       memberships: await this.membershipsOf(db, user.id),
       platformAdmin: user.isPlatformAdmin,
     };
@@ -208,7 +222,7 @@ export class AuthService {
 
   private async session(
     db: Database | Transaction,
-    user: { id: string; email: string },
+    user: { id: string; email: string; fullName: string | null },
     refreshToken: string,
   ): Promise<Session> {
     const { token, expiresIn } = await this.access.sign(user.id);
@@ -216,7 +230,7 @@ export class AuthService {
       accessToken: token,
       expiresIn,
       refreshToken,
-      user: { id: user.id, email: user.email },
+      user: { id: user.id, email: user.email, fullName: user.fullName },
       memberships: await this.membershipsOf(db, user.id),
     };
   }

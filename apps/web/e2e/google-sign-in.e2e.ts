@@ -49,7 +49,7 @@ test('tells a Google user without an account to ask the organizer for an invitat
 test('says Google sign-in is unavailable when the API has no client id', async ({ page }) => {
   await mockApi(page, { signedIn: false, googleClientId: null });
   await page.goto('/ingresar');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Entrá a tu cuenta');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Te damos la bienvenida');
   await expect(page.getByRole('group', { name: 'Ingresar con Google' })).toHaveCount(0);
   await expect(page.getByRole('alert')).toContainText('no está disponible');
   expect(await seriousViolations(page)).toEqual([]);

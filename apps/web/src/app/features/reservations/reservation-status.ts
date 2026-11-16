@@ -43,9 +43,44 @@ export function statusText(r: ReservationDto, now: number): string {
   return STATUS_LABEL[r.status];
 }
 
-/** "mm:ss" left until `deadline`, never negative. */
+/** Seconds left, rounded up and never negative. */
+function secondsLeft(remainingMs: number): number {
+  return Math.max(0, Math.ceil(remainingMs / 1000));
+}
+
+interface DurationFormatter {
+  format(duration: { minutes: number; seconds: number }): string;
+}
+type DurationFormatCtor = new (
+  locale: string,
+  options: Record<string, string>,
+) => DurationFormatter;
+
+/** Intl.DurationFormat is Baseline since 2025 but missing from older runtimes and TS libs. */
+function durationFormat(options: Record<string, string>): DurationFormatter | null {
+  const Ctor = (Intl as unknown as { DurationFormat?: DurationFormatCtor }).DurationFormat;
+  return Ctor ? new Ctor('es-AR', options) : null;
+}
+
+/** "mm:ss" left until the deadline, never negative. */
 export function clock(remainingMs: number): string {
-  const total = Math.max(0, Math.ceil(remainingMs / 1000));
-  const mm = String(Math.floor(total / 60)).padStart(2, '0');
-  return `${mm}:${String(total % 60).padStart(2, '0')}`;
+  const total = secondsLeft(remainingMs);
+  const [minutes, seconds] = [Math.floor(total / 60), total % 60];
+  const native = durationFormat({ style: 'digital', hoursDisplay: 'auto', minutes: '2-digit' });
+  if (native) return native.format({ minutes, seconds });
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+/** "1 minuto y 45 segundos": the time left in words, for the warning text. */
+export function remainingInWords(remainingMs: number): string {
+  const total = secondsLeft(remainingMs);
+  const [minutes, seconds] = [Math.floor(total / 60), total % 60];
+  const native = durationFormat({ style: 'long' });
+  if (native) return native.format({ minutes, seconds });
+  const unit = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const parts = [
+    ...(minutes > 0 ? [unit(minutes, 'minuto', 'minutos')] : []),
+    ...(seconds > 0 || minutes === 0 ? [unit(seconds, 'segundo', 'segundos')] : []),
+  ];
+  return parts.join(' y ');
 }

@@ -278,6 +278,13 @@ const PUBLIC_EXHIBITORS: PublicExhibitor[] = [
   },
 ];
 
+/** A 4x3 flat SVG standing in for a signed photo URL (no network in the e2e). */
+const PHOTO_DATA_URI =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="lightgray"/></svg>',
+  );
+
 /** `GET /public/events/:slug/map`: S1 occupied by a public profile, S2 free, S3 blocked, one aisle. */
 const publicMap = (slug: string) => {
   const standProps = (n: number, status: string, exhibitor: unknown = null) => ({
@@ -303,7 +310,12 @@ const publicMap = (slug: string) => {
     features: [
       feature(
         1,
-        standProps(1, 'OCCUPIED', { name: 'Lanas del Limay', category: 'Textil de autor' }),
+        standProps(1, 'OCCUPIED', {
+          name: 'Lanas del Limay',
+          category: 'Textil de autor',
+          description: 'Hilados y tejidos con lana de oveja de la meseta.',
+          photos: [{ url: PHOTO_DATA_URI, alt: 'Telar con lanas teñidas a mano' }],
+        }),
       ),
       feature(5, standProps(2, 'AVAILABLE')),
       feature(9, standProps(3, 'BLOCKED')),
@@ -793,6 +805,7 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
         201,
       );
     }
+    if (path === '/exhibitors/me/photos') return json(route, []);
     if (path === '/exhibitors/me/documents') return json(route, api.documents);
     const own = /^\/exhibitors\/me\/documents\/([^/]+)(\/complete|\/download)?$/.exec(path);
     if (own) {

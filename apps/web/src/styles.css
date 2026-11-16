@@ -52,6 +52,15 @@
 }
 
 /*
+ * Browser UI (form controls, scrollbars, canvas) follows the palette: light everywhere except
+ * Grafito (declared below). Cereza's and Industrial's dark navigation islands set their own.
+ * shared/theme.ts and index.html keep <meta name="color-scheme"> and "theme-color" in step.
+ */
+:root {
+  color-scheme: light;
+}
+
+/*
  * Alternative theme "Corporativo" (data-theme on <html>, chosen in the shell). Only the tokens
  * change, so every component follows. Contrast checked (WCAG AA): text 13.98, muted 4.55 on
  * background and surface-soft, white on primary 5.47, secondary as text 4.80.
@@ -258,6 +267,86 @@
   color: var(--color-primary-strong);
 }
 
+/*
+ * "Cereza" (cherry presentation palette): blush page #fbeceb, white cards, Cherry Red #b5121b for
+ * CTAs and selection (white text 6.85:1), a Bordeaux band #7d0c12 for the navigation, KPIs and
+ * countdown, and orange/brown as accents (orange #e8641b is a fill only; as text #a8410b, 6.13).
+ * Text is cherry-black #2b1414 (17.31 on white).
+ */
+:root[data-theme='cereza'] {
+  --color-primary: #b5121b; /* Cherry Red */
+  --color-primary-hover: #8f0d14;
+  --color-on-primary: #ffffff;
+  --color-primary-strong: #a3101a;
+  --color-secondary: #e8641b; /* orange */
+  --color-secondary-strong: #a8410b;
+  --color-accent: #8a3e10; /* cherry-wood brown: confirmed payments */
+  --color-accent-strong: #8a3e10;
+
+  --color-background: #fbeceb; /* blush */
+  --color-surface: #ffffff;
+  --color-surface-soft: #fdf4f3;
+
+  --color-text: #2b1414;
+  --color-text-muted: #6b4a46;
+  --color-border: #f1d3d0;
+  --color-border-strong: #a87a75; /* 3.68:1 on white */
+
+  --color-available: #7a3e12;
+  --color-reserved: #f29a3a;
+  --color-reserved-stroke: #c8641b;
+  --color-occupied: #a8908c;
+  --color-occupied-strong: #7d6460;
+  --color-blocked: #fdf4f3;
+  --color-blocked-stroke: #a87a75;
+  --color-selected: #b5121b;
+  --color-danger: #9b0d17;
+}
+
+/* The red wash of the slide headers, behind the page. */
+:root[data-theme='cereza'] body {
+  background-image: radial-gradient(
+    80rem 28rem at 70% -8%,
+    rgb(200 16 46 / 0.16),
+    transparent 70%
+  );
+  background-attachment: fixed;
+}
+
+/* Bordeaux band (the title boxes): navigation, KPI cards and countdown. Orange is the accent there
+   (dark text 8.52:1 on it; as text #ffc58a, 5.89). */
+:root[data-theme='cereza'] :is(app-shell > aside, [data-ui='metric'], [data-ui='hold-timer']) {
+  color-scheme: dark;
+  color: var(--color-text); /* body's color is inherited already resolved */
+  --color-background: #7d0c12;
+  --color-surface: #921018;
+  --color-surface-soft: #7d0c12;
+  --color-text: #fff4ef;
+  --color-text-muted: #f6cfc8;
+  --color-border: #a3313a;
+  --color-border-strong: #d9787f;
+  --color-primary: #f7a440;
+  --color-primary-hover: #ffb75e;
+  --color-on-primary: #2b1414;
+  --color-primary-strong: #ffc58a;
+  --color-selected: #ffc58a;
+}
+
+:root[data-theme='cereza'] [data-ui='hold-timer'] {
+  padding: 1rem;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+}
+
+:root[data-theme='cereza'] [data-ui='hold-timer'] strong {
+  color: var(--color-primary-strong); /* orange digits */
+}
+
+/* Cards float on the blush page like the slides: soft drop shadow. */
+:root[data-theme='cereza'] :is(.card, [data-ui='metric']) {
+  box-shadow: 0 10px 28px -14px rgb(125 12 18 / 0.28);
+}
+
 @layer base {
   body {
     @apply bg-background font-sans text-text antialiased;
@@ -289,5 +378,195 @@
   .btn-danger {
     /* Hover strengthens the border: a danger tint behind danger text dropped below 4.5:1 (Grafito). */
     @apply border-danger/40 text-danger hover:border-danger;
+  }
+}
+
+/* Programmatic focus targets (skip link, page heading after a route change) get no ring. */
+@layer base {
+  [tabindex='-1']:focus {
+    outline: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *:not(.loading-spinner),
+    *:not(.loading-spinner)::before,
+    *:not(.loading-spinner)::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Page changes (withViewTransitions): a short crossfade, none when motion is reduced. */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.15s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* Touch screens: every control reaches 44px. */
+@media (pointer: coarse) {
+  :root {
+    --target-size: 44px;
+  }
+
+  .btn,
+  .field,
+  .chip,
+  .nav-link,
+  .icon-btn {
+    min-height: var(--target-size);
+  }
+
+  .btn,
+  .icon-btn {
+    min-width: var(--target-size);
+    justify-content: center;
+  }
+
+  /* Bare links ("Términos y Condiciones", "← Eventos"): padding on an inline box grows the hit
+     area without changing the line layout. */
+  a.underline {
+    padding-block: 0.75rem;
+    padding-block: calc((var(--target-size) - 1lh) / 2);
+  }
+}
+
+/* Skip link: first focusable element, visible only while focused. */
+.skip-link {
+  position: fixed;
+  inset-block-start: 0.5rem;
+  inset-inline-start: 0.5rem;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+  outline: 2px solid var(--color-selected);
+  outline-offset: 2px;
+}
+
+/*
+ * Loading spinner (<app-spinner>): a native indeterminate <progress> drawn as a ring. The ring
+ * is a conic gradient hollowed out with a mask; reduced motion slows it instead of stopping it.
+ */
+@property --arc-start {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@property --arc-end {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@property --progress-dash-animation {
+  syntax: '*';
+  inherits: false;
+  initial-value: , progress-dash 3s ease-in-out infinite;
+}
+
+progress.loading-spinner:indeterminate::-webkit-progress-bar,
+progress.loading-spinner:indeterminate::-webkit-progress-value {
+  display: none;
+  background: none;
+}
+
+progress.loading-spinner:indeterminate::-moz-progress-bar {
+  display: none;
+  background: none;
+}
+
+progress.loading-spinner:indeterminate {
+  --_from: calc(90deg + var(--arc-start, 0deg));
+  --_to: calc(90deg + var(--arc-end, 158deg));
+  --size: 1.25rem;
+  --thickness: 3px;
+  --spinner-color: var(--color-primary-strong);
+  --track-color: var(--color-border);
+  --_duration: 1.5s;
+  --_clip: calc(100% - var(--thickness));
+
+  flex-shrink: 0;
+  width: var(--size);
+  height: var(--size);
+  border: 0;
+  border-radius: 50%;
+  appearance: none;
+  background: conic-gradient(
+      from var(--_from),
+      var(--spinner-color) calc(var(--_to) - var(--_from)),
+      transparent 0
+    )
+    var(--track-color);
+  mask-image: radial-gradient(farthest-side, transparent var(--_clip), black var(--_clip));
+  animation:
+    progress-spin var(--_duration) linear infinite var(--progress-dash-animation, );
+}
+
+@keyframes progress-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@keyframes progress-dash {
+  from {
+    --arc-start: 0deg;
+    --arc-end: 3deg;
+  }
+  50% {
+    --arc-start: 100deg;
+    --arc-end: 358deg;
+  }
+  to {
+    --arc-start: 360deg;
+    --arc-end: 363deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  progress.loading-spinner:indeterminate {
+    --_duration: 6s;
+    --progress-dash-animation: ;
+    --arc-end: 158deg;
+  }
+}
+
+@media (forced-colors: active) {
+  progress.loading-spinner:indeterminate {
+    forced-color-adjust: none;
+    --spinner-color: CanvasText;
+    --track-color: Canvas;
+  }
+
+  .btn,
+  .field,
+  .chip {
+    border: 1px solid ButtonText;
+  }
+
+  .btn-primary,
+  .skip-link {
+    border: 2px solid ButtonText;
   }
 }

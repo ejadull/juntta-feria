@@ -47,6 +47,7 @@ interface GroupResult {
 @Component({
   selector: 'app-stands-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styleUrl: '../../../shared/responsive-table.css',
   template: `
     <section aria-labelledby="stands-title">
       <h2 id="stands-title" class="text-lg font-semibold">Stands y precios</h2>
@@ -88,8 +89,13 @@ interface GroupResult {
             <p id="bulk-error" class="mt-1 text-sm text-danger">{{ message }}</p>
           }
 
-          <div class="card mt-4 overflow-x-auto p-0">
-            <table class="w-full text-left text-sm">
+          <div
+            role="region"
+            tabindex="0"
+            aria-label="Stands del evento"
+            class="table-wrapper card mt-4 overflow-x-auto p-0"
+          >
+            <table class="stack-table w-full text-left text-sm">
               <caption class="sr-only">
                 Stands del evento con precio, sector y estado
               </caption>
@@ -106,8 +112,8 @@ interface GroupResult {
                 @for (s of rows; track s.id) {
                   <tr data-testid="stand-row" [attr.data-stand]="s.code">
                     <th scope="row" class="px-3 py-2 font-medium">{{ s.code }}</th>
-                    <td class="px-3 py-2">{{ area(s) }}</td>
-                    <td class="px-3 py-2">
+                    <td data-label="Área (m²)" class="px-3 py-2">{{ area(s) }}</td>
+                    <td data-label="Sector" class="px-3 py-2">
                       <select
                         class="field"
                         [attr.aria-label]="'Sector de ' + s.code"
@@ -126,7 +132,7 @@ interface GroupResult {
                         }
                       </select>
                     </td>
-                    <td class="px-3 py-2">
+                    <td data-label="Estado" class="px-3 py-2">
                       @if (s.status === 'ASSIGNED') {
                         <span title="Lo asigna una reserva confirmada">Asignado</span>
                       } @else {
@@ -143,7 +149,7 @@ interface GroupResult {
                         </select>
                       }
                     </td>
-                    <td class="px-3 py-2">
+                    <td data-label="Precio (ARS)" class="px-3 py-2">
                       <input
                         class="field w-32"
                         type="text"

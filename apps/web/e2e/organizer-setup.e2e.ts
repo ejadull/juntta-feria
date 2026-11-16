@@ -252,7 +252,7 @@ test('deleting a venue asks for confirmation first (admin)', async ({ page }) =>
   await mockApi(page, { role: 'ADMIN', venues: [VENUE] });
   await page.goto('/organizador/predios');
   await page.getByRole('button', { name: 'Eliminar Predio Norte' }).click();
-  await expect(page.getByRole('alertdialog')).toContainText('¿Eliminar Predio Norte?');
+  await expect(page.getByRole('dialog', { name: '¿Eliminar Predio Norte?' })).toBeVisible();
   await page.getByRole('button', { name: 'Sí, eliminar' }).click();
   await expect(page.getByText('Todavía no hay predios')).toBeVisible();
 });
