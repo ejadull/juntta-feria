@@ -69,8 +69,14 @@ MED-10 (al final)
 
 ### MED-05 — Endpoint de compartir con metadatos en el servidor
 
-- **Estado:** `TODO`
-- **Entrega:** `GET /api/v1/public/share/:mediaId` devuelve HTML con `og:*` y redirección al visitante. `firebase.json` suma la ruta `/share/**` hacia la API.
+- **Estado:** `DONE` (2026-11-18)
+- **Evidencia:**
+  - `GET /api/v1/public/share/:mediaId` devuelve HTML con `og:title`, `og:description`, `og:url`, `og:image` (o `og:video`), `twitter:card`, y una redirección a `/ferias/:slug?publicacion=:id`.
+  - La ruta vive bajo `/api/`, así que el rewrite de Firebase que ya existe la cubre; `firebase.json` no cambia.
+  - Migración `0023_public_media_share`: función `public_media_share(uuid)` con la misma visibilidad que el mapa (READY, no oculta, consentimiento, evento vigente), `SECURITY DEFINER` y sin acceso para `PUBLIC`.
+  - `share-page.spec.ts` con 4 tests en verde (imagen, video, redirección, escape de texto).
+  - Verificado contra la API real: publicación lista → 200 con tags; oculta e inexistente → 404 con el mismo mensaje. Las filas de prueba se borraron.
+  - Pendiente, en la web (MED-07): que `/ferias/:slug?publicacion=` abra esa publicación.
 - **Aceptación:**
   - el HTML tiene `og:title`, `og:description`, `og:image` (o `og:video`) y `og:url`;
   - un id inexistente o de un feriante sin consentimiento responde 404 con el mismo cuerpo;

@@ -48,7 +48,9 @@ Instagram sólo acepta publicación desde su app. Por eso no hay un botón que p
 
 **Problema:** los rastreadores de Facebook y WhatsApp **no ejecutan JavaScript**. Una página Angular (SPA) no tiene metadatos Open Graph visibles para ellos.
 
-**Decisión:** un endpoint de la API `GET /api/v1/public/share/:mediaId` devuelve HTML con `og:title`, `og:description`, `og:image` (o `og:video`) y `og:url`, y una redirección a `/ferias/:slug?publicacion=:mediaId` para los navegadores. Firebase Hosting enruta `/share/**` a la API, igual que `/api/**`.
+**Decisión:** un endpoint de la API `GET /api/v1/public/share/:mediaId` devuelve HTML con `og:title`, `og:description`, `og:image` (o `og:video`) y `og:url`, y una redirección a `/ferias/:slug?publicacion=:mediaId` para los navegadores. La ruta vive bajo `/api/`, así que el rewrite `/api/**` de Firebase ya la cubre.
+
+**Limitación conocida:** WhatsApp arma la vista previa con `og:image`. Un video sin imagen de portada muestra sólo el título; una portada (poster) quedaría para un cambio posterior.
 
 Sólo se sirve si el feriante tiene perfil público, la publicación está `READY` y el evento no terminó. Si no, responde 404 con el mismo cuerpo que una publicación inexistente.
 
