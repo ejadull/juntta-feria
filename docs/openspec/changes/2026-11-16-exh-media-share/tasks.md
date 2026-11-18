@@ -57,7 +57,12 @@ MED-10 (al final)
 
 ### MED-04 — API pública: publicaciones con consentimiento
 
-- **Estado:** `TODO`
+- **Estado:** `DONE` (2026-11-18)
+- **Evidencia:**
+  - `public-exhibitor.ts`: `PublicMedia` y el campo `media`; sin consentimiento no se devuelve nada. `public-exhibitor.spec.ts` con 8 tests en verde (2 nuevos).
+  - `public-events.service.ts`: `photosOf` sólo toma fotos de perfil (`event_id` nulo); `mediaOf` toma las publicaciones del evento que se ve, `READY`, de expositores con consentimiento y de eventos que no terminaron. Las firmas de lectura vencen en 1 hora.
+  - Verificado contra la base: una publicación `READY` aparece con tipo, texto y duración; una `HIDDEN` no aparece. Las filas de prueba se borraron después.
+  - `tsc` limpio; respuesta 200 del mapa con los 9 expositores.
 - **Entrega:** el mapa público y la ficha del expositor devuelven `media: [{id, kind, url, caption, durationS}]`, sólo `READY`, sólo las no ocultas, sólo con consentimiento, sólo de eventos que no terminaron, con URLs firmadas de 1 hora.
 - **Aceptación:** sin consentimiento, `media` vacío; las ocultas y las de eventos terminados no aparecen; las claves de almacenamiento no aparecen en la respuesta.
 - **Pruebas:** unit de la función de consentimiento (ya existe para fotos), extendida a videos.
