@@ -7,6 +7,7 @@ import {
   HttpStatus,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Req,
 } from '@nestjs/common';
@@ -16,7 +17,7 @@ import {
   TenantScoped,
   type TenantRequest,
 } from '../tenancy/tenant-scoped.decorator.js';
-import { requestPhotoInput } from './photo.input.js';
+import { requestPhotoInput, updateCaptionInput } from './photo.input.js';
 import {
   ExhibitorPhotosService,
   type ExhibitorPhoto,
@@ -63,6 +64,22 @@ export class MyPhotosController {
       request.tenant.id,
       request.user.id,
       photoId(id),
+    );
+  }
+
+  @Patch(':id')
+  @TenantScoped('EXHIBITOR')
+  updateCaption(
+    @Req() request: TenantRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<ExhibitorPhoto> {
+    const { caption } = parseBody(updateCaptionInput, body, 'publication');
+    return this.photos.updateCaption(
+      request.tenant.id,
+      request.user.id,
+      photoId(id),
+      caption,
     );
   }
 

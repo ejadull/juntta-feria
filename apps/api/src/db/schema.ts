@@ -676,31 +676,72 @@ export const exhibitorPhotos = pgTable(
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
     alt: text('alt'),
     position: integer('position').notNull().default(0),
+    /** IMAGE or VIDEO. Profile photos are IMAGE with no event (MED-01, change exh-media-share). */
+    kind: text('kind').$type<ExhibitorMediaKind>().notNull().default('IMAGE'),
+    /** Publications belong to an event and are deleted when it ends; profile photos have none. */
+    eventId: uuid('event_id'),
+    /** Text of a publication (max 200 characters). */
+    caption: text('caption'),
+    /** Declared duration of a video, 1..60 seconds; null for images. */
+    durationS: integer('duration_s'),
     createdAt: createdAt(),
   },
   (t) => [
     unique('exhibitor_photos_storage_key_unique').on(t.storageKey),
     index('exhibitor_photos_exhibitor_idx').on(t.tenantId, t.exhibitorId),
+    index('exhibitor_photos_event_idx').on(t.tenantId, t.eventId),
     foreignKey({
       name: 'exhibitor_photos_exhibitor_fk',
       columns: [t.tenantId, t.exhibitorId],
       foreignColumns: [exhibitors.tenantId, exhibitors.id],
     }).onDelete('restrict'),
+    foreignKey({
+      name: 'exhibitor_photos_event_fk',
+      columns: [t.tenantId, t.eventId],
+      foreignColumns: [events.tenantId, events.id],
+    }).onDelete('cascade'),
     check(
       'exhibitor_photos_status_check',
-      sql`${t.status} IN ('PENDING', 'READY')`,
+      sql`${t.status} IN ('PENDING', 'READY', 'HIDDEN')`,
+    ),
+    check(
+      'exhibitor_photos_kind_check',
+      sql`${t.kind} IN ('IMAGE', 'VIDEO')`,
     ),
     check(
       'exhibitor_photos_content_type_check',
-      sql`${t.contentType} IN ('image/jpeg', 'image/png', 'image/webp')`,
+      sql`(${t.kind} = 'IMAGE' AND ${t.contentType} IN ('image/jpeg', 'image/png', 'image/webp'))
+        OR (${t.kind} = 'VIDEO' AND ${t.contentType} IN ('video/mp4', 'video/webm'))`,
     ),
-    check('exhibitor_photos_size_check', sql`${t.sizeBytes} > 0`),
+    check(
+      'exhibitor_photos_size_check',
+      sql`${t.sizeBytes} > 0 AND (
+        (${t.kind} = 'IMAGE' AND ${t.sizeBytes} <= 5242880)
+        OR (${t.kind} = 'VIDEO' AND ${t.sizeBytes} <= 52428800))`,
+    ),
     check(
       'exhibitor_photos_alt_check',
       sql`${t.alt} IS NULL OR char_length(${t.alt}) BETWEEN 1 AND 120`,
     ),
+    check(
+      'exhibitor_photos_caption_check',
+      sql`${t.caption} IS NULL OR char_length(${t.caption}) BETWEEN 1 AND 200`,
+    ),
+    // A caption or a video is a publication, and a publication always belongs to an event.
+    check(
+      'exhibitor_photos_publication_event_check',
+      sql`(${t.caption} IS NULL AND ${t.kind} = 'IMAGE') OR ${t.eventId} IS NOT NULL`,
+    ),
+    check(
+      'exhibitor_photos_duration_check',
+      sql`(${t.kind} = 'IMAGE' AND ${t.durationS} IS NULL)
+        OR (${t.kind} = 'VIDEO' AND ${t.durationS} BETWEEN 1 AND 60 AND ${t.eventId} IS NOT NULL)`,
+    ),
   ],
 );
+
+export const EXHIBITOR_MEDIA_KINDS = ['IMAGE', 'VIDEO'] as const;
+export type ExhibitorMediaKind = (typeof EXHIBITOR_MEDIA_KINDS)[number];
 
 /**
  * One-time invitation of an organization to a future exhibitor (EXH-04). Only a SHA-256 of the
