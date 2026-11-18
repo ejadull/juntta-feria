@@ -1,6 +1,7 @@
 import {
   photoFallbackAlt,
   publicExhibitorOf,
+  type PublicMedia,
   type PublicPhoto,
   type StandExhibitorRow,
 } from './public-exhibitor.js';
@@ -23,7 +24,35 @@ describe('publicExhibitorOf (consent gating, AC-11 / INV-08)', () => {
       category: 'Textiles',
       description: 'Tejidos',
       photos: [photo],
+      media: [],
     });
+  });
+
+  it('publishes the publications of this event, with no storage key', () => {
+    const video: PublicMedia = {
+      id: 'm-1',
+      kind: 'VIDEO',
+      url: 'https://cdn.test/v?sig=1',
+      alt: 'Así se hace',
+      caption: 'Así se hace',
+      durationS: 45,
+    };
+    const media = new Map<string, readonly PublicMedia[]>([['ex-1', [video]]]);
+    const exhibitor = publicExhibitorOf(row, photos, media);
+    expect(exhibitor!.media).toEqual([video]);
+    expect(Object.keys(exhibitor!.media[0]).sort()).toEqual([
+      'alt',
+      'caption',
+      'durationS',
+      'id',
+      'kind',
+      'url',
+    ]);
+  });
+
+  it('publishes no publications without consent, even when they exist', () => {
+    const media = new Map<string, readonly PublicMedia[]>([['ex-1', []]]);
+    expect(publicExhibitorOf({ ...row, consented: false }, photos, media)).toBeNull();
   });
 
   it('publishes nothing without consent, even when photos exist', () => {

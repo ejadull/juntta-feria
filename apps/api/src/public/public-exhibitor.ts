@@ -4,13 +4,28 @@ export interface PublicPhoto {
   readonly alt: string;
 }
 
+/**
+ * A publication of the event being viewed (change exh-media-share). Only READY, not hidden, and
+ * only while the event has not ended; `url` is a presigned GET, never a storage key.
+ */
+export interface PublicMedia {
+  readonly id: string;
+  readonly kind: 'IMAGE' | 'VIDEO';
+  readonly url: string;
+  readonly alt: string;
+  readonly caption: string | null;
+  readonly durationS: number | null;
+}
+
 export interface PublicStandExhibitor {
   readonly name: string;
   readonly category: string;
   /** Same consent as name and category; null when the exhibitor wrote none. */
   readonly description: string | null;
-  /** READY photos in position order; empty without photos. */
+  /** READY profile photos in position order; empty without photos. */
   readonly photos: readonly PublicPhoto[];
+  /** Publications of this event, in position order; empty without consent or publications. */
+  readonly media: readonly PublicMedia[];
 }
 
 export interface StandExhibitorRow {
@@ -34,6 +49,7 @@ export const photoFallbackAlt = (exhibitorName: string): string =>
 export function publicExhibitorOf(
   row: StandExhibitorRow,
   photosByExhibitor: ReadonlyMap<string, readonly PublicPhoto[]>,
+  mediaByExhibitor: ReadonlyMap<string, readonly PublicMedia[]> = new Map(),
 ): PublicStandExhibitor | null {
   if (!row.reservationOwns || row.consented !== true) return null;
   if (row.exhibitorId === null || row.name === null || row.category === null)
@@ -43,5 +59,6 @@ export function publicExhibitorOf(
     category: row.category,
     description: row.description?.trim() || null,
     photos: photosByExhibitor.get(row.exhibitorId) ?? [],
+    media: mediaByExhibitor.get(row.exhibitorId) ?? [],
   };
 }

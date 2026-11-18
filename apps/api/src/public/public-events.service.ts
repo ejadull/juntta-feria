@@ -20,6 +20,7 @@ import {
 import {
   photoFallbackAlt,
   publicExhibitorOf,
+  type PublicMedia,
   type PublicPhoto,
   type PublicStandExhibitor,
 } from './public-exhibitor.js';
@@ -277,6 +278,7 @@ export class PublicEventsService {
         ),
       ];
       const photosByExhibitor = await this.photosOf(tx, consentedIds);
+      const mediaByExhibitor = await this.mediaOf(tx, consentedIds, target.id);
 
       const features = objects.flatMap((object): PublicMapFeature[] => {
         if (object.kind !== 'STAND')
@@ -317,6 +319,7 @@ export class PublicEventsService {
                   description: stand.exhibitorDescription,
                 },
                 photosByExhibitor,
+                mediaByExhibitor,
               ),
             },
           },
@@ -358,6 +361,8 @@ export class PublicEventsService {
         and(
           inArray(exhibitorPhotos.exhibitorId, [...exhibitorIds]),
           eq(exhibitorPhotos.status, 'READY'),
+          // Profile photos only: publications of an event are shown by mediaOf, on that event.
+          sql`${exhibitorPhotos.eventId} IS NULL`,
           eq(exhibitors.publicContactOptIn, true),
         ),
       )
@@ -383,6 +388,75 @@ export class PublicEventsService {
         ...(byExhibitor.get(exhibitorId) ?? []),
         photo,
       ]);
+    return byExhibitor;
+  }
+
+  /**
+   * Publications of this event for the given (already consented) exhibitors. Hidden, pending and
+   * removed ones are excluded by status; publications of an event that already ended are not shown.
+   */
+  private async mediaOf(
+    tx: Transaction,
+    exhibitorIds: readonly string[],
+    eventId: string,
+  ): Promise<ReadonlyMap<string, readonly PublicMedia[]>> {
+    if (exhibitorIds.length === 0) return new Map();
+    const rows = await tx
+      .select({
+        id: exhibitorPhotos.id,
+        exhibitorId: exhibitorPhotos.exhibitorId,
+        kind: exhibitorPhotos.kind,
+        storageKey: exhibitorPhotos.storageKey,
+        contentType: exhibitorPhotos.contentType,
+        alt: exhibitorPhotos.alt,
+        caption: exhibitorPhotos.caption,
+        durationS: exhibitorPhotos.durationS,
+        exhibitorName: exhibitors.tradeName,
+      })
+      .from(exhibitorPhotos)
+      .innerJoin(
+        exhibitors,
+        and(
+          eq(exhibitors.tenantId, exhibitorPhotos.tenantId),
+          eq(exhibitors.id, exhibitorPhotos.exhibitorId),
+        ),
+      )
+      .innerJoin(events, eq(events.id, exhibitorPhotos.eventId))
+      .where(
+        and(
+          inArray(exhibitorPhotos.exhibitorId, [...exhibitorIds]),
+          eq(exhibitorPhotos.eventId, eventId),
+          eq(exhibitorPhotos.status, 'READY'),
+          sql`${events.endsAt} > now()`,
+          eq(exhibitors.publicContactOptIn, true),
+        ),
+      )
+      .orderBy(asc(exhibitorPhotos.position), asc(exhibitorPhotos.createdAt));
+    const signed = await Promise.all(
+      rows.map(async (row) => ({
+        exhibitorId: row.exhibitorId,
+        media: {
+          id: row.id,
+          kind: row.kind,
+          url: await this.storage.presignDownload({
+            key: row.storageKey,
+            fileName: row.kind === 'VIDEO' ? 'video' : 'foto',
+            contentType: row.contentType,
+            expiresInSeconds: PHOTO_URL_TTL_SECONDS,
+            inline: true,
+          }),
+          alt:
+            row.alt?.trim() ||
+            row.caption?.trim() ||
+            photoFallbackAlt(row.exhibitorName),
+          caption: row.caption?.trim() || null,
+          durationS: row.durationS,
+        },
+      })),
+    );
+    const byExhibitor = new Map<string, PublicMedia[]>();
+    for (const { exhibitorId, media } of signed)
+      byExhibitor.set(exhibitorId, [...(byExhibitor.get(exhibitorId) ?? []), media]);
     return byExhibitor;
   }
 
