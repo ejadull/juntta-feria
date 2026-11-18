@@ -162,6 +162,13 @@
       "when": 1794974987651,
       "tag": "0022_exhibitor_media",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794978386156,
+      "tag": "0023_public_media_share",
+      "breakpoints": true
     }
   ]
 }
