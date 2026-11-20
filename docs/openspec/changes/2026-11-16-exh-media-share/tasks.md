@@ -117,7 +117,14 @@ MED-10 (al final)
 
 ### MED-08 — Util de compartir
 
-- **Estado:** `TODO`
+- **Estado:** `PARTIAL` (2026-11-20): código, unit tests y e2e hechos; falta verificar en celular real y en el bucket.
+- **Evidencia:**
+  - `shared/share.ts`: `shareMedia` usa el menú nativo con el archivo (incluye Instagram) si el navegador lo permite; si no, ofrece WhatsApp, Facebook, copiar link y descargar. Cancelar el menú nativo no es error. Sin SDK externo.
+  - `share.spec.ts`: 5 tests en verde.
+  - Modal del stand: botón "Compartir" en cada publicación (no en fotos de perfil), menú de opciones y aviso de "Link copiado." o de error. 10 tests en verde.
+  - e2e `stand-media.e2e.ts`: el menú ofrece WhatsApp y Facebook apuntando a la página de compartir de la publicación, y no ofrece Instagram sin menú nativo. Suite completa: 79 pruebas en verde.
+  - **Desviación:** el aviso de "copiado" es un texto con `role="status"`, no un toast ni `ariaNotify`. Sirve igual para lectores de pantalla.
+  - **Pendiente:** probar el menú nativo en un celular real (Instagram sólo aparece ahí) y confirmar que el bucket permite leer los archivos desde el navegador (CORS `GET`), porque el archivo se descarga para adjuntarlo.
 - **Entrega:** `shared/share.ts` con `shareMedia(item)`:
   1. si `navigator.canShare({ files })` existe, usa `navigator.share({ files, text, url })`;
   2. si no, ofrece las opciones de WhatsApp, Facebook y "Copiar link";
