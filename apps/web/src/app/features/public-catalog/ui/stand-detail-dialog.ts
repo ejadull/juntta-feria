@@ -12,7 +12,11 @@ import {
 import { formatArs } from '../../../shared/money';
 import { STATUS_LABEL, type PublicStandStatus } from '../data/public-catalog.repository';
 import type { StandView } from '../domain/stand-filters';
-import { galleryOf } from '../domain/stand-media';
+import { galleryOf, type GalleryItem } from '../domain/stand-media';
+import { browserShareEnv, copyLink, shareMedia, type ShareOption } from '../../../shared/share';
+
+/** The share page of a publication: the link people share, with its preview tags. */
+const shareUrlOf = (id: string): string => `${location.origin}/api/v1/public/share/${id}`;
 
 const STATUS_ICON: Readonly<Record<PublicStandStatus, string>> = {
   AVAILABLE: '✓',
@@ -65,6 +69,41 @@ export class StandDetailDialog {
   );
 
   protected readonly gallery = computed(() => galleryOf(this.stand().exhibitor, this.highlight()));
+  /** Options for the publication whose share menu is open (no native menu in this browser). */
+  protected readonly shareMenu = signal<{
+    readonly id: string;
+    readonly options: readonly ShareOption[];
+  } | null>(null);
+  protected readonly shareStatus = signal('');
+
+  protected isProfile(item: GalleryItem): boolean {
+    return item.id.startsWith('profile-');
+  }
+
+  /** Native share menu with the file when the browser has one; otherwise the links menu. */
+  protected async share(item: GalleryItem): Promise<void> {
+    const exhibitor = this.stand().exhibitor;
+    if (!exhibitor) return;
+    this.shareStatus.set('');
+    const outcome = await shareMedia(
+      {
+        pageUrl: shareUrlOf(item.id),
+        url: item.url,
+        contentType: item.kind === 'VIDEO' ? 'video/mp4' : 'image/jpeg',
+        caption: item.caption,
+        exhibitorName: exhibitor.name,
+      },
+      browserShareEnv(),
+    );
+    this.shareMenu.set(outcome.kind === 'options' ? { id: item.id, options: outcome.options } : null);
+  }
+
+  protected async copy(id: string): Promise<void> {
+    const ok = await copyLink(shareUrlOf(id));
+    this.shareStatus.set(
+      ok ? 'Link copiado.' : 'No pudimos copiar el link. Copialo desde la barra de direcciones.',
+    );
+  }
 
   protected readonly miniature = computed(() => {
     const s = this.stand();

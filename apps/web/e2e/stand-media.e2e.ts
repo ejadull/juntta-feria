@@ -20,6 +20,24 @@ test('a share link opens the stand modal with the video and its text, first', as
   expect(await seriousViolations(page)).toEqual([]);
 });
 
+test('the share button of a publication offers WhatsApp and Facebook links to its share page', async ({
+  page,
+}) => {
+  await mockApi(page, { signedIn: false });
+  await page.goto('/ferias/feria-demo?publicacion=pub-1');
+  const dialog = page.getByRole('dialog', { name: 'Stand S1' });
+  await dialog.getByRole('button', { name: /Compartir: Así se tiñe/ }).click();
+
+  const menu = dialog.getByRole('list', { name: 'Opciones para compartir' });
+  await expect(menu.getByRole('link', { name: 'WhatsApp' })).toHaveAttribute('href', /^https:\/\/wa\.me\//);
+  await expect(menu.getByRole('link', { name: 'Facebook' })).toHaveAttribute(
+    'href',
+    new RegExp(encodeURIComponent('/api/v1/public/share/pub-1')),
+  );
+  await expect(menu.getByRole('button', { name: 'Copiar link' })).toBeVisible();
+  await expect(menu.getByRole('link', { name: 'Instagram' })).toHaveCount(0);
+});
+
 test('without a share link the gallery keeps publications first, then the profile photo', async ({
   page,
 }) => {

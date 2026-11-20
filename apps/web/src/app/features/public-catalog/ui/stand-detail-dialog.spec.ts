@@ -148,4 +148,41 @@ describe('StandDetailDialog', () => {
     const { host } = await render(withImage);
     expect(host.querySelector<HTMLImageElement>('dialog .gallery img')?.alt).toBe('Mermelada');
   });
+
+  const withPublication: StandView = {
+    ...base,
+    exhibitor: {
+      ...base.exhibitor!,
+      media: [
+        { id: 'm1', kind: 'IMAGE', url: 'https://files.test/m1', alt: '', caption: 'Mermelada', durationS: null },
+      ],
+    },
+  };
+
+  it('offers a share button on each publication, and none on profile photos', async () => {
+    const withPhoto: StandView = {
+      ...withPublication,
+      exhibitor: {
+        ...withPublication.exhibitor!,
+        photos: [{ url: 'https://files.test/p', alt: 'Telar' }],
+      },
+    };
+    const { host } = await render(withPhoto);
+    const buttons = [...host.querySelectorAll<HTMLButtonElement>('dialog .gallery button.share')];
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].getAttribute('aria-label')).toContain('Mermelada');
+  });
+
+  it('without a native share menu, offers WhatsApp, Facebook, copy and download, but not Instagram', async () => {
+    const { host, fixture } = await render(withPublication);
+    host.querySelector<HTMLButtonElement>('dialog .gallery button.share')!.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+    const menu = host.querySelector('dialog .share-menu')!;
+    expect(menu.querySelector('a[href^="https://wa.me/"]')).not.toBeNull();
+    expect(menu.querySelector('a[href^="https://www.facebook.com/sharer/"]')).not.toBeNull();
+    expect(menu.textContent).toContain('Copiar link');
+    expect(menu.querySelector('a[download]')).not.toBeNull();
+    expect(menu.textContent).not.toContain('Instagram');
+  });
 });

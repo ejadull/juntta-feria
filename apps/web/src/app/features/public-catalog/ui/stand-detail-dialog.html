@@ -41,9 +41,41 @@
               @if (item.caption) {
                 <p class="caption">{{ item.caption }}</p>
               }
+              @if (!isProfile(item)) {
+                <button
+                  type="button"
+                  class="share"
+                  [attr.aria-label]="'Compartir: ' + (item.caption || 'publicación')"
+                  (click)="share(item)"
+                >
+                  Compartir
+                </button>
+                @if (shareMenu(); as menu) {
+                  @if (menu.id === item.id) {
+                    <ul class="share-menu" aria-label="Opciones para compartir">
+                      @for (o of menu.options; track o.id) {
+                        <li>
+                          @if (o.id === 'copy') {
+                            <button type="button" (click)="copy(item.id)">{{ o.label }}</button>
+                          } @else {
+                            <a
+                              [href]="o.href"
+                              target="_blank"
+                              rel="noopener"
+                              [attr.download]="o.id === 'download' ? '' : null"
+                              >{{ o.label }}</a
+                            >
+                          }
+                        </li>
+                      }
+                    </ul>
+                  }
+                }
+              }
             </li>
           }
         </ul>
+        <p class="share-status" role="status">{{ shareStatus() }}</p>
       } @else {
         <figure class="mini">
           <svg
