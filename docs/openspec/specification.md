@@ -213,6 +213,8 @@ Autenticación de panel `Authorization: Bearer <token>` (access token JWT, [ADR 
 | GET/PUT | /api/v1/me/exhibitor-profile | expositor | Perfil propio en la organización de `X-Tenant-Id`; `PUT` crea (201) o reemplaza (200), recibe `categoryId` y registra el consentimiento público |
 | GET/POST/PATCH/DELETE | /api/v1/exhibitor-categories[/:id] | owner/admin/operator (`GET` también expositor) | Rubros de la organización (`EXH-02`); borrar uno en uso → 409 `CATEGORY_IN_USE` |
 | GET/POST/DELETE | /api/v1/exhibitors/me/documents[/:id/complete · /:id/download] | expositor | Documentos propios (`EXH-03`): firma de subida, confirmación, descarga firmada y baja |
+| GET/POST/PATCH/DELETE | /api/v1/exhibitors/me/photos[/:id · /:id/complete] | expositor | Fotos del perfil y publicaciones de una feria (`EXH-09`): firma de subida, confirmación, texto y baja. Una publicación exige un stand confirmado en el evento y que el evento siga vigente; cupo de 10 por feriante y evento |
+| GET | /api/v1/public/share/:mediaId | público | Página para compartir una publicación (`EXH-09`): HTML con metadatos Open Graph y redirección a la feria. Una publicación oculta, sin consentimiento o de un evento terminado responde el mismo 404 que una inexistente |
 | GET/POST | /api/v1/exhibitors/:id/documents[/:docId/download · /:docId/review] | owner/admin/operator | Documentos de un expositor: lista, descarga firmada y revisión |
 | GET | /api/v1/events/:id/reservations/export | operator | Exportación CSV |
 | GET | /api/v1/events/:id/stand-events | público | SSE disponibilidad saneada |
@@ -477,6 +479,7 @@ Estas tareas pueden desarrollarse sin depender de una funcionalidad de dominio t
 | `REP-01` Reportes | `PAY-05` | ocupación, GMV y exportaciones CSV — [detalle](#rep-01--métricas-del-evento) | `IN_PROGRESS` |
 | `SEC-01` Límite de tasa de las rutas anónimas | `FND-04` | límite por IP (ventana fija en Redis) en `/public/events*`, `/public/invitations/:token(/accept)`, `GET /auth/providers` y, con un cupo propio y más generoso, `POST /webhooks/mercadopago`; 429 `RATE_LIMITED` (`application/problem+json`, RFC 9457) con `Retry-After` y los campos `RateLimit-Policy`/`RateLimit` del borrador `draft-ietf-httpapi-ratelimit-headers-11`; `TRUST_PROXY` para leer la IP real detrás de Firebase Hosting y Cloud Run — [detalle](#sec-01--límite-de-tasa-de-las-rutas-anónimas); falta medir `TRUST_PROXY` detrás de Firebase Hosting y Cloud Run | `IN_PROGRESS` |
 | `LAY-02` Clonar plano | `LAY-01`, `EVT-01` | copiar una versión (cualquier estado) en un plano nuevo; el evento conserva su versión — [detalle](#lay-01--layouts-versionados) | `VERIFIED` |
+| `EXH-09` Publicaciones del feriante y compartir | `EXH-03`, `PUB-01`, `RES-01` | fotos y videos de producto por feria donde el feriante tiene stand confirmado (MP4 H.264 o WebM sin conversión, 50 MB, 60 s; cupo de 10 por feriante y evento); el organizador puede ocultarlas; se borran al terminar el evento; compartir en WhatsApp, Facebook e Instagram (menú nativo en celular) con página de vista previa — [detalle](#exh-09--publicaciones-del-feriante-y-compartir) · change [`exh-media-share`](changes/2026-11-16-exh-media-share/proposal.md) | `IN_PROGRESS` |
 | `EXH-06` Antivirus de documentos | `EXH-03` | **PENDIENTE.** Escanear cada documento subido (p. ej. ClamAV o el escaneo de un servicio gestionado) antes de que el organizador pueda descargarlo: estado de escaneo en la fila, descarga bloqueada hasta `CLEAN`, objeto infectado en cuarentena y borrado. Hoy sólo se limita tipo y tamaño | `PENDING` |
 | `EXH-07` Retención y eliminación de documentos (Ley 25.326) | `EXH-03` | **PENDIENTE.** Los documentos son datos personales (Ley 25.326, Argentina): definir con asesoría jurídica plazos de retención, baja a pedido del titular (acceso, rectificación y supresión), eliminación al cerrar la relación y registro de la base ante la AAIP. Hoy sólo se puede borrar un documento no aprobado | `PENDING` |
 | `EXH-08` Logo del expositor | `EXH-01`, `EXH-03` | **PENDIENTE.** Subida de logo (`logo_key`, imagen PNG/JPG/WebP con límite de tamaño) por el mismo mecanismo de URL firmada, mostrado en el directorio y el mapa públicos sólo con `public_contact_opt_in`; el logo sí es público, así que va a un prefijo distinto del de los documentos privados | `PENDING` |
@@ -666,6 +669,24 @@ Las tareas originales de Sprint 0 para CI, fundamentos UX y diseño detallado de
   - 2026-11-11: prueba real contra LocalStack con un token firmado como `sandbox-checkout.mjs`: firma, `PUT` (200), `complete` (PENDING), descarga con el mismo contenido y `attachment`, aprobación (APPROVED) y preflight CORS desde `http://localhost:4200` (tras aplicar el CORS al bucket existente).
 - **Limpieza de subidas sin confirmar (2026-11-11):** `ExhibitorDocumentsSweeper` (`exhibitors/document-sweeper.service.ts`) borra cada 10 min las filas con `uploaded_at IS NULL` y más de `DOCUMENT_UPLOAD_TTL_MINUTES` (60 por defecto; mínimo 10, porque la URL firmada dura 5 min) y su objeto (`remove` es idempotente: un objeto que falta no es error). Como `ReconciliationService`: `setInterval` en `onApplicationBootstrap`, apagado con `NODE_ENV=test`, recorre `tenants` (sin RLS) y barre cada tenant bajo su RLS; es seguro con varias instancias porque toma las filas con `FOR UPDATE SKIP LOCKED` (una fila que un `complete` está confirmando queda saltada). El objeto se borra dentro de la transacción: si el storage falla la fila queda y se reintenta; si falla el commit, la fila queda apuntando a un objeto inexistente y la próxima pasada lo borra de nuevo. Cada borrado se audita (`exhibitor_document.upload_expired`, sin la clave del objeto) y los logs llevan sólo conteos e ids. Sin migración nueva. La fuente de verdad es la app, no el bucket: una regla de ciclo de vida no distingue un objeto confirmado de uno sin confirmar (todos viven bajo `tenants/<tenant>/exhibitors/<id>/documents/<uuid>`). Subir a un prefijo `pending/` y renombrar al confirmar exigiría copiar y borrar en `complete` (una operación más que puede fallar a medias), así que no se hizo; como red de seguridad ante filas perdidas se puede sumar una regla del bucket que borre objetos viejos (ver README).
 - **Pendiente (2026-11-11), ver `EXH-06`, `EXH-07` y `EXH-08`:** antivirus de los documentos subidos, retención y eliminación según la Ley 25.326, logo del expositor (`logo_key`) y vencimiento de documentos.
+
+##### EXH-09 — Publicaciones del feriante y compartir
+
+- **Estado:** `IN_PROGRESS`
+- **Change:** [`exh-media-share`](changes/2026-11-16-exh-media-share/proposal.md) (propuesta, diseño, tareas y spec de la capacidad `exhibitor-media`).
+- **Entrega (2026-11-16 a 2026-11-20):**
+  - migración `0022` (publicaciones: `kind`, `event_id`, `caption`, `duration_s`, estado `HIDDEN`) y `0023` (`public_media_share`, lectura pública de una publicación);
+  - reglas compartidas de subida (`photo-policy`, formatos sin conversión, límites y cupo por evento);
+  - API del feriante (subir, confirmar, editar texto, borrar) y publicaciones en el mapa público con URLs firmadas de una hora;
+  - página de compartir `GET /api/v1/public/share/:id` con metadatos Open Graph y redirección a la feria;
+  - web: sección "Publicaciones" en el perfil del feriante; galería con videos y botón "Compartir" en el modal del stand; `?publicacion=` abre la publicación compartida;
+  - e2e y axe en los 6 temas.
+- **Pendiente:**
+  - organizador: ocultar y mostrar publicaciones (`MED-11`) y borrado al terminar el evento (`MED-12`);
+  - prueba de integración de los endpoints de la API (bloqueada por la conexión desde el host, `28P01`);
+  - menú nativo de compartir en un celular real, y video válido de punta a punta en el e2e;
+  - decisiones legales: texto de la declaración de derechos de imagen y plazo de retención (revisión de abogado).
+- **Decisiones:** formatos sin conversión (el navegador prueba la decodificación; el servidor confía en el tipo MIME); las publicaciones pertenecen a una feria; la vista previa de WhatsApp y Facebook depende de metadatos en el servidor, porque sus rastreadores no ejecutan JavaScript.
 
 ##### EXH-04 — Invitación y alta de feriantes
 

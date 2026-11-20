@@ -175,8 +175,13 @@ MED-10 (al final)
 
 ### MED-10 — Documentación y spec
 
-- **Estado:** `TODO`
-- **Entrega:** fila `EXH-05` en `specification.md` (§10.1), endpoints nuevos en §5, sección de publicaciones en el README y la receta de Firebase (`IMPLEMENTACION.md`, ruta `/share/**`).
+- **Estado:** `DONE` (2026-11-20). El change sigue `IN_PROGRESS`: pasa a `VERIFIED` cuando se cierren MED-03, MED-08 y MED-09 (pendientes de cada una) y MED-11 y MED-12.
+- **Evidencia:**
+  - `specification.md`: fila `EXH-09` en §10.1 (estado `IN_PROGRESS`) con su detalle y pendientes; dos endpoints nuevos en el índice de §5 (`/exhibitors/me/photos` y `/public/share/:mediaId`).
+  - `README.md`: sección "Publicaciones del feriante" (formatos, cupo, compartir, privacidad) y pendientes de `EXH-09`.
+  - `IMPLEMENTACION.md`: el bucket usa el mismo CORS (`PUT` y `GET`) y la página de compartir queda bajo `/api/**`.
+  - Corrección: el ID del change era `EXH-05`, pero ese ID ya es "Suscripción del feriante". Ahora es `EXH-09` en todos los documentos.
+- **Entrega:** fila `EXH-09` en `specification.md` (§10.1), endpoints nuevos en §5, sección de publicaciones en el README y la receta de Firebase (`IMPLEMENTACION.md`, ruta `/share/**`).
 - **Aceptación:** el change pasa a `VERIFIED` con la evidencia de cada tarea.
 
 ## Orden sugerido

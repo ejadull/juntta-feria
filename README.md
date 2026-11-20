@@ -248,6 +248,17 @@ En Windows con Git Bash, anteponer `MSYS_NO_PATHCONV=1` a los `docker compose ex
 
 Receta para producción en Firebase Hosting, Cloud Run, Cloud SQL y Cloud Storage: [IMPLEMENTACION.md](IMPLEMENTACION.md).
 
+## Publicaciones del feriante
+
+El feriante publica fotos y videos de su producto para una feria donde tiene un stand confirmado, desde la sección **Publicaciones** de su perfil. Cada publicación lleva un texto opcional y se muestra a los visitantes cuando tocan su stand en el plano.
+
+- **Formatos:** imágenes JPG, PNG o WebP de hasta 5 MB; videos MP4 (H.264 y AAC) o WebM (VP8/VP9 y Opus/Vorbis) de hasta 50 MB y 60 segundos. Otros formatos no se aceptan: el navegador comprueba que el video se pueda reproducir sin convertir.
+- **Cupo:** hasta 10 publicaciones por feriante y por feria.
+- **Compartir:** cada publicación tiene un botón "Compartir". En un celular abre el menú del sistema con el archivo (WhatsApp, Facebook e Instagram). En escritorio ofrece WhatsApp, Facebook, copiar el link y descargar el archivo; Instagram sólo se comparte desde su app.
+- **Privacidad:** sólo son visibles si el feriante acepta aparecer en el directorio público.
+
+Detalle y estado en [`EXH-09`](docs/openspec/specification.md#exh-09--publicaciones-del-feriante-y-compartir).
+
 ## Pendiente
 
 Detalle en [`docs/openspec/specification.md`](docs/openspec/specification.md) (tareas `PENDING`):
@@ -255,6 +266,7 @@ Detalle en [`docs/openspec/specification.md`](docs/openspec/specification.md) (t
 - **Antivirus de los documentos subidos** (`EXH-06`): hoy sólo se limita tipo y tamaño.
 - **Retención y eliminación de documentos según la Ley 25.326** (`EXH-07`, Argentina, datos personales): plazos, baja a pedido del titular y registro de la base, a definir con asesoría jurídica.
 - **Logo del expositor** (`EXH-08`): subida por URL firmada y visible en el directorio público sólo con consentimiento.
+- **Publicaciones** (`EXH-09`): ocultar una publicación desde el panel del organizador, borrado de las publicaciones al terminar el evento, y pruebas de integración de su API.
 
 ## Roadmap
 

@@ -166,6 +166,8 @@ gcloud storage hmac create juntta-storage@$PROJECT.iam.gserviceaccount.com
 gcloud storage buckets update gs://<BUCKET> --cors-file=cors.json
 ```
 
+Las publicaciones del feriante (`EXH-09`) usan el mismo bucket y el mismo CORS: el navegador sube imágenes y videos de hasta 50 MB con `PUT` y descarga los archivos con `GET` para compartirlos. La página de compartir de una publicación (`/api/v1/public/share/:id`) está bajo `/api/**`, así que el rewrite de Hosting ya la cubre.
+
 5. Variables de la API: `S3_ENDPOINT=https://storage.googleapis.com`, `S3_PUBLIC_ENDPOINT=https://storage.googleapis.com`, `S3_REGION=auto`, `S3_FORCE_PATH_STYLE=true` y `S3_BUCKET=<BUCKET>`.
 
 **Verificar:** subí un documento de prueba como feriante y descargalo como organizador. El cliente ya desactiva los checksums automáticos del SDK (`requestChecksumCalculation: 'WHEN_REQUIRED'`), que Cloud Storage no acepta en URLs firmadas; aun así, la firma SigV4 contra Cloud Storage se prueba con una subida real.

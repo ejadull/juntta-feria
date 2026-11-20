@@ -43,4 +43,4 @@ Hoy el feriante sube hasta 6 fotos de su perfil. Para vender su producto necesit
 - **Infra:** el bucket necesita CORS para `PUT` de videos (mismo esquema que documentos) y tamaño de carga hasta 50 MB; `firebase.json` suma la ruta de compartir hacia la API.
 - **Base de datos:** migración que extiende `exhibitor_photos` (ver `design.md`).
 - **Dependencias nuevas:** ninguna.
-- **Spec:** nueva fila `EXH-05` en §10.1 y en el índice de endpoints (§5).
+- **Spec:** nueva fila `EXH-09` en §10.1 y en el índice de endpoints (§5). (`EXH-05` ya es "Suscripción del feriante".)
