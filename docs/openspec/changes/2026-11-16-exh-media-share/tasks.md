@@ -85,7 +85,14 @@ MED-10 (al final)
 
 ### MED-06 — Web del feriante: publicaciones
 
-- **Estado:** `TODO`
+- **Estado:** `PARTIAL` (2026-11-20): código y unit tests hechos; e2e dedicado pendiente.
+- **Evidencia:**
+  - `domain/publication-rules.ts`: formato, tamaño, duración (1..60 s), texto (200) y cupo (10 por evento), con 6 tests en verde. El video sólo se decodifica si el formato es soportado.
+  - `exhibitor-publications-section.ts`: elegir feria (sólo las de stand confirmado), subir imagen o video con barra de progreso, texto opcional, lista de la feria elegida con miniaturas, editar texto, eliminar, marca de "oculta por el organizador", y errores junto al control. Sin ferias, el control no aparece y se explica por qué.
+  - Repositorio: campos de publicación, `updateCaption` y `myEvents` (HTTP y en memoria). Las fotos de perfil ya no muestran publicaciones.
+  - `exhibitor-publications-section.spec.ts`: 7 tests en verde. Suite web completa: 90 archivos, 720 tests en verde. `tsc` limpio.
+  - e2e completo: 76 pruebas en verde contra el servidor de desarrollo (puerto 4300), no contra la imagen Docker (build anterior).
+  - **Pendiente:** e2e dedicado con API mockeada (subir imagen y video, cupo, editar y eliminar), y el `::file-selector-button` revisado en el navegador.
 - **Entrega:** sección "Publicaciones" en el perfil del feriante: subir imagen o video con progreso, texto opcional, lista con miniaturas, editar texto, borrar. Validación en el navegador (tipo, tamaño, duración leyendo el video local) con errores junto al control.
 - **Aceptación:**
   - un video de más de 60 s se rechaza antes de subir;
