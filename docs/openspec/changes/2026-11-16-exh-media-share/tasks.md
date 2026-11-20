@@ -65,7 +65,8 @@ MED-10 (al final)
   - `tsc` limpio; respuesta 200 del mapa con los 9 expositores.
 - **Entrega:** el mapa público y la ficha del expositor devuelven `media: [{id, kind, url, caption, durationS}]`, sólo `READY`, sólo las no ocultas, sólo con consentimiento, sólo de eventos que no terminaron, con URLs firmadas de 1 hora.
 - **Aceptación:** sin consentimiento, `media` vacío; las ocultas y las de eventos terminados no aparecen; las claves de almacenamiento no aparecen en la respuesta.
-- **Pruebas:** unit de la función de consentimiento (ya existe para fotos), extendida a videos.
+- **Pruebas:** unit de la función de consentimiento (ya existe para fotos), extendida a videos. Int spec `apps/api/test/public-media.int-spec.ts` (4 pruebas en verde): una publicación `READY` de un expositor con consentimiento aparece con texto y duración; las ocultas, pendientes, de otra feria y sin consentimiento no salen; cada publicación tiene exactamente sus campos públicos; y tras terminar el evento el mapa no la muestra.
+- **Hallazgo abierto:** la URL firmada de descarga contiene la clave de almacenamiento en su ruta (`tenants/<tenant>/exhibitors/<exhibitor>/media/<id>`), así que los UUIDs de tenant y expositor salen en el mapa público. El campo `storageKey` no existe, pero la aceptación "las claves no aparecen en la respuesta" no se cumple al pie de la letra. Decidir si las claves pasan a ser opacas (sin tenant ni expositor en la ruta) o si se acepta el trade-off.
 
 ### MED-05 — Endpoint de compartir con metadatos en el servidor
 
@@ -137,7 +138,7 @@ MED-10 (al final)
 
 ### MED-09 — Accesibilidad y e2e
 
-- **Estado:** `PARTIAL` (2026-11-20): e2e, axe y video válido de punta a punta hechos; falta sólo el puente API → mapa en prueba de integración (MED-04).
+- **Estado:** `DONE` (2026-11-20): e2e, axe, video válido de punta a punta y puente API → mapa (MED-04) hechos.
 - **Evidencia:**
   - `e2e/exhibitor-media.e2e.ts` (9 pruebas en verde):
     - el feriante sube una foto a la feria donde tiene stand, con su texto, y lo ve listado;
@@ -148,7 +149,7 @@ MED-10 (al final)
   - Hallazgo: el axe del modal daba falsos positivos mientras corre la animación de entrada; los tests esperan `opacity: 1` antes de analizar (el mismo criterio del e2e del modal).
   - Suite e2e completa: 88 pruebas en verde.
   - Video válido de punta a punta: `exhibitor-media.e2e.ts` graba un WebM real en el navegador (`MediaRecorder` sobre un canvas), lo sube como publicación de la feria y verifica que se liste como video. Suite de media: 10 pruebas en verde contra `ng serve` (puerto 4300).
-  - **Pendiente:** el puente entre lo que sube el feriante y lo que ve el visitante sigue simulado: el mapa del mock no refleja lo subido. Eso se cubre con una prueba de integración de la API del mapa (MED-04), que todavía no está escrita.
+  - El puente entre lo que sube el feriante y lo que ve el visitante lo cubre la prueba de integración del mapa (MED-04, `public-media.int-spec.ts`).
 - **Entrega:** e2e del flujo completo (el feriante sube imagen y video, el visitante abre el modal, comparte con el fallback); axe en la página de publicaciones y en el modal, en los 6 temas.
 - **Aceptación:** sin fallas de axe; la galería se navega con teclado; los botones de compartir tienen nombre accesible con la red social.
 - **Pruebas:** `themes.e2e.ts` y un spec nuevo `exhibitor-media.e2e.ts`.
