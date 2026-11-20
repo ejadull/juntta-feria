@@ -425,6 +425,21 @@ export async function stubGoogle(page: Page, credential: string) {
   );
 }
 
+/** A publication or profile photo of the signed-in exhibitor (`/exhibitors/me/photos`). */
+export interface ApiPhoto {
+  id: string;
+  status: 'PENDING' | 'READY' | 'HIDDEN';
+  kind: 'IMAGE' | 'VIDEO';
+  contentType: string;
+  sizeBytes: number;
+  alt: string | null;
+  caption: string | null;
+  durationS: number | null;
+  eventId: string | null;
+  position: number;
+  url: string;
+}
+
 export interface MockApi {
   /** Client id answered by `GET /auth/providers`; null hides "Ingresar con Google". */
   googleClientId: string | null;
@@ -437,6 +452,8 @@ export interface MockApi {
   /** Problem answered by `POST /reservations` instead of creating the hold. */
   holdProblem: { status: number; code?: string } | null;
   reservations: Reservation[];
+  /** The signed-in exhibitor's photos and publications. */
+  photos: ApiPhoto[];
   incidents: PaymentIncident[];
   /** Problem answered by `POST /reservations/:id/refunds` instead of refunding. */
   refundProblem: { status: number; code?: string } | null;
@@ -505,6 +522,7 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
     subscription: { status: 'ACTIVE', currentPeriodEnd: future(60 * 24 * 20) },
     holdProblem: null,
     reservations: [],
+    photos: [],
     incidents: [],
     refundProblem: null,
     account: UNLINKED_ACCOUNT,
@@ -815,7 +833,64 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
         201,
       );
     }
-    if (path === '/exhibitors/me/photos') return json(route, []);
+    if (path === '/exhibitors/me/photos' && method === 'GET') return json(route, api.photos);
+    if (path === '/exhibitors/me/photos' && method === 'POST') {
+      const body = request.postDataJSON() as {
+        contentType: string;
+        sizeBytes: number;
+        alt?: string;
+        caption?: string;
+        eventId?: string;
+        durationS?: number;
+      };
+      const id = `ph${api.photos.length + 1}`;
+      const photo: ApiPhoto = {
+        id,
+        status: 'PENDING',
+        kind: body.contentType.startsWith('video/') ? 'VIDEO' : 'IMAGE',
+        contentType: body.contentType,
+        sizeBytes: body.sizeBytes,
+        alt: body.alt ?? null,
+        caption: body.caption ?? null,
+        durationS: body.durationS ?? null,
+        eventId: body.eventId ?? null,
+        position: api.photos.length,
+        url: `https://storage.test/media/${id}`,
+      };
+      api.photos = [...api.photos, photo];
+      const { url: _url, ...rest } = photo;
+      return json(
+        route,
+        {
+          photo: rest,
+          upload: {
+            url: `https://storage.test/upload/${id}`,
+            method: 'PUT',
+            headers: { 'Content-Type': body.contentType },
+            expiresAt: future(5),
+          },
+        },
+        201,
+      );
+    }
+    const ownPhoto = /^\/exhibitors\/me\/photos\/([^/]+)(\/complete)?$/.exec(path);
+    if (ownPhoto) {
+      const found = api.photos.find((p) => p.id === ownPhoto[1]);
+      if (!found) return json(route, { title: 'Not Found', status: 404 }, 404);
+      if (ownPhoto[2] === '/complete' && method === 'POST') {
+        found.status = 'READY';
+        return json(route, found);
+      }
+      if (method === 'PATCH') {
+        const body = request.postDataJSON() as { caption: string };
+        found.caption = body.caption;
+        return json(route, found);
+      }
+      if (method === 'DELETE') {
+        api.photos = api.photos.filter((p) => p.id !== found.id);
+        return route.fulfill({ status: 204 });
+      }
+    }
     if (path === '/exhibitors/me/documents') return json(route, api.documents);
     const own = /^\/exhibitors\/me\/documents\/([^/]+)(\/complete|\/download)?$/.exec(path);
     if (own) {
