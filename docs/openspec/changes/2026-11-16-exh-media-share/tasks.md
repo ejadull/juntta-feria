@@ -154,7 +154,14 @@ MED-10 (al final)
 
 ### MED-11 — Moderación: el organizador oculta publicaciones
 
-- **Estado:** `TODO`
+- **Estado:** `PARTIAL` (2026-11-20): código, unit tests y e2e hechos; falta la prueba de integración del servicio.
+- **Evidencia:**
+  - `visibilityAfter` (en `photo-policy.ts`): sólo cambian publicaciones `READY` y `HIDDEN`; una subida pendiente se rechaza; pedir el mismo estado no cambia nada. 3 tests en verde.
+  - API: `GET /events/:id/publications` y `PATCH /events/:id/publications/:photoId` con `{ hidden }`, sólo para owner, admin y operador (`MANAGERS`). Cambiar el estado queda en `audit_logs` (`exhibitor_publication.hidden` / `.shown`). El archivo no se borra. Rutas verificadas: sin sesión responden 401.
+  - Web: pestaña "Publicaciones" en el detalle del evento, con los botones "Ocultar" y "Mostrar". `event-publications-panel.spec.ts` con 4 tests en verde.
+  - e2e: `organizer-publications.e2e.ts` (ocultar y mostrar) y suite completa en verde: 89 pruebas.
+  - Quien oculta ve la marca en el plano y al compartir: el mapa y la página de compartir ya filtran por estado (MED-04 y MED-05).
+  - **Pendiente:** prueba de integración del servicio (cambio de estado en la base, auditoría y que otra organización no pueda ocultar), bloqueada por el error `28P01` desde el host, igual que MED-03.
 - **Entrega:** en el panel del evento, lista de publicaciones del evento con "Ocultar" y "Mostrar"; endpoint del organizador que cambia `READY` ↔ `HIDDEN` (auditado en `audit_logs`). El feriante ve la marca "oculta" en su lista.
 - **Aceptación:**
   - una publicación oculta desaparece de mapa, galería, compartir y vista previa;
