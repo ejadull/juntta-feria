@@ -759,6 +759,33 @@ export async function mockApi(page: Page, initial: Partial<MockApi> = {}): Promi
       return json(route, sectors);
     }
 
+    const eventPublications = /^\/events\/([^/]+)\/publications(?:\/([^/]+))?$/.exec(path);
+    if (eventPublications) {
+      const [, eventId, photoId] = eventPublications;
+      const rowOf = (p: ApiPhoto) => ({
+        id: p.id,
+        status: p.status,
+        kind: p.kind,
+        caption: p.caption,
+        durationS: p.durationS,
+        exhibitorName: 'Textiles Ana',
+        url: p.url,
+      });
+      if (!photoId && method === 'GET')
+        return json(
+          route,
+          api.photos
+            .filter((p) => p.eventId === eventId && p.status !== 'PENDING')
+            .map(rowOf),
+        );
+      const found = api.photos.find((p) => p.id === photoId && p.eventId === eventId);
+      if (photoId && method === 'PATCH' && found) {
+        const body = request.postDataJSON() as { hidden: boolean };
+        found.status = body.hidden ? 'HIDDEN' : 'READY';
+        return json(route, rowOf(found));
+      }
+      return json(route, { title: 'Not Found', status: 404 }, 404);
+    }
     if (path === '/events') return json(route, api.events);
     const metrics = /^\/events\/([^/]+)\/metrics$/.exec(path);
     if (metrics) {

@@ -19,6 +19,8 @@ import {
 import { EventInventoryRepository } from './data/event-inventory.repository';
 import { InMemoryEventAdminRepository } from './data/in-memory-event-admin.repository';
 import { InMemoryEventInventoryRepository } from './data/in-memory-event-inventory.repository';
+import { EventPublicationsRepository } from './data/event-publications.repository';
+import { InMemoryEventPublicationsRepository } from './data/in-memory-event-publications.repository';
 import { EventDetailPage } from './event-detail.page';
 
 const plain = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
@@ -70,6 +72,7 @@ async function render(
       { provide: VenueRepository, useValue: VENUES },
       { provide: LayoutTemplatesRepository, useValue: templates },
       { provide: EventInventoryRepository, useValue: new InMemoryEventInventoryRepository() },
+      { provide: EventPublicationsRepository, useValue: new InMemoryEventPublicationsRepository() },
       signedInAs(role),
       provideRouter([]),
     ],
@@ -137,12 +140,13 @@ describe('EventDetailPage (EVT-01, organizador)', () => {
     expect(plain(host.querySelector('h1')?.textContent)).toBe('Feria de Primavera');
   });
 
-  it('has three tabs, with the data one selected', async () => {
+  it('has four tabs, with the data one selected', async () => {
     const { host, tab } = await render();
     expect([...host.querySelectorAll('[role="tab"]')].map((t) => plain(t.textContent))).toEqual([
       'Datos',
       'Sectores',
       'Stands y precios',
+      'Publicaciones',
     ]);
     expect(tab('Datos')?.getAttribute('aria-selected')).toBe('true');
     expect(host.querySelector('[role="tabpanel"]')).not.toBeNull();

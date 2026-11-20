@@ -100,3 +100,16 @@ export function validateMediaUpload(draft: MediaUploadDraft): MediaCheck {
 export function canPublishInEvent(publicationsInEvent: number): boolean {
   return publicationsInEvent < MAX_PUBLICATIONS_PER_EVENT;
 }
+
+/**
+ * The status an organizer's hide or show leaves a publication in (MED-11). Only published items
+ * change: a pending upload is not visible yet, so it is refused (null), and the answer for a status
+ * that is already the requested one is that same status.
+ */
+export function visibilityAfter(
+  status: string,
+  hidden: boolean,
+): 'READY' | 'HIDDEN' | null {
+  if (status !== 'READY' && status !== 'HIDDEN') return null;
+  return hidden ? 'HIDDEN' : 'READY';
+}

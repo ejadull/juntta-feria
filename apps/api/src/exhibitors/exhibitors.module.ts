@@ -22,6 +22,8 @@ import {
   PublicInvitationsController,
 } from './invitations.controller.js';
 import { InvitationsService } from './invitations.service.js';
+import { EventPublicationsController } from './publication-moderation.controller.js';
+import { PublicationModerationService } from './publication-moderation.service.js';
 
 /**
  * EXH-01 exhibitor profiles, EXH-02 rubros, EXH-03 documents and EXH-04 invitations
@@ -38,8 +40,10 @@ import { InvitationsService } from './invitations.service.js';
     ExhibitorsController,
     InvitationsController,
     PublicInvitationsController,
+    EventPublicationsController,
   ],
   providers: [
+    PublicationModerationService,
     ExhibitorsService,
     InvitationsService,
     CategoriesService,

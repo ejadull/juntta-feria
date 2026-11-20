@@ -28,6 +28,8 @@ import { EventAdminRepository } from './features/events/data/event-admin.reposit
 import { EventInventoryRepository } from './features/events/data/event-inventory.repository';
 import { HttpEventAdminRepository } from './features/events/data/http-event-admin.repository';
 import { HttpEventInventoryRepository } from './features/events/data/http-event-inventory.repository';
+import { EventPublicationsRepository } from './features/events/data/event-publications.repository';
+import { HttpEventPublicationsRepository } from './features/events/data/http-event-publications.repository';
 import { HttpLayoutTemplatesRepository } from './features/layout-editor/data/http-layout-templates.repository';
 import { LayoutTemplatesRepository } from './features/layout-editor/data/layout-templates.repository';
 import { HttpVenueRepository } from './features/venues/data/http-venue.repository';
@@ -154,6 +156,7 @@ export const routes: Routes = [
                   import('./features/events/event-detail.page').then((m) => m.EventDetailPage),
                 providers: [
                   { provide: EventInventoryRepository, useClass: HttpEventInventoryRepository },
+                  { provide: EventPublicationsRepository, useClass: HttpEventPublicationsRepository },
                   // Only to read the event plan (stand areas).
                   { provide: LayoutRepository, useClass: HttpLayoutRepository },
                 ],

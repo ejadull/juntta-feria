@@ -8,6 +8,7 @@ import {
   canPublishInEvent,
   photoKey,
   validateMediaUpload,
+  visibilityAfter,
 } from './photo-policy.js';
 
 const T = '11111111-1111-4111-8111-111111111111';
@@ -131,5 +132,21 @@ describe('requestPhotoInput for publications (MED-03)', () => {
     ['event id not a uuid', { ...video, eventId: 'no-uuid' }],
   ])('rejects %s', (_name, body) => {
     expect(requestPhotoInput.safeParse(body).success).toBe(false);
+  });
+});
+
+describe('visibility of a publication (MED-11)', () => {
+  it('hides a published publication and shows a hidden one again', () => {
+    expect(visibilityAfter('READY', true)).toBe('HIDDEN');
+    expect(visibilityAfter('HIDDEN', false)).toBe('READY');
+  });
+
+  it('keeps the status when asked for what it already is', () => {
+    expect(visibilityAfter('READY', false)).toBe('READY');
+    expect(visibilityAfter('HIDDEN', true)).toBe('HIDDEN');
+  });
+
+  it('refuses to change an upload that is not published yet', () => {
+    expect(visibilityAfter('PENDING', true)).toBeNull();
   });
 });

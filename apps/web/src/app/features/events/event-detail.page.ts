@@ -25,14 +25,16 @@ import {
 import { EVENT_STATUS, formatDateTime } from './labels';
 import { EventForm } from './ui/event-form';
 import { SectorsPanel } from './ui/sectors-panel';
+import { EventPublicationsPanel } from './ui/event-publications-panel';
 import { StandsPanel } from './ui/stands-panel';
 
-type Tab = 'datos' | 'sectores' | 'stands';
+type Tab = 'datos' | 'sectores' | 'stands' | 'publicaciones';
 
 const TABS: readonly { readonly id: Tab; readonly label: string }[] = [
   { id: 'datos', label: 'Datos' },
   { id: 'sectores', label: 'Sectores' },
   { id: 'stands', label: 'Stands y precios' },
+  { id: 'publicaciones', label: 'Publicaciones' },
 ];
 
 const PLAN_STATUS: Record<'DRAFT' | 'PUBLISHED' | 'ARCHIVED', string> = {
@@ -66,7 +68,7 @@ export function issueText(issue: ProblemIssue): string {
 /** EVT-01 (organizer): one event with its data, sectors and priced stands, and "Publicar". */
 @Component({
   selector: 'app-event-detail-page',
-  imports: [ConfirmDialog, RouterLink, EventForm, SectorsPanel, StandsPanel],
+  imports: [ConfirmDialog, RouterLink, EventForm, SectorsPanel, StandsPanel, EventPublicationsPanel],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-5xl px-4 py-6 sm:px-8 sm:py-8">
@@ -254,6 +256,9 @@ export function issueText(issue: ProblemIssue): string {
             }
             @case ('sectores') {
               <div class="card"><app-sectors-panel [eventId]="e.id" /></div>
+            }
+            @case ('publicaciones') {
+              <div class="card"><app-event-publications-panel [eventId]="e.id" /></div>
             }
             @case ('stands') {
               <div class="card">
