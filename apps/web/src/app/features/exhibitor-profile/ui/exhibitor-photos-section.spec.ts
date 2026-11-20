@@ -13,9 +13,13 @@ import { ExhibitorPhotosSection } from './exhibitor-photos-section';
 const photo = (n: number): ExhibitorPhotoDto => ({
   id: `p${n}`,
   status: 'READY',
+  kind: 'IMAGE',
   contentType: 'image/jpeg',
   sizeBytes: 1000,
   alt: n === 1 ? 'Telar con lanas' : null,
+  caption: null,
+  durationS: null,
+  eventId: null,
   position: n,
   url: `https://files.test/p${n}`,
 });

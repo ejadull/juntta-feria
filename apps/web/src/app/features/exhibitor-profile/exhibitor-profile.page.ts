@@ -16,6 +16,7 @@ import {
   type ExhibitorProfileInput,
 } from './data/exhibitor-profile.repository';
 import { ExhibitorPhotosSection } from './ui/exhibitor-photos-section';
+import { ExhibitorPublicationsSection } from './ui/exhibitor-publications-section';
 
 const LOAD_FAILED = 'No pudimos cargar tu perfil. Probá de nuevo en unos minutos.';
 const SAVE_FAILED = 'No pudimos guardar tu perfil. Probá de nuevo en unos minutos.';
@@ -30,7 +31,7 @@ type Errors = Partial<Record<Field, string>>;
  */
 @Component({
   selector: 'app-exhibitor-profile-page',
-  imports: [ExhibitorPhotosSection],
+  imports: [ExhibitorPhotosSection, ExhibitorPublicationsSection],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="mx-auto max-w-3xl px-4 py-6 sm:px-8 sm:py-8">
@@ -163,6 +164,7 @@ type Errors = Partial<Record<Field, string>>;
           </div>
         </form>
         <app-exhibitor-photos-section [isPublic]="publicContactOptIn()" />
+        <app-exhibitor-publications-section [isPublic]="publicContactOptIn()" />
       }
     </div>
   `,

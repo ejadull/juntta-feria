@@ -164,7 +164,8 @@ export class ExhibitorPhotosSection {
 
   constructor() {
     this.repo.list().subscribe({
-      next: (list) => this.photos.set(list),
+      // Publications of an event belong to their own section; this one shows profile photos only.
+      next: (list) => this.photos.set(list.filter((p) => p.eventId === null)),
       error: () => this.loadError.set(LOAD_FAILED),
     });
   }
