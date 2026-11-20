@@ -102,7 +102,15 @@ MED-10 (al final)
 
 ### MED-07 — Visitante: galería con videos en el modal
 
-- **Estado:** `TODO`
+- **Estado:** `DONE` (2026-11-20)
+- **Evidencia:**
+  - `domain/stand-media.ts`: `galleryOf` (publicaciones primero, luego fotos de perfil; la del enlace de compartir va primero) y `standForPublication`. `stand-media.spec.ts` con 6 tests en verde.
+  - `stand-detail-dialog`: videos con `controls`, `preload="metadata"` y sin `autoplay`; texto de cada publicación; imágenes con texto alternativo (su texto o el nombre del expositor). Input `highlight`. 8 tests en verde.
+  - `fair-map.page.ts`: `?publicacion=<id>` abre el modal del stand de esa publicación, una sola vez, con esa publicación primero.
+  - Expositor público con `media` (adaptadores HTTP y en memoria con `[]` por defecto).
+  - e2e: `stand-media.e2e.ts` (enlace de compartir abre el video con su texto; sin enlace, el orden no cambia) y suite completa en verde: 78 pruebas, contra el servidor de desarrollo.
+  - Suite web: 91 archivos, 728 tests en verde. `tsc` limpio.
+  - Movimiento: el video no arranca solo y la galería no anima; el `scroll-snap` ya existente no depende de animaciones.
 - **Entrega:** la galería del modal de stand muestra imágenes y videos (`<video controls preload="metadata">`, sin autoplay), con el texto de cada publicación y `alt` obligatorio en imágenes.
 - **Aceptación:** sin movimiento automático; respeta `prefers-reduced-motion`; el teclado llega a cada publicación.
 - **Pruebas:** unit del modal; e2e con un video de prueba.
