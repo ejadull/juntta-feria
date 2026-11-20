@@ -38,14 +38,14 @@ MED-10 (al final)
 
 ### MED-03 — API del feriante: subir, confirmar, editar, borrar
 
-- **Estado:** `PARTIAL` (2026-11-18): código y unit tests hechos; tests de integración pendientes.
+- **Estado:** `DONE` (2026-11-20): código, unit e integración hechos.
 - **Evidencia:**
   - `photo.input.ts`: `requestPhotoInput` acepta video, evento, texto y duración, y aplica `validateMediaUpload`; `updateCaptionInput` valida el texto.
   - `photos.service.ts`: subir exige evento donde el feriante tenga stand `CONFIRMED` (`NO_STAND_IN_EVENT`) y evento vigente (`EVENT_CLOSED`); cupo por evento (`PUBLICATION_LIMIT`); el cupo de perfil (6) sólo cuenta fotos sin evento; `complete` valida con la política completa y el evento sigue abierto; `updateCaption` sólo para publicaciones de eventos vigentes; `listOwn` devuelve `READY` y `HIDDEN`.
   - `photos.controller.ts`: `PATCH /exhibitors/me/photos/:id` para el texto. Ruta protegida (401 sin sesión, verificado con la API en Docker).
   - El barrido de pendientes ya limpia cualquier fila `PENDING` vencida, así que los videos quedan cubiertos.
   - Unit: `photo-policy.spec.ts` con 28 tests en verde (10 nuevos de entrada para publicaciones). `tsc` limpio.
-  - **Pendiente:** int spec de los endpoints (subir, confirmar con HEAD, cupo por evento, evento sin stand, editar texto). Bloqueado por el error `28P01` desde el host.
+  - Int spec `apps/api/test/publications.int-spec.ts` (18 tests en verde, dentro del contenedor): subida de perfil y de video, confirmación con HEAD (409 `UPLOAD_MISSING`, 422 con tipo distinto y archivo borrado), cupo de perfil (`PHOTO_LIMIT`) y por evento (`PUBLICATION_LIMIT`), evento sin stand (403), video sin duración (400), evento terminado (409 `EVENT_CLOSED`), edición del texto y 404 ajeno.
   - **Falla ajena al change:** `src/auth/redis-counter-store.spec.ts` ("cold start 503") falla de forma consistente con `Connection is closed` del ioredis real, aunque el spec mockea ioredis. No hay cambios en `src/auth`; queda para revisar aparte.
 - **Entrega:** `POST` de subida firmada (con `kind`, `event_id`, `duration_s` y tipo), `complete` con HEAD para tamaño y tipo, `PATCH` del texto, `DELETE`, `GET` propio. Mismo patrón que documentos y fotos. Rechaza eventos que ya terminaron.
 - **Aceptación:**
@@ -154,14 +154,14 @@ MED-10 (al final)
 
 ### MED-11 — Moderación: el organizador oculta publicaciones
 
-- **Estado:** `PARTIAL` (2026-11-20): código, unit tests y e2e hechos; falta la prueba de integración del servicio.
+- **Estado:** `DONE` (2026-11-20): código, unit, e2e e integración hechos.
 - **Evidencia:**
   - `visibilityAfter` (en `photo-policy.ts`): sólo cambian publicaciones `READY` y `HIDDEN`; una subida pendiente se rechaza; pedir el mismo estado no cambia nada. 3 tests en verde.
   - API: `GET /events/:id/publications` y `PATCH /events/:id/publications/:photoId` con `{ hidden }`, sólo para owner, admin y operador (`MANAGERS`). Cambiar el estado queda en `audit_logs` (`exhibitor_publication.hidden` / `.shown`). El archivo no se borra. Rutas verificadas: sin sesión responden 401.
   - Web: pestaña "Publicaciones" en el detalle del evento, con los botones "Ocultar" y "Mostrar". `event-publications-panel.spec.ts` con 4 tests en verde.
   - e2e: `organizer-publications.e2e.ts` (ocultar y mostrar) y suite completa en verde: 89 pruebas.
   - Quien oculta ve la marca en el plano y al compartir: el mapa y la página de compartir ya filtran por estado (MED-04 y MED-05).
-  - **Pendiente:** prueba de integración del servicio (cambio de estado en la base, auditoría y que otra organización no pueda ocultar), bloqueada por el error `28P01` desde el host, igual que MED-03.
+  - Int spec `publications.int-spec.ts`: lista sólo publicadas con nombre del feriante, 403 para feriantes, ocultar y mostrar con auditoría (orden `uploaded` → `hidden` → `shown`), 404 para publicación ajena al evento y 403 para un miembro que no es organizador.
 - **Entrega:** en el panel del evento, lista de publicaciones del evento con "Ocultar" y "Mostrar"; endpoint del organizador que cambia `READY` ↔ `HIDDEN` (auditado en `audit_logs`). El feriante ve la marca "oculta" en su lista.
 - **Aceptación:**
   - una publicación oculta desaparece de mapa, galería, compartir y vista previa;
@@ -171,7 +171,7 @@ MED-10 (al final)
 
 ### MED-12 — Borrado de publicaciones al terminar el evento
 
-- **Estado:** `PARTIAL` (2026-11-20): regla, consulta y job hechos; faltan la prueba de integración del job y la confirmación del plazo por asesoría.
+- **Estado:** `PARTIAL` (2026-11-20): regla, consulta, job e integración hechos; falta sólo la confirmación del plazo por asesoría.
 - **Evidencia:**
   - `isRetentionDue` (en `photo-policy.ts`): vencida cuando pasaron `MEDIA_RETENTION_DAYS` desde el fin del evento. 2 tests en verde.
   - `MEDIA_RETENTION_DAYS` en la configuración (por defecto 0, entre 0 y 3650 días), con su test. 55 tests de configuración en verde.
@@ -179,7 +179,8 @@ MED-10 (al final)
   - Las fotos de perfil (sin evento) no se tocan.
   - Verificado contra la base: una publicación de la feria del 14/11 (ya terminada) aparece en la consulta del barrido, se borra con su bloqueo, y no queda ninguna pendiente. La fila de prueba se borró al final.
   - La API arrancó con el job registrado y responde 200.
-  - **Pendiente:** prueba de integración del job (que también borre el archivo en el bucket), bloqueada por el error `28P01` desde el host, igual que MED-03 y MED-11. Y el plazo exacto de retención (al terminar o unos días después): lo confirma el abogado. Hasta entonces, queda en 0 días.
+  - Int spec `publications.int-spec.ts`: el barrido borra filas y archivos (10 publicaciones, READY y pendientes) de un evento terminado, conserva las fotos de perfil, audita cada borrado con `before_json.eventId`, y una segunda pasada borra 0.
+  - **Pendiente:** el plazo exacto de retención (al terminar o unos días después): lo confirma el abogado. Hasta entonces, queda en 0 días.
 - **Entrega:** job de limpieza (mismo patrón que `ExhibitorPhotosSweeper`, con `SKIP LOCKED`) que, para eventos con `ends_at` vencido, borra las filas y los archivos de sus publicaciones. Las fotos de perfil (`event_id` nulo) no se tocan.
 - **Aceptación:**
   - un evento terminado no conserva ninguna publicación ni archivo;
