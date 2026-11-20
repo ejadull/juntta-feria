@@ -171,7 +171,15 @@ MED-10 (al final)
 
 ### MED-12 — Borrado de publicaciones al terminar el evento
 
-- **Estado:** `TODO`
+- **Estado:** `PARTIAL` (2026-11-20): regla, consulta y job hechos; faltan la prueba de integración del job y la confirmación del plazo por asesoría.
+- **Evidencia:**
+  - `isRetentionDue` (en `photo-policy.ts`): vencida cuando pasaron `MEDIA_RETENTION_DAYS` desde el fin del evento. 2 tests en verde.
+  - `MEDIA_RETENTION_DAYS` en la configuración (por defecto 0, entre 0 y 3650 días), con su test. 55 tests de configuración en verde.
+  - `publication-retention.service.ts`: recorre los tenants, borra filas y archivos de publicaciones de eventos vencidos con `FOR UPDATE SKIP LOCKED`, audita `exhibitor_publication.retention_deleted` con id y fecha (sin claves de archivo), y corre cada 10 minutos fuera de los tests. Registrado en el módulo de exhibitors.
+  - Las fotos de perfil (sin evento) no se tocan.
+  - Verificado contra la base: una publicación de la feria del 14/11 (ya terminada) aparece en la consulta del barrido, se borra con su bloqueo, y no queda ninguna pendiente. La fila de prueba se borró al final.
+  - La API arrancó con el job registrado y responde 200.
+  - **Pendiente:** prueba de integración del job (que también borre el archivo en el bucket), bloqueada por el error `28P01` desde el host, igual que MED-03 y MED-11. Y el plazo exacto de retención (al terminar o unos días después): lo confirma el abogado. Hasta entonces, queda en 0 días.
 - **Entrega:** job de limpieza (mismo patrón que `ExhibitorPhotosSweeper`, con `SKIP LOCKED`) que, para eventos con `ends_at` vencido, borra las filas y los archivos de sus publicaciones. Las fotos de perfil (`event_id` nulo) no se tocan.
 - **Aceptación:**
   - un evento terminado no conserva ninguna publicación ni archivo;
