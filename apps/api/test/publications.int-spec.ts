@@ -269,7 +269,9 @@ describe('profile photos (MED-03)', () => {
   });
 
   it('caps the profile at six READY photos (409 PHOTO_LIMIT on the seventh)', async () => {
-    const readyBefore = (await mine()).filter((p) => p.status === 'READY').length;
+    const readyBefore = (await mine()).filter(
+      (p) => p.status === 'READY',
+    ).length;
     const ids: string[] = [];
     for (let i = readyBefore; i < 7; i++) {
       const res = await requestUpload('ana', profileImage());
@@ -367,7 +369,10 @@ describe('publications in an event (MED-03)', () => {
   it('caps an exhibitor at ten publications per event (409 PUBLICATION_LIMIT)', async () => {
     // One READY publication exists; pending requests count too, so nine more reach the limit.
     for (let i = 0; i < 9; i++) {
-      const res = await requestUpload('ana', video({ caption: `Publicación ${i}` }));
+      const res = await requestUpload(
+        'ana',
+        video({ caption: `Publicación ${i}` }),
+      );
       expect(res.statusCode).toBe(201);
     }
     const res = await requestUpload('ana', video());
@@ -407,9 +412,9 @@ describe('organizer moderation (MED-11)', () => {
     );
     expect(hidden.statusCode).toBe(200);
     expect(hidden.json().status).toBe('HIDDEN');
-    expect(
-      (await mine()).find((p) => p.id === publication.id)!.status,
-    ).toBe('HIDDEN');
+    expect((await mine()).find((p) => p.id === publication.id)!.status).toBe(
+      'HIDDEN',
+    );
 
     const shown = await call(
       'PATCH',
@@ -481,8 +486,9 @@ describe('retention of ended events (MED-12)', () => {
   });
 
   it('deletes the rows and files of the ended event, keeps profile photos, and audits each', async () => {
-    const profilesBefore = (await mine()).filter((p) => p.eventId === null)
-      .length;
+    const profilesBefore = (await mine()).filter(
+      (p) => p.eventId === null,
+    ).length;
     const deleted = await app
       .get(PublicationRetentionSweeper)
       .sweepTenant(T, new Date());
