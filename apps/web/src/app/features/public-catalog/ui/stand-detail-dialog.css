@@ -181,6 +181,19 @@
   flex: 0 0 100%;
   scroll-snap-align: start;
 }
+.gallery .media-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  border-radius: 0.75rem;
+  background: var(--color-surface-soft);
+}
+.gallery .caption {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
 .gallery img {
   display: block;
   width: 100%;

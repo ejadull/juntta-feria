@@ -1,4 +1,5 @@
 import type { Observable } from 'rxjs';
+import type { StandMedia } from '../domain/stand-media';
 import type { LayoutObjectKind, PolygonGeometry } from '../../layout-editor/domain/layout.types';
 
 /** Public, sanitized stand states (design D2 of pub-ui-catalog; tokens from UX-01). */
@@ -41,6 +42,8 @@ export interface StandProperties {
     readonly description: string | null;
     /** Stand photos in display order; only present under the same consent. Empty when none. */
     readonly photos: readonly StandPhoto[];
+    /** Publications of this event (photos or videos with text), in position order. Same consent. */
+    readonly media: readonly StandMedia[];
   } | null;
 }
 

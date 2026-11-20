@@ -38,7 +38,11 @@ export class HttpPublicCatalogRepository extends PublicCatalogRepository {
                 properties: {
                   ...f.properties,
                   exhibitor: f.properties.exhibitor
-                    ? { ...f.properties.exhibitor, photos: f.properties.exhibitor.photos ?? [] }
+                    ? {
+                        ...f.properties.exhibitor,
+                        photos: f.properties.exhibitor.photos ?? [],
+                        media: f.properties.exhibitor.media ?? [],
+                      }
                     : null,
                 },
               }

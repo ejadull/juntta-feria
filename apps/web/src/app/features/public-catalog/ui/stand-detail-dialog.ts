@@ -12,6 +12,7 @@ import {
 import { formatArs } from '../../../shared/money';
 import { STATUS_LABEL, type PublicStandStatus } from '../data/public-catalog.repository';
 import type { StandView } from '../domain/stand-filters';
+import { galleryOf } from '../domain/stand-media';
 
 const STATUS_ICON: Readonly<Record<PublicStandStatus, string>> = {
   AVAILABLE: '✓',
@@ -41,6 +42,8 @@ export class StandDetailDialog {
   readonly stand = input.required<StandView>();
   /** Every stand of the plan: the neighbors are drawn faint around this one. */
   readonly plan = input<readonly StandView[]>([]);
+  /** Publication a share link points to: shown first in the gallery. */
+  readonly highlight = input<string | null>(null);
 
   readonly closed = output<void>();
 
@@ -61,7 +64,7 @@ export class StandDetailDialog {
     () => (this.description()?.length ?? 0) > LONG_DESCRIPTION,
   );
 
-  protected readonly photos = computed(() => this.stand().exhibitor?.photos ?? []);
+  protected readonly gallery = computed(() => galleryOf(this.stand().exhibitor, this.highlight()));
 
   protected readonly miniature = computed(() => {
     const s = this.stand();

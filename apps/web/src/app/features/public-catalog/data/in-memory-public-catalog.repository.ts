@@ -160,6 +160,7 @@ function demoMap(): PublicMapDto {
               category: exhibitor.category,
               description: exhibitor.description,
               photos: [],
+              media: [],
             }
           : null,
       },

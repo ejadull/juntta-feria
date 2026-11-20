@@ -22,16 +22,25 @@
     </header>
 
     <div class="visual">
-      @if (photos().length > 0) {
-        <ul class="gallery" aria-label="Fotos del stand" tabindex="0">
-          @for (p of photos(); track p.url; let i = $index) {
+      @if (gallery().length > 0) {
+        <ul class="gallery" aria-label="Fotos y videos del stand" tabindex="0">
+          @for (item of gallery(); track item.id) {
             <li>
-              <img
-                [src]="p.url"
-                [alt]="p.alt || 'Foto de ' + (stand().exhibitor?.name ?? 'el stand')"
-                loading="lazy"
-                decoding="async"
-              />
+              @if (item.kind === 'VIDEO') {
+                <video
+                  class="media-video"
+                  [src]="item.url"
+                  controls
+                  preload="metadata"
+                  playsinline
+                  [attr.aria-label]="item.caption || 'Video del stand'"
+                ></video>
+              } @else {
+                <img [src]="item.url" [alt]="item.alt" loading="lazy" decoding="async" />
+              }
+              @if (item.caption) {
+                <p class="caption">{{ item.caption }}</p>
+              }
             </li>
           }
         </ul>

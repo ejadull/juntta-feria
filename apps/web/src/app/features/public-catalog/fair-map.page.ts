@@ -13,6 +13,7 @@ import { forkJoin, map, startWith, switchMap } from 'rxjs';
 import { SeoService, fairSeo } from '../../shared/seo/seo';
 import { PublicCatalogRepository, STATUS_LABEL } from './data/public-catalog.repository';
 import { standsOf } from './domain/stand-filters';
+import { standForPublication } from './domain/stand-media';
 import { dataOf, errorOf, toLoaded } from './ui/loaded';
 import { StandDetailDialog } from './ui/stand-detail-dialog';
 import { StandMap } from './ui/stand-map/stand-map';
@@ -96,7 +97,12 @@ import { StandMap } from './ui/stand-map/stand-map';
           </ul>
         </section>
         @if (dialogStand(); as open) {
-          <app-stand-detail-dialog [stand]="open" [plan]="stands()" (closed)="dialogId.set(null)" />
+          <app-stand-detail-dialog
+            [stand]="open"
+            [plan]="stands()"
+            [highlight]="publicacion()"
+            (closed)="dialogId.set(null)"
+          />
         }
       } @else {
         <p class="text-text-muted" aria-live="polite">Cargando mapa…</p>
@@ -107,6 +113,8 @@ import { StandMap } from './ui/stand-map/stand-map';
 export class FairMapPage {
   /** Route param `:slug` (withComponentInputBinding). */
   readonly slug = input.required<string>();
+  /** `?publicacion=<id>` from a share link (withComponentInputBinding also binds query params). */
+  readonly publicacion = input<string | null>(null);
 
   protected readonly statusLabel = STATUS_LABEL;
   protected readonly selectedId = signal<string | null>(null);
@@ -136,8 +144,19 @@ export class FairMapPage {
   protected readonly error = computed(() => errorOf(this.state()));
 
   private readonly seo = inject(SeoService);
+  private readonly openedFromLink = signal(false);
 
   constructor() {
+    // A share link opens the stand of its publication, once, when the plan has loaded.
+    effect(() => {
+      const id = this.publicacion();
+      const stands = this.stands();
+      if (!id || this.openedFromLink() || stands.length === 0) return;
+      this.openedFromLink.set(true);
+      const stand = standForPublication(stands, id);
+      if (stand) this.dialogId.set(stand.id);
+    });
+
     // Once the fair loads, its name, dates and venue become the page's search and AI description.
     effect(() => {
       const d = this.data();

@@ -315,6 +315,16 @@ const publicMap = (slug: string) => {
           category: 'Textil de autor',
           description: 'Hilados y tejidos con lana de oveja de la meseta.',
           photos: [{ url: PHOTO_DATA_URI, alt: 'Telar con lanas teñidas a mano' }],
+          media: [
+            {
+              id: 'pub-1',
+              kind: 'VIDEO',
+              url: 'data:video/mp4;base64,AAAA',
+              alt: '',
+              caption: 'Así se tiñe la lana a mano',
+              durationS: 45,
+            },
+          ],
         }),
       ),
       feature(5, standProps(2, 'AVAILABLE')),

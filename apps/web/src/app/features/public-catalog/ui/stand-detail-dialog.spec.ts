@@ -15,6 +15,7 @@ const base: StandView = {
     category: 'Textil de autor',
     description: 'Hilados con lana de la meseta.',
     photos: [],
+    media: [],
   },
   points: '',
   x: 1,
@@ -107,5 +108,44 @@ describe('StandDetailDialog', () => {
   it('puts the autofocus on the Close button', async () => {
     const { host } = await render();
     expect(host.querySelector('dialog .actions button')?.hasAttribute('autofocus')).toBe(true);
+  });
+
+  it('shows a video with controls, no autoplay, and its text', async () => {
+    const withVideo: StandView = {
+      ...base,
+      exhibitor: {
+        ...base.exhibitor!,
+        media: [
+          {
+            id: 'm1',
+            kind: 'VIDEO',
+            url: 'https://files.test/m1',
+            alt: '',
+            caption: 'Así se hace',
+            durationS: 45,
+          },
+        ],
+      },
+    };
+    const { host } = await render(withVideo);
+    const video = host.querySelector<HTMLVideoElement>('dialog video')!;
+    expect(video.hasAttribute('controls')).toBe(true);
+    expect(video.hasAttribute('autoplay')).toBe(false);
+    expect(video.getAttribute('preload')).toBe('metadata');
+    expect(host.querySelector('dialog .gallery')?.textContent).toContain('Así se hace');
+  });
+
+  it('gives every image its caption as text alternative', async () => {
+    const withImage: StandView = {
+      ...base,
+      exhibitor: {
+        ...base.exhibitor!,
+        media: [
+          { id: 'm1', kind: 'IMAGE', url: 'https://files.test/m1', alt: '', caption: 'Mermelada', durationS: null },
+        ],
+      },
+    };
+    const { host } = await render(withImage);
+    expect(host.querySelector<HTMLImageElement>('dialog .gallery img')?.alt).toBe('Mermelada');
   });
 });
