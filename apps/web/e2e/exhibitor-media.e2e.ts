@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { mockApi, reservation, seriousViolations } from './support/mock-api';
 
 /** MED-09: publications end to end (exhibitor publishes, visitor opens and shares), with axe in every theme. */
@@ -42,6 +42,50 @@ test('a video the browser cannot read is refused before it is sent', async ({ pa
   expect(api.requests.some((r) => r.method === 'POST' && r.path === '/exhibitors/me/photos')).toBe(
     false,
   );
+});
+
+/** A WebM the browser records itself (2 s of canvas frames): a video it can read, with no binary in the repo. */
+async function recordWebm(page: Page): Promise<Buffer> {
+  const base64 = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 160;
+    canvas.height = 90;
+    const ctx = canvas.getContext('2d')!;
+    const recorder = new MediaRecorder(canvas.captureStream(15), { mimeType: 'video/webm' });
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (event) => chunks.push(event.data);
+    const stopped = new Promise<void>((resolve) => (recorder.onstop = () => resolve()));
+    recorder.start();
+    for (let frame = 0; frame < 20; frame++) {
+      ctx.fillStyle = `hsl(${frame * 18} 80% 50%)`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    recorder.stop();
+    await stopped;
+    const bytes = new Uint8Array(await new Blob(chunks).arrayBuffer());
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+  });
+  return Buffer.from(base64, 'base64');
+}
+
+test('a real WebM video is published about an event and listed as a video', async ({ page }) => {
+  await mockApi(page, { role: 'EXHIBITOR', reservations: [confirmed()] });
+  await page.goto('/feriante/perfil');
+
+  const section = page.getByRole('region', { name: 'Publicaciones' });
+  await expect(section.locator('#pub-event')).toHaveValue('e1');
+  await section.locator('input[type="file"]').setInputFiles({
+    name: 'demo.webm',
+    mimeType: 'video/webm',
+    buffer: await recordWebm(page),
+  });
+
+  await expect(section.getByRole('status')).toHaveText('Publicación subida.');
+  await expect(section.getByTestId('pub-item').locator('video')).toHaveCount(1);
+  expect(await seriousViolations(page)).toEqual([]);
 });
 
 test('a visitor reaches a shared publication with the keyboard and shares it', async ({ page }) => {

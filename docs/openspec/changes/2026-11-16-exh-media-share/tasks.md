@@ -137,7 +137,7 @@ MED-10 (al final)
 
 ### MED-09 — Accesibilidad y e2e
 
-- **Estado:** `PARTIAL` (2026-11-20): e2e y axe hechos; falta el video válido de punta a punta.
+- **Estado:** `PARTIAL` (2026-11-20): e2e, axe y video válido de punta a punta hechos; falta sólo el puente API → mapa en prueba de integración (MED-04).
 - **Evidencia:**
   - `e2e/exhibitor-media.e2e.ts` (9 pruebas en verde):
     - el feriante sube una foto a la feria donde tiene stand, con su texto, y lo ve listado;
@@ -147,7 +147,8 @@ MED-10 (al final)
   - El mock de `/exhibitors/me/photos` ahora tiene estado: listar, subir, confirmar, editar texto y borrar.
   - Hallazgo: el axe del modal daba falsos positivos mientras corre la animación de entrada; los tests esperan `opacity: 1` antes de analizar (el mismo criterio del e2e del modal).
   - Suite e2e completa: 88 pruebas en verde.
-  - **Pendiente:** el video válido de punta a punta no se automatizó, porque el navegador de prueba no puede generar un video que pueda leer. Y el puente entre lo que sube el feriante y lo que ve el visitante sigue simulado: el mapa del mock no refleja lo subido. Eso se cubre con pruebas de API en Docker, cuando la conexión desde el host funcione.
+  - Video válido de punta a punta: `exhibitor-media.e2e.ts` graba un WebM real en el navegador (`MediaRecorder` sobre un canvas), lo sube como publicación de la feria y verifica que se liste como video. Suite de media: 10 pruebas en verde contra `ng serve` (puerto 4300).
+  - **Pendiente:** el puente entre lo que sube el feriante y lo que ve el visitante sigue simulado: el mapa del mock no refleja lo subido. Eso se cubre con una prueba de integración de la API del mapa (MED-04), que todavía no está escrita.
 - **Entrega:** e2e del flujo completo (el feriante sube imagen y video, el visitante abre el modal, comparte con el fallback); axe en la página de publicaciones y en el modal, en los 6 temas.
 - **Aceptación:** sin fallas de axe; la galería se navega con teclado; los botones de compartir tienen nombre accesible con la red social.
 - **Pruebas:** `themes.e2e.ts` y un spec nuevo `exhibitor-media.e2e.ts`.
