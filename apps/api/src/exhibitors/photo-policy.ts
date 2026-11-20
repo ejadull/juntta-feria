@@ -113,3 +113,14 @@ export function visibilityAfter(
   if (status !== 'READY' && status !== 'HIDDEN') return null;
   return hidden ? 'HIDDEN' : 'READY';
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether a publication of an event that ended at `endsAt` must be deleted now (MED-12). With the
+ * default of 0 days it is due as soon as the event ends; a longer period is set by the owner of the
+ * platform once the legal review of retention is done.
+ */
+export function isRetentionDue(endsAt: Date, retentionDays: number, now: Date): boolean {
+  return now.getTime() >= endsAt.getTime() + retentionDays * DAY_MS;
+}

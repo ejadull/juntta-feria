@@ -9,6 +9,7 @@ import {
   photoKey,
   validateMediaUpload,
   visibilityAfter,
+  isRetentionDue,
 } from './photo-policy.js';
 
 const T = '11111111-1111-4111-8111-111111111111';
@@ -148,5 +149,20 @@ describe('visibility of a publication (MED-11)', () => {
 
   it('refuses to change an upload that is not published yet', () => {
     expect(visibilityAfter('PENDING', true)).toBeNull();
+  });
+});
+
+describe('publication retention (MED-12)', () => {
+  const ends = new Date('2026-11-15T23:00:00-03:00');
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('is due once the event has ended, with no retention days by default', () => {
+    expect(isRetentionDue(ends, 0, new Date(ends.getTime() + 1))).toBe(true);
+    expect(isRetentionDue(ends, 0, new Date(ends.getTime() - 1))).toBe(false);
+  });
+
+  it('waits the configured days after the event ends', () => {
+    expect(isRetentionDue(ends, 7, new Date(ends.getTime() + 7 * DAY - 1))).toBe(false);
+    expect(isRetentionDue(ends, 7, new Date(ends.getTime() + 7 * DAY))).toBe(true);
   });
 });

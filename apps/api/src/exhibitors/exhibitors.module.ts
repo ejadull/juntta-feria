@@ -24,6 +24,7 @@ import {
 import { InvitationsService } from './invitations.service.js';
 import { EventPublicationsController } from './publication-moderation.controller.js';
 import { PublicationModerationService } from './publication-moderation.service.js';
+import { PublicationRetentionSweeper } from './publication-retention.service.js';
 
 /**
  * EXH-01 exhibitor profiles, EXH-02 rubros, EXH-03 documents and EXH-04 invitations
@@ -44,6 +45,7 @@ import { PublicationModerationService } from './publication-moderation.service.j
   ],
   providers: [
     PublicationModerationService,
+    PublicationRetentionSweeper,
     ExhibitorsService,
     InvitationsService,
     CategoriesService,

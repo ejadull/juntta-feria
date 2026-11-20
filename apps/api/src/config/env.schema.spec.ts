@@ -63,6 +63,7 @@ describe('parseEnvironment (FND-02)', () => {
         webhook: { limit: 600, windowSeconds: 60 },
       },
       documentUploadTtlMinutes: 60,
+      mediaRetentionDays: 0,
       auth: {
         accessTokenSecret: ACCESS_SECRET,
         refreshTokenSecret: REFRESH_SECRET,
@@ -112,6 +113,8 @@ describe('parseEnvironment (FND-02)', () => {
     expect(env.rateLimits.public).toEqual({ limit: 30, windowSeconds: 10 });
     expect(env.rateLimits.webhook.limit).toBe(900);
     expect(env.documentUploadTtlMinutes).toBe(30);
+    expect(parseEnvironment({ ...valid(), MEDIA_RETENTION_DAYS: '7' }).mediaRetentionDays).toBe(7);
+    expect(failure({ ...valid(), MEDIA_RETENTION_DAYS: '-1' })).toContain('MEDIA_RETENTION_DAYS');
     for (const name of [
       'TRUST_PROXY',
       'PUBLIC_RATE_LIMIT',

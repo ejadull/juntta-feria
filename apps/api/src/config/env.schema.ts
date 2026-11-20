@@ -54,6 +54,8 @@ export type AppEnvironment = Readonly<{
   }>;
   /** Uploads never confirmed with `complete` are swept after this many minutes. */
   documentUploadTtlMinutes: number;
+  /** Days a publication of an ended event is kept (MED-12); 0 deletes it when the event ends. */
+  mediaRetentionDays: number;
   /** CORE-02 (ADR 0004): short JWT access token + opaque rotating refresh token cookie. */
   auth: Readonly<{
     accessTokenSecret: string;
@@ -246,6 +248,8 @@ const schema = z
     WEBHOOK_RATE_LIMIT: optionalInt(1, 1_000_000, 600),
     // Above the 5-minute presigned PUT, so a sweep never deletes an upload still in flight.
     DOCUMENT_UPLOAD_TTL_MINUTES: optionalInt(10, 10_080, 60),
+    // Publications of an event are deleted this many days after it ends (0 = at the end).
+    MEDIA_RETENTION_DAYS: optionalInt(0, 3650, 0),
     AUTH_ACCESS_TOKEN_SECRET: secret,
     AUTH_REFRESH_TOKEN_SECRET: secret,
     AUTH_ACCESS_TOKEN_TTL_SECONDS: optionalInt(60, 3600, 900),
@@ -416,6 +420,7 @@ export function parseEnvironment(input: NodeJS.ProcessEnv): AppEnvironment {
       webhook: { limit: e.WEBHOOK_RATE_LIMIT, windowSeconds: 60 },
     },
     documentUploadTtlMinutes: e.DOCUMENT_UPLOAD_TTL_MINUTES,
+    mediaRetentionDays: e.MEDIA_RETENTION_DAYS,
     auth: {
       accessTokenSecret: e.AUTH_ACCESS_TOKEN_SECRET,
       refreshTokenSecret: e.AUTH_REFRESH_TOKEN_SECRET,
